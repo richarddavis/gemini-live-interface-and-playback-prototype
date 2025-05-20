@@ -15,6 +15,7 @@ body {
 
 .chat-sidebar {
   width: 280px;
+  flex-shrink: 0; /* Add this to prevent shrinking */
   background-color: #3f0e40; /* Darker, distinct sidebar color */
   color: #ccc;
   padding: 15px;
@@ -22,6 +23,7 @@ body {
   flex-direction: column;
   border-right: 1px solid #4a184c;
   overflow-y: auto;
+  overflow-x: hidden; /* Add this to prevent horizontal overflow from expanding */
 }
 
 .new-chat-button {

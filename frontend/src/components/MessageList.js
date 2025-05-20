@@ -1,8 +1,19 @@
 import React, { useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 
-function MessageList({ messages, isLoading, isLoadingMessages }) {
+// Only replace \\[...\\] and \\(...\\) with $$...$$ and $...$
+function convertLatexBracketsToDollars(text) {
+  // Replace \\[ ... \\] with $$ ... $$
+  text = text.replace(/\\\\\\[(.*?)\\\\\\]/gs, '$$$$ $1 $$$$');
+  // Replace \\( ... \\) with $ ... $
+  text = text.replace(/\\\\\\((.*?)\\\\\\)/gs, '$ $1 $');
+  return text;
+}
+
+function MessageList({ messages, isLoadingMessages, currentBotResponse }) {
   const messageListRef = useRef(null);
   
   // Scroll to bottom when messages change or loading status changes
@@ -10,7 +21,7 @@ function MessageList({ messages, isLoading, isLoadingMessages }) {
     if (messageListRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
-  }, [messages, isLoading]);
+  }, [messages, currentBotResponse]);
 
   return (
     <div className="message-list" ref={messageListRef}>
@@ -19,37 +30,52 @@ function MessageList({ messages, isLoading, isLoadingMessages }) {
           <div className="loading-spinner"></div>
           <p>Loading messages...</p>
         </div>
-      ) : messages.length === 0 ? (
+      ) : messages.length === 0 && !currentBotResponse ? (
         <div className="empty-chat">
           <p>No messages yet. Start chatting!</p>
         </div>
       ) : (
-        messages.map(msg => (
-          <div key={msg.id} className={`message-item ${msg.sender}`}>
-            <div className="message-content">
-              {/* Use ReactMarkdown to render message text */}
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {msg.text}
-              </ReactMarkdown>
+        messages.map(msg => {
+          let displayText = msg.text;
+          return (
+            <div key={msg.id} className={`message-item ${msg.sender}`}>
+              <div className="message-content">
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex]}
+                >
+                  {convertLatexBracketsToDollars(displayText)}
+                </ReactMarkdown>
+              </div>
+              <span className="message-timestamp">
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
-            <span className="message-timestamp">
-              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
-          </div>
-        ))
+          );
+        })
       )}
       
-      {/* Loading indicator for bot response */}
-      {isLoading && (
-        <div className="message-item bot">
+      {/* Render the current in-flight bot response */}
+      {currentBotResponse && (
+        <div key={currentBotResponse.id} className={`message-item ${currentBotResponse.sender}`}>
           <div className="message-content">
-            <p><strong>Bot:</strong> <em>Thinking...</em></p>
+            {currentBotResponse.status === 'thinking' ? (
+              <p><strong>Bot:</strong> <em>Thinking...</em></p>
+            ) : (
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+              >
+                {convertLatexBracketsToDollars(currentBotResponse.text)}
+              </ReactMarkdown>
+            )}
           </div>
-          <div className="typing-indicator">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
+          {/* Show timestamp for streaming message, but not for 'thinking' status */}
+          {currentBotResponse.status === 'streaming' && (
+            <span className="message-timestamp">
+              {new Date(currentBotResponse.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </div>
       )}
     </div>

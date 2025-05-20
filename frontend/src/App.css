@@ -1,3 +1,5 @@
+@import 'katex/dist/katex.min.css';
+
 body {
   font-family: sans-serif;
   margin: 0;
@@ -352,4 +354,17 @@ body {
 .message-input-form button.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Ensure KaTeX display math is block */
+.katex-display {
+  display: block; /* Should be default for KaTeX display, but good to be explicit */
+  overflow-x: auto; /* Prevent overflow on small screens */
+  padding: 1em 0;
+}
+
+/* Ensure KaTeX inline math is inline */
+.katex {
+  display: inline-block; /* Use inline-block for better vertical alignment */
+  line-height: normal; /* Prevent large math from affecting line height excessively */
 }

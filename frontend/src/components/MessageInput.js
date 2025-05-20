@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-function MessageInput({ onSendMessage, isDisabled, isLoading }) {
+const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading }, ref) => {
   const [currentMessage, setCurrentMessage] = useState('');
 
   const handleSubmit = (e) => {
@@ -14,6 +14,7 @@ function MessageInput({ onSendMessage, isDisabled, isLoading }) {
   return (
     <form onSubmit={handleSubmit} className="message-input-form">
       <input
+        ref={ref}
         type="text"
         value={currentMessage}
         onChange={(e) => setCurrentMessage(e.target.value)}
@@ -29,6 +30,6 @@ function MessageInput({ onSendMessage, isDisabled, isLoading }) {
       </button>
     </form>
   );
-}
+});
 
 export default MessageInput; 

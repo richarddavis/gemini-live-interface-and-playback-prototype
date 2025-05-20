@@ -1,9 +1,10 @@
-from flask import jsonify, request
+from flask import jsonify, request, Response, stream_with_context
 from . import api
 from .. import db
 from ..models import Task, ChatMessage, ChatSession
 from app.llm_providers import OpenAIProvider, GeminiProvider
 import openai
+import json
 
 @api.route('/health', methods=['GET'])
 def health_check():
@@ -186,4 +187,57 @@ def respond_llm(session_id):
     db.session.add(ai_message)
     db.session.commit()
 
-    return jsonify(ai_message.to_dict()), 200 
+    return jsonify(ai_message.to_dict()), 200
+
+@api.route('/chat_sessions/<int:session_id>/respond_llm_stream', methods=['GET'])
+def respond_llm_stream(session_id):
+    # Read parameters from query string
+    provider_name = request.args.get('provider', 'openai')
+    api_key = request.args.get('api_key')
+    user_text = request.args.get('text')
+
+    if not api_key or not user_text:
+        return jsonify({"error": "api_key and text are required"}), 400
+
+    # Save user message
+    user_message = ChatMessage(
+        text=user_text,
+        sender='user',
+        chat_session_id=session_id
+    )
+    db.session.add(user_message)
+    db.session.commit()
+
+    # Get all messages for this session, ordered
+    session = ChatSession.query.get_or_404(session_id)
+    messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
+    chat_history = [
+        {"role": 'user' if m.sender == 'user' else 'assistant', "content": m.text}
+        for m in messages
+    ]
+
+    if provider_name != 'openai':
+        return jsonify({"error": "Streaming is only implemented for OpenAI provider."}), 400
+
+    from app.llm_providers.openai_provider import OpenAIProvider
+    provider = OpenAIProvider()
+
+    def event_stream():
+        full_response = ""
+        try:
+            for chunk in provider.stream_response(chat_history, api_key):
+                full_response += chunk
+                yield f"data: {json.dumps({'delta': chunk})}\n\n"
+            # At the end, save the full bot message
+            ai_message = ChatMessage(
+                text=full_response,
+                sender='bot',
+                chat_session_id=session_id
+            )
+            db.session.add(ai_message)
+            db.session.commit()
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return Response(stream_with_context(event_stream()), mimetype='text/event-stream') 

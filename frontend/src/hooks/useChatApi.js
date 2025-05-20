@@ -53,32 +53,70 @@ export function useChatApi(apiUrl) {
     }
   }, [apiUrl]);
 
-  const sendMessageToLLM = useCallback(async (sessionId, text, apiKey, provider) => {
+  const streamMessageToLLM = useCallback((sessionId, text, apiKey, provider, { onChunk, onComplete, onError }) => {
     if (!sessionId || !text || !apiKey) {
-      setError('Missing required parameters for sending message');
-      return null;
+      const errMsg = 'Missing required parameters for sending message';
+      setError(errMsg);
+      if (onError) onError(new Error(errMsg));
+      return;
     }
+    
     setIsLoading(true);
     setError(null);
-    try {
-      const response = await fetch(`${apiUrl}/chat_sessions/${sessionId}/respond_llm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, api_key: apiKey, provider }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to get response from LLM provider');
+
+    const params = new URLSearchParams({
+      text,
+      api_key: apiKey,
+      provider,
+    });
+    const eventSourceUrl = `${apiUrl}/chat_sessions/${sessionId}/respond_llm_stream?${params.toString()}`;
+    
+    const es = new EventSource(eventSourceUrl);
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.delta) {
+          if (onChunk) onChunk(data.delta);
+        } else if (data.done) {
+          es.close();
+          setIsLoading(false);
+          if (onComplete) onComplete();
+        } else if (data.error) {
+          const err = new Error(data.error);
+          setError(err.message);
+          if (onError) onError(err);
+          es.close();
+          setIsLoading(false);
+        }
+      } catch (e) {
+        const err = new Error('Failed to parse stream data: ' + e.message);
+        setError(err.message);
+        if (onError) onError(err);
+        es.close();
+        setIsLoading(false);
       }
-      return await response.json();
-    } catch (error) {
-      setError(error.message);
-      console.error("Error sending message to LLM:", error);
-      return null;
-    } finally {
+    };
+
+    es.onerror = (event) => {
+      if (es.readyState === EventSource.CLOSED) {
+        if (isLoading) {
+            const errMsg = 'Streaming connection closed unexpectedly.';
+            setError(errMsg);
+            if (onError) onError(new Error(errMsg));
+        }
+      } else {
+        const errMsg = 'Streaming connection error.';
+        setError(errMsg);
+        if (onError) onError(new Error(errMsg));
+      }
+      es.close();
       setIsLoading(false);
-    }
-  }, [apiUrl]);
+    };
+    
+    return es;
+
+  }, [apiUrl, setIsLoading, setError]);
 
   return {
     isLoading,
@@ -86,6 +124,6 @@ export function useChatApi(apiUrl) {
     fetchChatSessions,
     createChatSession,
     fetchSessionMessages,
-    sendMessageToLLM,
+    streamMessageToLLM,
   };
 } 

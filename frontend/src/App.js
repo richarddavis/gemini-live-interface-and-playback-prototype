@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import ChatHeader from './components/ChatHeader';
 import MessageList from './components/MessageList';
@@ -16,6 +16,8 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [provider, setProvider] = useState('openai');
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [currentBotResponse, setCurrentBotResponse] = useState(null);
+  const messageInputRef = useRef(null);
   
   // API hook
   const { 
@@ -24,7 +26,7 @@ function App() {
     fetchChatSessions, 
     createChatSession,
     fetchSessionMessages,
-    sendMessageToLLM
+    streamMessageToLLM
   } = useChatApi(API_URL);
 
   // Fetch chat sessions on component mount
@@ -52,17 +54,21 @@ function App() {
       }
       
       setIsLoadingMessages(true);
+      setCurrentBotResponse(null);
       const sessionMessages = await fetchSessionMessages(activeChatSessionId);
       setMessages(sessionMessages);
       setIsLoadingMessages(false);
     }
     
-    loadMessagesForSession();
+    if (activeChatSessionId) {
+      loadMessagesForSession();
+    }
   }, [activeChatSessionId, fetchSessionMessages]);
 
   // Display API errors
   useEffect(() => {
     if (apiError) {
+      setCurrentBotResponse(null);
       alert(`API Error: ${apiError}`);
     }
   }, [apiError]);
@@ -78,33 +84,63 @@ function App() {
   const handleSendMessage = async (messageText) => {
     if (!messageText.trim() || !activeChatSessionId || !apiKey) return;
     
-    // Get the current bot response (this will also save the user message)
-    const botMessage = await sendMessageToLLM(
-      activeChatSessionId, 
-      messageText, 
-      apiKey, 
-      provider
-    );
-    
-    if (botMessage) {
-      // Optimistically update the UI with both messages
-      setMessages(prevMessages => [
-        ...prevMessages,
-        // User message (the backend actually saves this too)
-        {
-          id: `temp-${Date.now()}`,
-          text: messageText,
-          sender: 'user',
-          timestamp: new Date().toISOString(),
-          chat_session_id: activeChatSessionId,
+    const tempUserMessageId = `temp-user-${Date.now()}`;
+    const userMessage = {
+      id: tempUserMessageId,
+      text: messageText,
+      sender: 'user',
+      timestamp: new Date().toISOString(),
+      chat_session_id: activeChatSessionId,
+    };
+    setMessages(prevMessages => [...prevMessages, userMessage]);
+
+    const tempBotId = `temp-bot-${Date.now()}`;
+    setCurrentBotResponse({ 
+      id: tempBotId, 
+      text: '', 
+      sender: 'bot', 
+      timestamp: new Date().toISOString(),
+      chat_session_id: activeChatSessionId,
+      status: 'thinking' 
+    });
+
+    streamMessageToLLM(
+      activeChatSessionId,
+      messageText,
+      apiKey,
+      provider,
+      {
+        onChunk: (chunk) => {
+          setCurrentBotResponse(prev => prev ? { 
+            ...prev, 
+            text: prev.text + chunk, 
+            status: 'streaming' 
+          } : null );
         },
-        // Bot response from API
-        botMessage
-      ]);
-    }
+        onComplete: async () => {
+          setCurrentBotResponse(null);
+          const updatedMessages = await fetchSessionMessages(activeChatSessionId);
+          setMessages(updatedMessages);
+          requestAnimationFrame(() => {
+            if (messageInputRef.current) {
+              messageInputRef.current.focus();
+            }
+          });
+        },
+        onError: (error) => {
+          setCurrentBotResponse(null);
+          console.error("Streaming error:", error);
+          setMessages(prevMessages => 
+            prevMessages.filter(msg => msg.id !== tempUserMessageId)
+          ); 
+          alert(`Error streaming response: ${error.message}`);
+        }
+      }
+    );
   };
 
   const handleCreateNewChat = async (switchToNew = true) => {
+    setCurrentBotResponse(null);
     const newSession = await createChatSession();
     if (newSession) {
       setChatSessions(prevSessions => [newSession, ...prevSessions]);
@@ -115,11 +151,11 @@ function App() {
   };
 
   const handleSelectSession = (sessionId) => {
+    setCurrentBotResponse(null);
     setActiveChatSessionId(sessionId);
   };
 
-  // Determine if chat input should be disabled
-  const isChatDisabled = !activeChatSessionId || !apiKey;
+  const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading;
 
   return (
     <div className="App-container">
@@ -143,14 +179,15 @@ function App() {
           <main className="chat-container">
             <MessageList 
               messages={messages} 
-              isLoading={isApiLoading} 
               isLoadingMessages={isLoadingMessages} 
+              currentBotResponse={currentBotResponse}
             />
             
             <MessageInput 
+              ref={messageInputRef}
               onSendMessage={handleSendMessage} 
               isDisabled={isChatDisabled}
-              isLoading={isApiLoading} 
+              isLoading={isApiLoading}
             />
           </main>
         ) : (

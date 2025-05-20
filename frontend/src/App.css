@@ -102,6 +102,7 @@ body {
   gap: 10px;
   margin: 10px 0 0 0;
   align-items: center;
+  flex-wrap: wrap; /* Allow wrapping on small screens */
 }
 
 .api-key-input {
@@ -129,6 +130,13 @@ body {
 .provider-select:focus {
   outline: none;
   border-color: #007bff;
+}
+
+.api-key-info {
+  width: 100%;
+  margin-top: 5px;
+  color: #aaa;
+  font-style: italic;
 }
 
 .chat-container { /* Styles for the main chat area remain largely the same */
@@ -271,3 +279,77 @@ body {
 
 /* Old .App styles are replaced by .App-container and .App-main-content */
 /* Ensure no conflicting styles from previous .App definition */
+
+/* Loading Messages */
+.loading-messages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  color: #666;
+}
+
+.loading-spinner {
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top: 3px solid #007bff;
+  width: 20px;
+  height: 20px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Empty Chat Message */
+.empty-chat {
+  text-align: center;
+  color: #888;
+  margin-top: 20px;
+}
+
+.no-chats-message {
+  color: #aaa;
+  margin-top: 15px;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Typing indicator for bot message */
+.typing-indicator {
+  display: flex;
+  column-gap: 3px;
+  margin-top: 7px;
+}
+
+.typing-indicator span {
+  height: 7px;
+  width: 7px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  display: block;
+  animation: typing 1s infinite ease-in-out alternate;
+}
+
+.bot .typing-indicator span {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: 0ms; }
+.typing-indicator span:nth-child(2) { animation-delay: 200ms; }
+.typing-indicator span:nth-child(3) { animation-delay: 400ms; }
+
+@keyframes typing {
+  0% { transform: translateY(0px); }
+  100% { transform: translateY(-5px); }
+}
+
+/* Message input button disabled state */
+.message-input-form button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

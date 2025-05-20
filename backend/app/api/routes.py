@@ -3,6 +3,7 @@ from . import api
 from .. import db
 from ..models import Task, ChatMessage, ChatSession
 from app.llm_providers import OpenAIProvider, GeminiProvider
+import openai
 
 @api.route('/health', methods=['GET'])
 def health_check():
@@ -137,6 +138,9 @@ def respond_llm(session_id):
     if not api_key or not user_text:
         return jsonify({"error": "api_key and text are required"}), 400
 
+    # Verify session exists
+    session = ChatSession.query.get_or_404(session_id)
+    
     # Save user message
     user_message = ChatMessage(
         text=user_text,
@@ -147,7 +151,6 @@ def respond_llm(session_id):
     db.session.commit()
 
     # Get all messages for this session, ordered
-    session = ChatSession.query.get_or_404(session_id)
     messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
     # Convert to OpenAI/Gemini format
     chat_history = [
@@ -165,6 +168,12 @@ def respond_llm(session_id):
 
     try:
         ai_response_text = provider.get_response(chat_history, api_key)
+    except openai.RateLimitError:
+        return jsonify({"error": "Rate limit exceeded. Please try again later."}), 429
+    except openai.AuthenticationError:
+        return jsonify({"error": "Authentication failed. Check your API key."}), 401
+    except openai.APIError as e:
+        return jsonify({"error": f"OpenAI API Error: {str(e)}"}), 500
     except Exception as e:
         return jsonify({"error": f"Provider error: {str(e)}"}), 500
 

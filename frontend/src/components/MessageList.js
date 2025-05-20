@@ -4,13 +4,19 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
-// Only replace \\[...\\] and \\(...\\) with $$...$$ and $...$
+// Function to convert LaTeX delimiters to KaTeX compatible format
 function convertLatexBracketsToDollars(text) {
-  // Replace \\[ ... \\] with $$ ... $$
-  text = text.replace(/\\\\\\[(.*?)\\\\\\]/gs, '$$$$ $1 $$$$');
-  // Replace \\( ... \\) with $ ... $
-  text = text.replace(/\\\\\\((.*?)\\\\\\)/gs, '$ $1 $');
-  return text;
+  if (!text) return '';
+  
+  // Replace display math mode: \[ ... \] -> $$ ... $$
+  let processedText = text.replace(/\\\[/g, '$$');
+  processedText = processedText.replace(/\\\]/g, '$$');
+  
+  // Replace inline math mode: \( ... \) -> $ ... $
+  processedText = processedText.replace(/\\\(/g, '$');
+  processedText = processedText.replace(/\\\)/g, '$');
+  
+  return processedText;
 }
 
 function MessageList({ messages, isLoadingMessages, currentBotResponse }) {

@@ -5,6 +5,10 @@ class ChatSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=True) # Optional name for the chat
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Define relationship with cascade delete
+    messages = db.relationship('ChatMessage', backref='chat_session', 
+                               lazy='dynamic', cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
@@ -41,9 +45,6 @@ class ChatMessage(db.Model):
     # New fields for multimodal support
     media_type = db.Column(db.String(50), nullable=True)  # 'image', 'audio', etc.
     media_url = db.Column(db.String(2000), nullable=True)  # URL to the media file
-
-    # Relationship to access the ChatSession object from a ChatMessage
-    chat_session = db.relationship('ChatSession', backref=db.backref('messages', lazy='dynamic'))
 
     def to_dict(self):
         result = {

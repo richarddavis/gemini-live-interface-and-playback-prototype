@@ -114,6 +114,16 @@ def create_chat_session():
     db.session.refresh(session)
     return jsonify(session.to_dict()), 201
 
+@api.route('/chat_sessions/<int:session_id>', methods=['DELETE'])
+def delete_chat_session(session_id):
+    session = ChatSession.query.get_or_404(session_id)
+    
+    # No need to manually delete messages, the cascade will handle it
+    db.session.delete(session)
+    db.session.commit()
+    
+    return jsonify({"message": "Chat session deleted successfully"}), 200
+
 # Session-Specific Message Routes
 @api.route('/chat_sessions/<int:session_id>/messages', methods=['GET'])
 def get_session_messages(session_id):

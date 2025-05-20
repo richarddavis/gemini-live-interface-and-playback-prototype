@@ -206,6 +206,38 @@ function App() {
     setActiveChatSessionId(sessionId);
   };
 
+  const handleDeleteSession = async (sessionId) => {
+    if (window.confirm("Are you sure you want to delete this chat?")) {
+      try {
+        const response = await fetch(`${API_URL}/chat_sessions/${sessionId}`, {
+          method: 'DELETE',
+        });
+        
+        if (response.ok) {
+          // Remove the session from our state
+          setChatSessions(prevSessions => prevSessions.filter(s => s.id !== sessionId));
+          
+          // If the active session was deleted, select another one
+          if (sessionId === activeChatSessionId) {
+            const remainingSessions = chatSessions.filter(s => s.id !== sessionId);
+            if (remainingSessions.length > 0) {
+              setActiveChatSessionId(remainingSessions[0].id);
+            } else {
+              // If no sessions left, create a new one
+              handleCreateNewChat(true);
+            }
+          }
+        } else {
+          console.error("Failed to delete chat session");
+          alert("Failed to delete chat session");
+        }
+      } catch (error) {
+        console.error("Error deleting chat session:", error);
+        alert(`Error deleting chat session: ${error.message}`);
+      }
+    }
+  };
+
   const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingImage;
 
   return (
@@ -215,6 +247,7 @@ function App() {
         activeChatSessionId={activeChatSessionId}
         onSelectSession={handleSelectSession}
         onCreateNewChat={() => handleCreateNewChat(true)}
+        onDeleteSession={handleDeleteSession}
       />
       
       <div className="App-main-content">

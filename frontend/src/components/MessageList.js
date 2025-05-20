@@ -43,6 +43,16 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
           </div>
         )}
         
+        {msg.media_url && msg.media_type?.startsWith('video/') && (
+          <div className="message-video-container">
+            <video 
+              src={msg.media_url} 
+              controls
+              className="message-video"
+            />
+          </div>
+        )}
+        
         {msg.text && (
           <ReactMarkdown 
             remarkPlugins={[remarkGfm, remarkMath]}
@@ -82,7 +92,7 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
           {isUploadingImage && (
             <div className="upload-indicator">
               <div className="loading-spinner"></div>
-              <p>Uploading image...</p>
+              <p>Uploading media...</p>
             </div>
           )}
         </>

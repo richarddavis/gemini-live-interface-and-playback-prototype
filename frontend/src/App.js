@@ -16,7 +16,7 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [provider, setProvider] = useState('openai');
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
   const messageInputRef = useRef(null);
   
@@ -66,6 +66,16 @@ function App() {
       loadMessagesForSession();
     }
   }, [activeChatSessionId, fetchSessionMessages]);
+  
+  // Update provider when active chat changes
+  useEffect(() => {
+    if (activeChatSessionId && chatSessions.length > 0) {
+      const activeSession = chatSessions.find(s => s.id === activeChatSessionId);
+      if (activeSession && activeSession.provider) {
+        setProvider(activeSession.provider);
+      }
+    }
+  }, [activeChatSessionId, chatSessions]);
 
   // Display API errors
   useEffect(() => {
@@ -80,7 +90,29 @@ function App() {
   };
 
   const handleProviderChange = (e) => {
-    setProvider(e.target.value);
+    const newProvider = e.target.value;
+    setProvider(newProvider);
+    
+    // When provider changes, save it to the current chat session
+    if (activeChatSessionId) {
+      // Update local state
+      setChatSessions(prevSessions => 
+        prevSessions.map(session => 
+          session.id === activeChatSessionId 
+            ? {...session, provider: newProvider} 
+            : session
+        )
+      );
+      
+      // Update in database (this doesn't need to be awaited)
+      fetch(`${API_URL}/chat_sessions/${activeChatSessionId}/update_provider`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ provider: newProvider })
+      }).catch(err => console.error("Error updating provider:", err));
+    }
   };
 
   const handleSendMessage = async (messageData) => {
@@ -88,14 +120,20 @@ function App() {
     
     if ((!text?.trim() && !image) || !activeChatSessionId || !apiKey) return;
     
+    // Check if this is a video and using a provider that doesn't support it (e.g., OpenAI)
+    if (image && image.type.startsWith('video/') && provider !== 'gemini') {
+      alert(`${provider.toUpperCase()} does not support video content. Please use text or image only, or switch to a provider that supports video (e.g., Gemini).`);
+      return;
+    }
+    
     // Create a temporary ID for the user message
     const tempUserMessageId = `temp-user-${Date.now()}`;
     let mediaUrl = null;
     let mediaType = null;
     
-    // If there's an image, upload it first
+    // If there's an image or video, upload it first
     if (image) {
-      setIsUploadingImage(true);
+      setIsUploadingMedia(true);
       try {
         const uploadResult = await uploadFile(image);
         if (uploadResult) {
@@ -103,12 +141,12 @@ function App() {
           mediaType = uploadResult.media_type;
         }
       } catch (error) {
-        console.error("Error uploading image:", error);
-        alert(`Failed to upload image: ${error.message}`);
-        setIsUploadingImage(false);
+        console.error("Error uploading media:", error);
+        alert(`Failed to upload media: ${error.message}`);
+        setIsUploadingMedia(false);
         return;
       }
-      setIsUploadingImage(false);
+      setIsUploadingMedia(false);
     }
     
     // Create the user message object
@@ -192,7 +230,8 @@ function App() {
 
   const handleCreateNewChat = async (switchToNew = true) => {
     setCurrentBotResponse(null);
-    const newSession = await createChatSession();
+    // Use the currently selected provider for the new chat
+    const newSession = await createChatSession(provider);
     if (newSession) {
       setChatSessions(prevSessions => [newSession, ...prevSessions]);
       if (switchToNew || !activeChatSessionId) {
@@ -238,7 +277,7 @@ function App() {
     }
   };
 
-  const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingImage;
+  const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingMedia;
 
   return (
     <div className="App-container">
@@ -264,7 +303,7 @@ function App() {
             <MessageList 
               messages={messages} 
               isLoadingMessages={isLoadingMessages}
-              isUploadingImage={isUploadingImage}
+              isUploadingImage={isUploadingMedia}
               currentBotResponse={currentBotResponse}
             />
             
@@ -272,7 +311,8 @@ function App() {
               ref={messageInputRef}
               onSendMessage={handleSendMessage} 
               isDisabled={isChatDisabled}
-              isLoading={isApiLoading || isUploadingImage}
+              isLoading={isApiLoading || isUploadingMedia}
+              provider={provider}
             />
           </main>
         ) : (

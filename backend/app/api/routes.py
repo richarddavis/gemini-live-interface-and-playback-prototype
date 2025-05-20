@@ -13,7 +13,7 @@ import base64
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
-    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mov'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @api.route('/health', methods=['GET'])
@@ -108,7 +108,10 @@ def get_chat_sessions():
 
 @api.route('/chat_sessions', methods=['POST'])
 def create_chat_session():
-    session = ChatSession()
+    data = request.get_json() or {}
+    provider = data.get('provider', 'openai')
+    
+    session = ChatSession(provider=provider)
     db.session.add(session)
     db.session.commit()
     db.session.refresh(session)
@@ -123,6 +126,19 @@ def delete_chat_session(session_id):
     db.session.commit()
     
     return jsonify({"message": "Chat session deleted successfully"}), 200
+
+@api.route('/chat_sessions/<int:session_id>/update_provider', methods=['POST'])
+def update_chat_session_provider(session_id):
+    session = ChatSession.query.get_or_404(session_id)
+    data = request.get_json()
+    
+    if not data or 'provider' not in data:
+        return jsonify({"error": "Provider field is required"}), 400
+    
+    session.provider = data['provider']
+    db.session.commit()
+    
+    return jsonify(session.to_dict()), 200
 
 # Session-Specific Message Routes
 @api.route('/chat_sessions/<int:session_id>/messages', methods=['GET'])
@@ -158,15 +174,12 @@ def respond_llm(session_id):
     user_text = data.get('text')
     media_url = data.get('media_url')
     media_type = data.get('media_type')
-    
-    # At least text or media is required
+
     if (not user_text and not media_url) or not api_key:
         return jsonify({"error": "Either text or media content, and api_key are required"}), 400
 
-    # Verify session exists
     session = ChatSession.query.get_or_404(session_id)
     
-    # Save user message
     user_message = ChatMessage(
         text=user_text,
         sender='user',
@@ -177,68 +190,72 @@ def respond_llm(session_id):
     db.session.add(user_message)
     db.session.commit()
 
-    # Get all messages for this session, ordered
-    messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
+    messages_from_db = session.messages.order_by(ChatMessage.timestamp.asc()).all()
     
-    # Convert to OpenAI/Gemini format
-    chat_history = []
-    for m in messages:
-        message_dict = {
-            "role": 'user' if m.sender == 'user' else 'assistant', 
-            "content": m.text
-        }
-        if m.media_url and m.media_type:
-            message_dict['media_url'] = m.media_url
-            message_dict['media_type'] = m.media_type
-        chat_history.append(message_dict)
+    # Prepare messages differently based on provider
+    provider_messages = []
+    for m in messages_from_db:
+        if provider_name == 'openai':
+            # OpenAI expects role (user/assistant) and content
+            role = 'user' if m.sender == 'user' else 'assistant'
+            msg_dict = {"role": role, "content": m.text or ""}
+            if m.media_url and m.media_type:
+                msg_dict['media_url'] = m.media_url
+                msg_dict['media_type'] = m.media_type
+        else:
+            # Gemini expects sender (user/bot) and text
+            msg_dict = {"sender": m.sender, "text": m.text}
+            if m.media_url and m.media_type:
+                msg_dict['media_url'] = m.media_url
+                msg_dict['media_type'] = m.media_type
+        provider_messages.append(msg_dict)
 
-    # Select provider
     if provider_name == 'openai':
-        provider = OpenAIProvider()
+        provider_instance = OpenAIProvider()
     elif provider_name == 'gemini':
-        provider = GeminiProvider()
+        provider_instance = GeminiProvider()
     else:
         return jsonify({"error": f"Unknown provider: {provider_name}"}), 400
 
     try:
-        ai_response_text = provider.get_response(chat_history, api_key)
-    except openai.RateLimitError:
-        return jsonify({"error": "Rate limit exceeded. Please try again later."}), 429
-    except openai.AuthenticationError:
-        return jsonify({"error": "Authentication failed. Check your API key."}), 401
-    except openai.APIError as e:
-        return jsonify({"error": f"OpenAI API Error: {str(e)}"}), 500
-    except Exception as e:
-        return jsonify({"error": f"Provider error: {str(e)}"}), 500
+        ai_response_text = provider_instance.get_response(provider_messages, api_key)
+        
+        if ai_response_text is None or "Error:" in ai_response_text or "blocked by Gemini" in ai_response_text or "Provider error" in ai_response_text:
+             current_app.logger.error(f"Provider {provider_name} returned an error or no content: {ai_response_text}")
+             return jsonify({"error": ai_response_text or f"Provider {provider_name} returned no content or an error."}), 500
 
-    # Save AI message
-    ai_message = ChatMessage(
-        text=ai_response_text,
-        sender='bot',
-        chat_session_id=session_id
-    )
+    except Exception as e:
+        current_app.logger.error(f"LLM Provider error ({provider_name}): {str(e)}")
+        return jsonify({"error": f"LLM Provider error ({provider_name}): {str(e)}"}), 500
+
+    ai_message = ChatMessage(text=ai_response_text, sender='bot', chat_session_id=session_id)
     db.session.add(ai_message)
     db.session.commit()
-
     return jsonify(ai_message.to_dict()), 200
 
 @api.route('/chat_sessions/<int:session_id>/respond_llm_stream', methods=['GET'])
 def respond_llm_stream(session_id):
-    # Read parameters from query string
-    provider_name = request.args.get('provider', 'openai')
+    session = ChatSession.query.get_or_404(session_id)
+    provider_name = request.args.get('provider')
+    
+    # If provider is specified in request, update the session's provider
+    if provider_name:
+        session.provider = provider_name
+        db.session.commit()
+    # Otherwise use the session's saved provider (fallback to openai)
+    else:
+        provider_name = session.provider or 'openai'
+    
     api_key = request.args.get('api_key')
     user_text = request.args.get('text')
     media_url = request.args.get('media_url')
     media_type = request.args.get('media_type')
     
-    print(f"[DEBUG] respond_llm_stream called: session_id={session_id}, has_text={bool(user_text)}, has_media_url={bool(media_url)}")
+    current_app.logger.debug(f"[STREAM DEBUG] Called: session_id={session_id}, provider={provider_name}, has_text={bool(user_text)}, has_media={bool(media_url)}")
     
-    # At least text or media is required
     if (not user_text and not media_url) or not api_key:
-        print("[DEBUG] Missing required parameters")
         return jsonify({"error": "Either text or media content, and api_key are required"}), 400
 
-    # Save user message
     user_message = ChatMessage(
         text=user_text,
         sender='user',
@@ -248,57 +265,71 @@ def respond_llm_stream(session_id):
     )
     db.session.add(user_message)
     db.session.commit()
-    print(f"[DEBUG] User message saved: id={user_message.id}")
+    current_app.logger.debug(f"[STREAM DEBUG] User message saved: id={user_message.id}")
 
-    # Get all messages for this session, ordered
     session = ChatSession.query.get_or_404(session_id)
-    messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
-    print(f"[DEBUG] Got {len(messages)} messages for the session")
+    messages_from_db = session.messages.order_by(ChatMessage.timestamp.asc()).all()
+    current_app.logger.debug(f"[STREAM DEBUG] Fetched {len(messages_from_db)} messages for provider history.")
     
-    # Convert to OpenAI/Gemini format
-    chat_history = []
-    for m in messages:
-        message_dict = {
-            "role": 'user' if m.sender == 'user' else 'assistant', 
-            "content": m.text
-        }
-        if m.media_url and m.media_type:
-            message_dict['media_url'] = m.media_url
-            message_dict['media_type'] = m.media_type
-        chat_history.append(message_dict)
+    # Prepare messages differently based on provider
+    provider_messages = []
+    for m in messages_from_db:
+        if provider_name == 'openai':
+            # OpenAI expects role (user/assistant) and content
+            role = 'user' if m.sender == 'user' else 'assistant'
+            msg_dict = {"role": role, "content": m.text or ""}
+            if m.media_url and m.media_type:
+                msg_dict['media_url'] = m.media_url
+                msg_dict['media_type'] = m.media_type
+        else:
+            # Gemini expects sender (user/bot) and text 
+            msg_dict = {"sender": m.sender, "text": m.text}
+            if m.media_url and m.media_type:
+                msg_dict['media_url'] = m.media_url
+                msg_dict['media_type'] = m.media_type
+        provider_messages.append(msg_dict)
     
-    print(f"[DEBUG] Prepared chat history with {len(chat_history)} messages")
+    current_app.logger.debug(f"[STREAM DEBUG] Prepared provider_messages with {len(provider_messages)} entries for {provider_name}")
 
-    if provider_name != 'openai':
-        print(f"[DEBUG] Unsupported provider: {provider_name}")
-        return jsonify({"error": "Streaming is only implemented for OpenAI provider."}), 400
+    if provider_name == 'openai':
+        provider_instance = OpenAIProvider()
+    elif provider_name == 'gemini':
+        provider_instance = GeminiProvider()
+    else:
+        current_app.logger.error(f"[STREAM DEBUG] Unsupported provider: {provider_name}")
+        return jsonify({"error": f"Streaming is not supported for provider: {provider_name}"}), 400
 
-    from app.llm_providers.openai_provider import OpenAIProvider
-    provider = OpenAIProvider()
+    if not hasattr(provider_instance, 'stream_response'):
+        current_app.logger.error(f"[STREAM DEBUG] Provider {provider_name} does not support streaming method.")
+        return jsonify({"error": f"Provider {provider_name} does not have a stream_response method."}), 400
 
     def event_stream():
         full_response = ""
         try:
-            print("[DEBUG] Starting stream from OpenAI")
-            for chunk in provider.stream_response(chat_history, api_key):
-                full_response += chunk
-                yield f"data: {json.dumps({'delta': chunk})}\n\n"
-            # At the end, save the full bot message
-            print(f"[DEBUG] Stream complete, saving bot message with length {len(full_response)}")
-            ai_message = ChatMessage(
-                text=full_response,
-                sender='bot',
-                chat_session_id=session_id
-            )
-            db.session.add(ai_message)
-            db.session.commit()
-            print(f"[DEBUG] Bot message saved: id={ai_message.id}")
+            current_app.logger.debug(f"[STREAM DEBUG] Starting stream from {provider_name}...")
+            for chunk_text in provider_instance.stream_response(provider_messages, api_key):
+                if chunk_text: 
+                    full_response += chunk_text
+                    yield f"data: {json.dumps({'delta': chunk_text})}\n\n"
+            
+            current_app.logger.debug(f"[STREAM DEBUG] Stream complete from {provider_name}. Full response length: {len(full_response)}")
+            
+            if "Error streaming from" in full_response or "Content stream blocked" in full_response or "Error communicating with Gemini" in full_response:
+                 current_app.logger.warning(f"Stream from {provider_name} ended with an error message in content: {full_response}")
+            else:
+                ai_message = ChatMessage(text=full_response, sender='bot', chat_session_id=session_id)
+                db.session.add(ai_message)
+                db.session.commit()
+                current_app.logger.debug(f"[STREAM DEBUG] Bot message saved: id={ai_message.id}")
+            
             yield f"data: {json.dumps({'done': True})}\n\n"
+
         except Exception as e:
-            print(f"[DEBUG] Stream error: {str(e)}")
+            current_app.logger.error(f"Error during {provider_name} event_stream generation: {str(e)}")
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'error': f'Stream generation error with {provider_name}: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
 
     return Response(stream_with_context(event_stream()), mimetype='text/event-stream')
 

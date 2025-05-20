@@ -20,11 +20,17 @@ export function useChatApi(apiUrl) {
     }
   }, [apiUrl]);
 
-  const createChatSession = useCallback(async () => {
+  const createChatSession = useCallback(async (provider = 'openai') => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/chat_sessions`, { method: 'POST' });
+      const response = await fetch(`${apiUrl}/chat_sessions`, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ provider })
+      });
       if (!response.ok) throw new Error('Failed to create new chat session');
       return await response.json();
     } catch (error) {

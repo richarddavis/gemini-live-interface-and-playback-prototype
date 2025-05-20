@@ -1,21 +1,165 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
-const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading }, ref) => {
+const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading, provider }, ref) => {
   const [currentMessage, setCurrentMessage] = useState('');
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedMedia, setSelectedMedia] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [mediaType, setMediaType] = useState(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [captureMode, setCaptureMode] = useState('image'); // 'image' or 'video'
+  const [videoStream, setVideoStream] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTimeLeft, setRecordingTimeLeft] = useState(0);
+  
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+
+  // Clean up camera stream when component unmounts
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
+  // Handle camera stream for both video preview and taking photo
+  const handleCameraCapture = async (mode) => {
+    try {
+      // Close any existing stream first
+      stopCameraStream();
+      
+      setCaptureMode(mode);
+      setIsCapturing(true);
+      
+      // Request camera access
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: mode === 'video' 
+      });
+      
+      setVideoStream(stream);
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      alert('Error accessing camera: ' + err.message);
+      setIsCapturing(false);
+    }
+  };
+
+  const stopCameraStream = () => {
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      setVideoStream(null);
+    }
+    
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+    
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    setIsCapturing(false);
+  };
+
+  const takePicture = () => {
+    if (!videoRef.current || !videoStream) return;
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(videoRef.current, 0, 0);
+    
+    // Convert to blob
+    canvas.toBlob((blob) => {
+      const file = new File([blob], `capture-${Date.now()}.png`, { type: 'image/png' });
+      setSelectedMedia(file);
+      setMediaType('image');
+      setPreviewUrl(URL.createObjectURL(blob));
+      stopCameraStream();
+    }, 'image/png');
+  };
+
+  const startRecordingVideo = () => {
+    if (!videoRef.current || !videoStream) return;
+    
+    chunksRef.current = [];
+    
+    const mediaRecorder = new MediaRecorder(videoStream);
+    mediaRecorderRef.current = mediaRecorder;
+    
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        chunksRef.current.push(e.data);
+      }
+    };
+    
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
+      const file = new File([blob], `video-${Date.now()}.mp4`, { type: 'video/mp4' });
+      setSelectedMedia(file);
+      setMediaType('video');
+      setPreviewUrl(URL.createObjectURL(blob));
+      stopCameraStream();
+      
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      
+      setRecordingTimeLeft(0);
+    };
+    
+    // Maximum 60 seconds of video recording
+    const maxRecordingTime = 60;
+    setRecordingTimeLeft(maxRecordingTime);
+    
+    // Start countdown timer
+    timerRef.current = setInterval(() => {
+      setRecordingTimeLeft(prev => {
+        if (prev <= 1) {
+          mediaRecorder.stop();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    mediaRecorder.start();
+    setIsRecording(true);
+  };
+
+  const stopRecordingVideo = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if ((currentMessage.trim() || selectedImage) && !isDisabled) {
+    if ((currentMessage.trim() || selectedMedia) && !isDisabled) {
       onSendMessage({
         text: currentMessage,
-        image: selectedImage
+        image: selectedMedia
       });
       setCurrentMessage('');
-      setSelectedImage(null);
+      setSelectedMedia(null);
       setPreviewUrl(null);
+      setMediaType(null);
     }
   };
 
@@ -23,22 +167,25 @@ const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading },
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       
-      if (file.type.startsWith('image/')) {
-        setSelectedImage(file);
+      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+        setSelectedMedia(file);
+        setMediaType(file.type.startsWith('image/') ? 'image' : 'video');
+        
         const fileReader = new FileReader();
         fileReader.onload = () => {
           setPreviewUrl(fileReader.result);
         };
         fileReader.readAsDataURL(file);
       } else {
-        alert('Please select an image file (PNG, JPG, GIF)');
+        alert('Please select an image or video file (PNG, JPG, GIF, MP4, WEBM, MOV etc.)');
       }
     }
   };
 
-  const handleRemoveImage = () => {
-    setSelectedImage(null);
+  const handleRemoveMedia = () => {
+    setSelectedMedia(null);
     setPreviewUrl(null);
+    setMediaType(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -47,16 +194,70 @@ const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading },
   return (
     <div className="message-input-container">
       {previewUrl && (
-        <div className="image-preview">
-          <img src={previewUrl} alt="Preview" />
+        <div className="media-preview">
+          {mediaType === 'image' ? (
+            <img src={previewUrl} alt="Preview" />
+          ) : (
+            <video src={previewUrl} controls />
+          )}
           <button 
             type="button" 
-            className="remove-image-button" 
-            onClick={handleRemoveImage}
-            title="Remove image"
+            className="remove-media-button" 
+            onClick={handleRemoveMedia}
+            title="Remove media"
           >
             ×
           </button>
+        </div>
+      )}
+      
+      {isCapturing && (
+        <div className="camera-capture-container">
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            muted 
+            className="camera-preview"
+          />
+          
+          <div className="camera-controls">
+            {captureMode === 'image' ? (
+              <button 
+                type="button" 
+                className="capture-button" 
+                onClick={takePicture}
+              >
+                Take Photo
+              </button>
+            ) : (
+              <>
+                {!isRecording ? (
+                  <button 
+                    type="button" 
+                    className="capture-button" 
+                    onClick={startRecordingVideo}
+                  >
+                    Start Recording
+                  </button>
+                ) : (
+                  <button 
+                    type="button" 
+                    className="capture-button recording" 
+                    onClick={stopRecordingVideo}
+                  >
+                    Stop ({recordingTimeLeft}s)
+                  </button>
+                )}
+              </>
+            )}
+            <button 
+              type="button" 
+              className="cancel-button" 
+              onClick={stopCameraStream}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       
@@ -71,29 +272,53 @@ const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading },
           className="message-text-input"
         />
         
-        <button 
-          type="button"
-          className="upload-button"
-          disabled={isDisabled || isLoading}
-          onClick={() => fileInputRef.current.click()}
-          title="Upload image"
-        >
-          📷
-        </button>
+        {!isCapturing && (
+          <div className="media-buttons">
+            <button 
+              type="button"
+              className="upload-button"
+              disabled={isDisabled || isLoading}
+              onClick={() => fileInputRef.current.click()}
+              title="Upload media"
+            >
+              📁
+            </button>
+            
+            <button 
+              type="button"
+              className="camera-button"
+              disabled={isDisabled || isLoading}
+              onClick={() => handleCameraCapture('image')}
+              title="Take photo"
+            >
+              📷
+            </button>
+            
+            <button 
+              type="button"
+              className="video-button"
+              disabled={isDisabled || isLoading || (provider !== 'gemini' && !isLoading)}
+              onClick={() => handleCameraCapture('video')}
+              title={provider !== 'gemini' ? "Video capture only supported with Gemini provider" : "Record video"}
+            >
+              🎥
+            </button>
+          </div>
+        )}
         
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileSelect}
-          accept="image/*"
+          accept="image/*,video/*"
           style={{ display: 'none' }}
           disabled={isDisabled || isLoading}
         />
         
         <button 
           type="submit" 
-          disabled={isDisabled || isLoading || (!currentMessage.trim() && !selectedImage)}
-          className={(!currentMessage.trim() && !selectedImage) ? "disabled" : ""}
+          disabled={isDisabled || isLoading || (!currentMessage.trim() && !selectedMedia)}
+          className={(!currentMessage.trim() && !selectedMedia) ? "disabled" : ""}
         >
           {isLoading ? "Sending..." : "Send"}
         </button>

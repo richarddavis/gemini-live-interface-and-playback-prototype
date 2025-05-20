@@ -5,6 +5,7 @@ class ChatSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=True) # Optional name for the chat
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    provider = db.Column(db.String(50), nullable=True, default='openai')  # AI provider for this chat
     
     # Define relationship with cascade delete
     messages = db.relationship('ChatMessage', backref='chat_session', 
@@ -14,7 +15,8 @@ class ChatSession(db.Model):
         return {
             'id': self.id,
             'name': self.name or f"Chat {self.id}", # Default name if not set
-            'created_at': self.created_at.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'provider': self.provider
         }
 
 class Task(db.Model):

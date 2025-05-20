@@ -16,6 +16,7 @@ function App() {
   const [apiKey, setApiKey] = useState('');
   const [provider, setProvider] = useState('openai');
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
   const messageInputRef = useRef(null);
   
@@ -26,6 +27,7 @@ function App() {
     fetchChatSessions, 
     createChatSession,
     fetchSessionMessages,
+    uploadFile,
     streamMessageToLLM
   } = useChatApi(API_URL);
 
@@ -81,19 +83,49 @@ function App() {
     setProvider(e.target.value);
   };
 
-  const handleSendMessage = async (messageText) => {
-    if (!messageText.trim() || !activeChatSessionId || !apiKey) return;
+  const handleSendMessage = async (messageData) => {
+    const { text, image } = messageData;
     
+    if ((!text?.trim() && !image) || !activeChatSessionId || !apiKey) return;
+    
+    // Create a temporary ID for the user message
     const tempUserMessageId = `temp-user-${Date.now()}`;
+    let mediaUrl = null;
+    let mediaType = null;
+    
+    // If there's an image, upload it first
+    if (image) {
+      setIsUploadingImage(true);
+      try {
+        const uploadResult = await uploadFile(image);
+        if (uploadResult) {
+          mediaUrl = uploadResult.url;
+          mediaType = uploadResult.media_type;
+        }
+      } catch (error) {
+        console.error("Error uploading image:", error);
+        alert(`Failed to upload image: ${error.message}`);
+        setIsUploadingImage(false);
+        return;
+      }
+      setIsUploadingImage(false);
+    }
+    
+    // Create the user message object
     const userMessage = {
       id: tempUserMessageId,
-      text: messageText,
+      text: text || '',
       sender: 'user',
       timestamp: new Date().toISOString(),
       chat_session_id: activeChatSessionId,
+      media_url: mediaUrl,
+      media_type: mediaType
     };
+    
+    // Add the user message to the UI immediately
     setMessages(prevMessages => [...prevMessages, userMessage]);
 
+    // Create a temporary ID and message for the bot response
     const tempBotId = `temp-bot-${Date.now()}`;
     setCurrentBotResponse({ 
       id: tempBotId, 
@@ -104,9 +136,17 @@ function App() {
       status: 'thinking' 
     });
 
+    // Store whether this message had an image
+    const hadImage = !!mediaUrl;
+
+    // Begin streaming the bot response
     streamMessageToLLM(
       activeChatSessionId,
-      messageText,
+      { 
+        text: text || '', 
+        media_url: mediaUrl, 
+        media_type: mediaType 
+      },
       apiKey,
       provider,
       {
@@ -118,14 +158,25 @@ function App() {
           } : null );
         },
         onComplete: async () => {
+          console.log('Stream completed, refreshing messages');
+          
+          // Clear current response immediately 
           setCurrentBotResponse(null);
-          const updatedMessages = await fetchSessionMessages(activeChatSessionId);
-          setMessages(updatedMessages);
-          requestAnimationFrame(() => {
-            if (messageInputRef.current) {
-              messageInputRef.current.focus();
-            }
-          });
+          
+          try {
+            // Fetch the latest messages from the server
+            const updatedMessages = await fetchSessionMessages(activeChatSessionId);
+            setMessages(updatedMessages);
+            
+            // Focus the input field after a short delay
+            setTimeout(() => {
+              if (messageInputRef.current) {
+                messageInputRef.current.focus();
+              }
+            }, 200);
+          } catch (error) {
+            console.error("Error refreshing messages:", error);
+          }
         },
         onError: (error) => {
           setCurrentBotResponse(null);
@@ -155,7 +206,7 @@ function App() {
     setActiveChatSessionId(sessionId);
   };
 
-  const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading;
+  const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingImage;
 
   return (
     <div className="App-container">
@@ -179,7 +230,8 @@ function App() {
           <main className="chat-container">
             <MessageList 
               messages={messages} 
-              isLoadingMessages={isLoadingMessages} 
+              isLoadingMessages={isLoadingMessages}
+              isUploadingImage={isUploadingImage}
               currentBotResponse={currentBotResponse}
             />
             
@@ -187,7 +239,7 @@ function App() {
               ref={messageInputRef}
               onSendMessage={handleSendMessage} 
               isDisabled={isChatDisabled}
-              isLoading={isApiLoading}
+              isLoading={isApiLoading || isUploadingImage}
             />
           </main>
         ) : (

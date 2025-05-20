@@ -24,10 +24,16 @@ services:
       - "5001:5000"
     volumes:
       - ./backend:/app
+      # To use GCP authentication, uncomment and modify:
+      - ~/.secrets/gcp/generative-fashion-355408-33bf54a8a28f.json:/app/gcp-key.json:ro
     environment:
       - FLASK_APP=wsgi.py
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
+      # GCS configuration
+      - GCS_BUCKET_NAME=cursor-test-llm-assets
+      # Uncomment if using service account key:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
     depends_on:
       db:
         condition: service_healthy

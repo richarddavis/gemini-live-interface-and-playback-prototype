@@ -1,10 +1,20 @@
-from flask import jsonify, request, Response, stream_with_context
+from flask import jsonify, request, Response, stream_with_context, url_for, current_app
 from . import api
 from .. import db
 from ..models import Task, ChatMessage, ChatSession
 from app.llm_providers import OpenAIProvider, GeminiProvider
+from app.services.storage import GCSStorageService
 import openai
 import json
+import os
+from werkzeug.utils import secure_filename
+import uuid
+import base64
+
+# Helper function to check if file type is allowed
+def allowed_file(filename):
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @api.route('/health', methods=['GET'])
 def health_check():
@@ -136,8 +146,12 @@ def respond_llm(session_id):
     provider_name = data.get('provider', 'openai')
     api_key = data.get('api_key')
     user_text = data.get('text')
-    if not api_key or not user_text:
-        return jsonify({"error": "api_key and text are required"}), 400
+    media_url = data.get('media_url')
+    media_type = data.get('media_type')
+    
+    # At least text or media is required
+    if (not user_text and not media_url) or not api_key:
+        return jsonify({"error": "Either text or media content, and api_key are required"}), 400
 
     # Verify session exists
     session = ChatSession.query.get_or_404(session_id)
@@ -146,18 +160,27 @@ def respond_llm(session_id):
     user_message = ChatMessage(
         text=user_text,
         sender='user',
-        chat_session_id=session_id
+        chat_session_id=session_id,
+        media_url=media_url,
+        media_type=media_type
     )
     db.session.add(user_message)
     db.session.commit()
 
     # Get all messages for this session, ordered
     messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
+    
     # Convert to OpenAI/Gemini format
-    chat_history = [
-        {"role": 'user' if m.sender == 'user' else 'assistant', "content": m.text}
-        for m in messages
-    ]
+    chat_history = []
+    for m in messages:
+        message_dict = {
+            "role": 'user' if m.sender == 'user' else 'assistant', 
+            "content": m.text
+        }
+        if m.media_url and m.media_type:
+            message_dict['media_url'] = m.media_url
+            message_dict['media_type'] = m.media_type
+        chat_history.append(message_dict)
 
     # Select provider
     if provider_name == 'openai':
@@ -195,28 +218,49 @@ def respond_llm_stream(session_id):
     provider_name = request.args.get('provider', 'openai')
     api_key = request.args.get('api_key')
     user_text = request.args.get('text')
-
-    if not api_key or not user_text:
-        return jsonify({"error": "api_key and text are required"}), 400
+    media_url = request.args.get('media_url')
+    media_type = request.args.get('media_type')
+    
+    print(f"[DEBUG] respond_llm_stream called: session_id={session_id}, has_text={bool(user_text)}, has_media_url={bool(media_url)}")
+    
+    # At least text or media is required
+    if (not user_text and not media_url) or not api_key:
+        print("[DEBUG] Missing required parameters")
+        return jsonify({"error": "Either text or media content, and api_key are required"}), 400
 
     # Save user message
     user_message = ChatMessage(
         text=user_text,
         sender='user',
-        chat_session_id=session_id
+        chat_session_id=session_id,
+        media_url=media_url,
+        media_type=media_type
     )
     db.session.add(user_message)
     db.session.commit()
+    print(f"[DEBUG] User message saved: id={user_message.id}")
 
     # Get all messages for this session, ordered
     session = ChatSession.query.get_or_404(session_id)
     messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
-    chat_history = [
-        {"role": 'user' if m.sender == 'user' else 'assistant', "content": m.text}
-        for m in messages
-    ]
+    print(f"[DEBUG] Got {len(messages)} messages for the session")
+    
+    # Convert to OpenAI/Gemini format
+    chat_history = []
+    for m in messages:
+        message_dict = {
+            "role": 'user' if m.sender == 'user' else 'assistant', 
+            "content": m.text
+        }
+        if m.media_url and m.media_type:
+            message_dict['media_url'] = m.media_url
+            message_dict['media_type'] = m.media_type
+        chat_history.append(message_dict)
+    
+    print(f"[DEBUG] Prepared chat history with {len(chat_history)} messages")
 
     if provider_name != 'openai':
+        print(f"[DEBUG] Unsupported provider: {provider_name}")
         return jsonify({"error": "Streaming is only implemented for OpenAI provider."}), 400
 
     from app.llm_providers.openai_provider import OpenAIProvider
@@ -225,10 +269,12 @@ def respond_llm_stream(session_id):
     def event_stream():
         full_response = ""
         try:
+            print("[DEBUG] Starting stream from OpenAI")
             for chunk in provider.stream_response(chat_history, api_key):
                 full_response += chunk
                 yield f"data: {json.dumps({'delta': chunk})}\n\n"
             # At the end, save the full bot message
+            print(f"[DEBUG] Stream complete, saving bot message with length {len(full_response)}")
             ai_message = ChatMessage(
                 text=full_response,
                 sender='bot',
@@ -236,8 +282,55 @@ def respond_llm_stream(session_id):
             )
             db.session.add(ai_message)
             db.session.commit()
+            print(f"[DEBUG] Bot message saved: id={ai_message.id}")
             yield f"data: {json.dumps({'done': True})}\n\n"
         except Exception as e:
+            print(f"[DEBUG] Stream error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    return Response(stream_with_context(event_stream()), mimetype='text/event-stream') 
+    return Response(stream_with_context(event_stream()), mimetype='text/event-stream')
+
+# File upload endpoint
+@api.route('/uploads', methods=['POST'])
+def upload_file():
+    print("[DEBUG] upload_file route called")
+    
+    if 'file' not in request.files:
+        print("[DEBUG] No file part in request")
+        return jsonify({"error": "No file part"}), 400
+    
+    file = request.files['file']
+    print(f"[DEBUG] File received: {file.filename}, type: {file.content_type}")
+    
+    if file.filename == '':
+        print("[DEBUG] Empty filename")
+        return jsonify({"error": "No selected file"}), 400
+    
+    if file and allowed_file(file.filename):
+        try:
+            # Use Google Cloud Storage to upload the file
+            print("[DEBUG] Uploading to GCS...")
+            url, media_type = GCSStorageService.upload_file(file)
+            print(f"[DEBUG] GCS upload successful, url: {url}")
+            
+            # For debugging and communication of status
+            filename = os.path.basename(url)
+            
+            response_data = {
+                "url": url,
+                "filename": filename,
+                "media_type": media_type
+            }
+            print(f"[DEBUG] Response data: {response_data}")
+            
+            return jsonify(response_data), 201
+        except Exception as e:
+            print(f"[DEBUG] Error uploading file: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": f"Error uploading file: {str(e)}"}), 500
+    else:
+        print(f"[DEBUG] File type not allowed: {file.filename}")
+        return jsonify({"error": "File type not allowed"}), 400 

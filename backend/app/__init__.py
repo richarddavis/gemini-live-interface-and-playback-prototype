@@ -4,6 +4,7 @@ from flask_migrate import Migrate
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
+from .config import Config
 
 load_dotenv()
 
@@ -12,6 +13,9 @@ migrate = Migrate()
 
 def create_app():
     app = Flask(__name__)
+    
+    # Load configuration
+    app.config.from_object(Config)
     
     # Configure the SQLAlchemy part of the app
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@db:5432/webapp')
@@ -23,6 +27,11 @@ def create_app():
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
+    
+    # Create uploads directory
+    with app.app_context():
+        uploads_dir = os.path.join(app.root_path, 'static', 'uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
     
     # Register blueprints
     from .api import api as api_blueprint

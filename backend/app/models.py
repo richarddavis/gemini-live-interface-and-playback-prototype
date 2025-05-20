@@ -33,19 +33,31 @@ class Task(db.Model):
 
 class ChatMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    text = db.Column(db.Text, nullable=False)
+    text = db.Column(db.Text, nullable=True)  # Text can be null for image-only messages
     sender = db.Column(db.String(50), nullable=False)  # 'user' or 'bot'
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     chat_session_id = db.Column(db.Integer, db.ForeignKey('chat_session.id'), nullable=False)
+    
+    # New fields for multimodal support
+    media_type = db.Column(db.String(50), nullable=True)  # 'image', 'audio', etc.
+    media_url = db.Column(db.String(2000), nullable=True)  # URL to the media file
 
     # Relationship to access the ChatSession object from a ChatMessage
     chat_session = db.relationship('ChatSession', backref=db.backref('messages', lazy='dynamic'))
 
     def to_dict(self):
-        return {
+        result = {
             'id': self.id,
             'text': self.text,
             'sender': self.sender,
             'timestamp': self.timestamp.isoformat(),
             'chat_session_id': self.chat_session_id
-        } 
+        }
+        
+        # Include media fields if they exist
+        if self.media_type:
+            result['media_type'] = self.media_type
+        if self.media_url:
+            result['media_url'] = self.media_url
+            
+        return result 

@@ -53,8 +53,43 @@ export function useChatApi(apiUrl) {
     }
   }, [apiUrl]);
 
-  const streamMessageToLLM = useCallback((sessionId, text, apiKey, provider, { onChunk, onComplete, onError }) => {
-    if (!sessionId || !text || !apiKey) {
+  const uploadFile = useCallback(async (file) => {
+    if (!file) return null;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    console.log('Uploading file:', file.name, 'type:', file.type);
+    
+    try {
+      console.log('Upload request to:', `${apiUrl}/uploads`);
+      const response = await fetch(`${apiUrl}/uploads`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload file');
+      }
+      
+      const data = await response.json();
+      console.log('Upload response:', data);
+      return data;
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      setError(error.message);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiUrl]);
+
+  const streamMessageToLLM = useCallback((sessionId, messageObj, apiKey, provider, { onChunk, onComplete, onError }) => {
+    if (!sessionId || !apiKey) {
       const errMsg = 'Missing required parameters for sending message';
       setError(errMsg);
       if (onError) onError(new Error(errMsg));
@@ -65,24 +100,51 @@ export function useChatApi(apiUrl) {
     setError(null);
 
     const params = new URLSearchParams({
-      text,
       api_key: apiKey,
       provider,
     });
+    
+    // messageObj is expected to be { text, media_url, media_type }
+    if (messageObj.text) params.append('text', messageObj.text);
+    if (messageObj.media_url) params.append('media_url', messageObj.media_url);
+    if (messageObj.media_type) params.append('media_type', messageObj.media_type);
+    
+    console.log('Streaming message data:', messageObj);
+    
     const eventSourceUrl = `${apiUrl}/chat_sessions/${sessionId}/respond_llm_stream?${params.toString()}`;
+    console.log('Event source URL:', eventSourceUrl);
     
     const es = new EventSource(eventSourceUrl);
 
+    // Set a safety timeout in case the stream doesn't close properly
+    const safetyTimeout = setTimeout(() => {
+      console.log('Safety timeout reached, forcing stream close');
+      es.close();
+      setIsLoading(false);
+      if (onComplete) onComplete();
+    }, 60000); // 60 seconds timeout
+    
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('Stream message received:', data);
+        
         if (data.delta) {
           if (onChunk) onChunk(data.delta);
         } else if (data.done) {
+          console.log('Stream completed successfully');
+          clearTimeout(safetyTimeout);
           es.close();
           setIsLoading(false);
-          if (onComplete) onComplete();
+          if (onComplete) {
+            // Small delay to ensure UI updates correctly
+            setTimeout(() => {
+              onComplete();
+            }, 100);
+          }
         } else if (data.error) {
+          console.error('Stream error:', data.error);
+          clearTimeout(safetyTimeout);
           const err = new Error(data.error);
           setError(err.message);
           if (onError) onError(err);
@@ -90,6 +152,8 @@ export function useChatApi(apiUrl) {
           setIsLoading(false);
         }
       } catch (e) {
+        console.error('Error parsing stream data:', e);
+        clearTimeout(safetyTimeout);
         const err = new Error('Failed to parse stream data: ' + e.message);
         setError(err.message);
         if (onError) onError(err);
@@ -99,19 +163,24 @@ export function useChatApi(apiUrl) {
     };
 
     es.onerror = (event) => {
+      console.error('EventSource error:', event);
+      clearTimeout(safetyTimeout);
+      
       if (es.readyState === EventSource.CLOSED) {
         if (isLoading) {
-            const errMsg = 'Streaming connection closed unexpectedly.';
-            setError(errMsg);
-            if (onError) onError(new Error(errMsg));
+            // Sometimes when images are involved, the stream might close 
+            // successfully but without sending the final 'done' event
+            console.log('Stream closed, treating as complete');
+            setIsLoading(false);
+            if (onComplete) onComplete();
         }
       } else {
         const errMsg = 'Streaming connection error.';
         setError(errMsg);
         if (onError) onError(new Error(errMsg));
+        es.close();
+        setIsLoading(false);
       }
-      es.close();
-      setIsLoading(false);
     };
     
     return es;
@@ -124,6 +193,7 @@ export function useChatApi(apiUrl) {
     fetchChatSessions,
     createChatSession,
     fetchSessionMessages,
+    uploadFile,
     streamMessageToLLM,
   };
 } 

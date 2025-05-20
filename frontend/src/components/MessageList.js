@@ -19,7 +19,7 @@ function convertLatexBracketsToDollars(text) {
   return processedText;
 }
 
-function MessageList({ messages, isLoadingMessages, currentBotResponse }) {
+function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBotResponse }) {
   const messageListRef = useRef(null);
   
   // Scroll to bottom when messages change or loading status changes
@@ -27,7 +27,33 @@ function MessageList({ messages, isLoadingMessages, currentBotResponse }) {
     if (messageListRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
-  }, [messages, currentBotResponse]);
+  }, [messages, currentBotResponse, isUploadingImage]);
+
+  // Helper function to render message content
+  const renderMessageContent = (msg) => {
+    return (
+      <div className="message-content">
+        {msg.media_url && msg.media_type?.startsWith('image/') && (
+          <div className="message-image-container">
+            <img 
+              src={msg.media_url} 
+              alt="Uploaded content" 
+              className="message-image" 
+            />
+          </div>
+        )}
+        
+        {msg.text && (
+          <ReactMarkdown 
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex]}
+          >
+            {convertLatexBracketsToDollars(msg.text)}
+          </ReactMarkdown>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="message-list" ref={messageListRef}>
@@ -41,24 +67,25 @@ function MessageList({ messages, isLoadingMessages, currentBotResponse }) {
           <p>No messages yet. Start chatting!</p>
         </div>
       ) : (
-        messages.map(msg => {
-          let displayText = msg.text;
-          return (
+        <>
+          {/* Display the messages */}
+          {messages.map(msg => (
             <div key={msg.id} className={`message-item ${msg.sender}`}>
-              <div className="message-content">
-                <ReactMarkdown 
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex]}
-                >
-                  {convertLatexBracketsToDollars(displayText)}
-                </ReactMarkdown>
-              </div>
+              {renderMessageContent(msg)}
               <span className="message-timestamp">
                 {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
-          );
-        })
+          ))}
+          
+          {/* Show image upload indicator */}
+          {isUploadingImage && (
+            <div className="upload-indicator">
+              <div className="loading-spinner"></div>
+              <p>Uploading image...</p>
+            </div>
+          )}
+        </>
       )}
       
       {/* Render the current in-flight bot response */}

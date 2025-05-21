@@ -42,7 +42,7 @@ services:
         echo "Database is healthy. Applying database migrations..." &&
         flask db upgrade &&
         echo "Starting Gunicorn..." &&
-        gunicorn --bind 0.0.0.0:5000 wsgi:app
+        gunicorn -k eventlet --bind 0.0.0.0:5000 wsgi:app
       '
 
   db:

@@ -2,6 +2,7 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
+from flask_socketio import SocketIO
 import os
 from dotenv import load_dotenv
 from .config import Config
@@ -10,6 +11,7 @@ load_dotenv()
 
 db = SQLAlchemy()
 migrate = Migrate()
+socketio = SocketIO()
 
 def create_app():
     app = Flask(__name__)
@@ -28,6 +30,15 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     
+    # Initialize SocketIO with more explicit configuration
+    socketio.init_app(
+        app, 
+        cors_allowed_origins="*",
+        async_mode='eventlet',
+        logger=True,
+        engineio_logger=True
+    )
+    
     # Create uploads directory
     with app.app_context():
         uploads_dir = os.path.join(app.root_path, 'static', 'uploads')
@@ -36,5 +47,7 @@ def create_app():
     # Register blueprints
     from .api import api as api_blueprint
     app.register_blueprint(api_blueprint, url_prefix='/api')
+
+    from .api import live # Import the live WebSocket handlers
     
     return app 

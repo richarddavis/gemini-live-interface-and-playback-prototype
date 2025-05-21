@@ -1,10 +1,13 @@
-FROM python:3.11-slim
+FROM python:3.9-slim
 
 WORKDIR /app
 
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install an asynchronous worker for Gunicorn with SocketIO
+RUN pip install --no-cache-dir eventlet
 
 COPY . .
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading, provider }, ref) => {
   const [currentMessage, setCurrentMessage] = useState('');
@@ -17,6 +17,26 @@ const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading, p
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
 
+  // Moved stopCameraStream definition before useEffect that uses it
+  const stopCameraStream = useCallback(() => {
+    if (videoStream) {
+      videoStream.getTracks().forEach(track => track.stop());
+      setVideoStream(null);
+    }
+    
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+    
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    setIsCapturing(false);
+  }, [videoStream, isRecording, mediaRecorderRef, timerRef, setVideoStream, setIsRecording, setIsCapturing]);
+
   // Clean up camera stream when component unmounts
   useEffect(() => {
     return () => {
@@ -25,7 +45,7 @@ const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading, p
         clearInterval(timerRef.current);
       }
     };
-  }, []);
+  }, [stopCameraStream]);
 
   // Handle camera stream for both video preview and taking photo
   const handleCameraCapture = async (mode) => {
@@ -53,25 +73,6 @@ const MessageInput = React.forwardRef(({ onSendMessage, isDisabled, isLoading, p
       alert('Error accessing camera: ' + err.message);
       setIsCapturing(false);
     }
-  };
-
-  const stopCameraStream = () => {
-    if (videoStream) {
-      videoStream.getTracks().forEach(track => track.stop());
-      setVideoStream(null);
-    }
-    
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-    
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    
-    setIsCapturing(false);
   };
 
   const takePicture = () => {

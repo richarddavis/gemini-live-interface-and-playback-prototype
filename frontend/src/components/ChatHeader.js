@@ -5,7 +5,9 @@ function ChatHeader({
   onApiKeyChange, 
   provider, 
   onProviderChange, 
-  activeChatSessionId 
+  activeChatSessionId,
+  isLiveMode,
+  onToggleLiveMode
 }) {
   const initialLoadDone = useRef(false);
 
@@ -41,6 +43,9 @@ function ChatHeader({
     onProviderChange(e);
   };
 
+  // Disable the live button if not in live mode AND (provider is not gemini OR no API key)
+  const isLiveButtonDisabled = !isLiveMode && (provider !== 'gemini' || !apiKey);
+
   return (
     <header className="App-header">
       <h1>Chat App</h1>
@@ -61,6 +66,9 @@ function ChatHeader({
           <option value="openai">OpenAI (GPT-4o)</option>
           <option value="gemini">Gemini</option>
         </select>
+        <button onClick={onToggleLiveMode} disabled={isLiveButtonDisabled}>
+          {isLiveMode ? 'Switch to Chat' : 'Switch to Live'}
+        </button>
         <div className="api-key-info">
           <small>Your API key is stored in your browser and sent directly to the AI provider.</small>
         </div>

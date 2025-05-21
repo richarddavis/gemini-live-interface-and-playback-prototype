@@ -191,7 +191,7 @@ export function useChatApi(apiUrl) {
     
     return es;
 
-  }, [apiUrl, setIsLoading, setError]);
+  }, [apiUrl, setIsLoading, setError, isLoading]);
 
   return {
     isLoading,

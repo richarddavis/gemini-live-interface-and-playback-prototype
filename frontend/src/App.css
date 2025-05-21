@@ -568,3 +568,51 @@ body {
   display: inline-block; /* Use inline-block for better vertical alignment */
   line-height: normal; /* Prevent large math from affecting line height excessively */
 }
+
+/* Live Interaction Styles */
+.live-interaction-container {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #f4f4f4;
+  color: #333;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.live-interaction-container h2 {
+  margin-top: 0;
+  color: #333;
+}
+
+.user-video-feed {
+  width: 100%;
+  max-width: 800px; /* Limit video size */
+  height: auto;
+  border: 1px solid #444;
+  background-color: #333;
+}
+
+.api-controls button {
+  padding: 7px 12px;
+  border-radius: 5px;
+  border: none;
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+  font-size: 1em;
+  transition: background-color 0.2s ease;
+}
+
+.api-controls button:hover {
+  background-color: #0056b3;
+}
+
+.api-controls button:disabled {
+  background-color: #cccccc;
+  color: #666666;
+  cursor: not-allowed;
+  opacity: 0.7;
+}

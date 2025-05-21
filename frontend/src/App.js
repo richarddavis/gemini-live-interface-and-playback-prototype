@@ -5,6 +5,7 @@ import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
 import { useChatApi } from './hooks/useChatApi';
+import LiveInteraction from './components/LiveInteraction';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -18,6 +19,7 @@ function App() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
+  const [isLiveMode, setIsLiveMode] = useState(false);
   const messageInputRef = useRef(null);
   
   // API hook
@@ -174,9 +176,6 @@ function App() {
       status: 'thinking' 
     });
 
-    // Store whether this message had an image
-    const hadImage = !!mediaUrl;
-
     // Begin streaming the bot response
     streamMessageToLLM(
       activeChatSessionId,
@@ -277,10 +276,22 @@ function App() {
     }
   };
 
+  const handleToggleLiveMode = () => {
+    // Prevent switching to live mode if provider is not gemini or API key is missing
+    if (!isLiveMode && (provider !== 'gemini' || !apiKey)) {
+      alert('Please select Gemini as the provider and enter your API key to use Live Interaction.');
+      return;
+    }
+    console.log('Toggling live mode. Current:', isLiveMode);
+    setIsLiveMode(prevMode => !prevMode);
+    console.log('Live mode will be:', !isLiveMode);
+  };
+
   const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingMedia;
 
   return (
     <div className="App-container">
+      {console.log('Rendering App. isLiveMode:', isLiveMode)}
       <ChatSidebar
         chatSessions={chatSessions}
         activeChatSessionId={activeChatSessionId}
@@ -296,31 +307,39 @@ function App() {
           provider={provider}
           onProviderChange={handleProviderChange}
           activeChatSessionId={activeChatSessionId}
+          isLiveMode={isLiveMode}
+          onToggleLiveMode={handleToggleLiveMode}
         />
         
-        {activeChatSessionId ? (
-          <main className="chat-container">
-            <MessageList 
-              messages={messages} 
-              isLoadingMessages={isLoadingMessages}
-              isUploadingImage={isUploadingMedia}
-              currentBotResponse={currentBotResponse}
-            />
-            
-            <MessageInput 
-              ref={messageInputRef}
-              onSendMessage={handleSendMessage} 
-              isDisabled={isChatDisabled}
-              isLoading={isApiLoading || isUploadingMedia}
-              provider={provider}
-            />
-          </main>
+        {isLiveMode ? (
+          <LiveInteraction apiKey={apiKey} />
         ) : (
-          <div className="no-active-chat">
-            <h2>Welcome to Chat App!</h2>
-            <p>Select a chat from the sidebar or create a new one to start messaging.</p>
-            <button onClick={() => handleCreateNewChat(true)}>Start New Chat</button>
-          </div>
+          <>
+            {activeChatSessionId ? (
+              <main className="chat-container">
+                <MessageList 
+                  messages={messages} 
+                  isLoadingMessages={isLoadingMessages}
+                  isUploadingImage={isUploadingMedia}
+                  currentBotResponse={currentBotResponse}
+                />
+                
+                <MessageInput 
+                  ref={messageInputRef}
+                  onSendMessage={handleSendMessage} 
+                  isDisabled={isChatDisabled}
+                  isLoading={isApiLoading || isUploadingMedia}
+                  provider={provider}
+                />
+              </main>
+            ) : (
+              <div className="no-active-chat">
+                <h2>Welcome to Chat App!</h2>
+                <p>Select a chat from the sidebar or create a new one to start messaging.</p>
+                <button onClick={() => handleCreateNewChat(true)}>Start New Chat</button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

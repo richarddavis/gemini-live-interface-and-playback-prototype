@@ -48,6 +48,4 @@ def create_app():
     from .api import api as api_blueprint
     app.register_blueprint(api_blueprint, url_prefix='/api')
 
-    from .api import live # Import the live WebSocket handlers
-    
     return app 

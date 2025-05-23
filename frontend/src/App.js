@@ -5,7 +5,7 @@ import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
 import { useChatApi } from './hooks/useChatApi';
-import LiveInteraction from './components/LiveInteraction';
+import LiveChat from './components/LiveChat';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -277,11 +277,7 @@ function App() {
   };
 
   const handleToggleLiveMode = () => {
-    // Prevent switching to live mode if provider is not gemini or API key is missing
-    if (!isLiveMode && (provider !== 'gemini' || !apiKey)) {
-      alert('Please select Gemini as the provider and enter your API key to use Live Interaction.');
-      return;
-    }
+    // Live mode uses backend service account authentication, no API key needed
     console.log('Toggling live mode. Current:', isLiveMode);
     setIsLiveMode(prevMode => !prevMode);
     console.log('Live mode will be:', !isLiveMode);
@@ -312,7 +308,7 @@ function App() {
         />
         
         {isLiveMode ? (
-          <LiveInteraction apiKey={apiKey} />
+          <LiveChat />
         ) : (
           <>
             {activeChatSessionId ? (

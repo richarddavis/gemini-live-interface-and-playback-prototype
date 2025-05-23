@@ -12,8 +12,11 @@ services:
       - /app/node_modules
     environment:
       - REACT_APP_API_URL=http://localhost:5001/api
+      - REACT_APP_WEBSOCKET_URL=ws://localhost:8080
     depends_on:
       backend:
+        condition: service_started
+      websocket_proxy:
         condition: service_started
 
   backend:
@@ -24,15 +27,15 @@ services:
       - "5001:5000"
     volumes:
       - ./backend:/app
-      # To use GCP authentication, uncomment and modify:
-      - ~/.secrets/gcp/generative-fashion-355408-33bf54a8a28f.json:/app/gcp-key.json:ro
+      # Fixed GCP service account key path
+      - ./.secrets/gcp/generative-fashion-355408-d2acee530882.json:/app/gcp-key.json:ro
     environment:
       - FLASK_APP=wsgi.py
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
       # GCS configuration
       - GCS_BUCKET_NAME=cursor-test-llm-assets
-      # Uncomment if using service account key:
+      # Service account key for authentication
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
     depends_on:
       db:
@@ -44,6 +47,23 @@ services:
         echo "Starting Gunicorn..." &&
         gunicorn -k eventlet --bind 0.0.0.0:5000 wsgi:app
       '
+
+  websocket_proxy:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+      # Mount the same service account key
+      - ./.secrets/gcp/generative-fashion-355408-d2acee530882.json:/app/gcp-key.json:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - DEBUG=true
+    command: python run_live_proxy.py
+    depends_on:
+      - backend
 
   db:
     image: postgres:15

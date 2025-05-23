@@ -11,7 +11,10 @@ RUN pip install --no-cache-dir eventlet
 
 COPY . .
 
-EXPOSE 5000
+# Make startup script executable
+RUN chmod +x start_services.sh
 
-# Use CMD as array of arguments to pass to the entrypoint
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "wsgi:app"] 
+EXPOSE 5000 8080
+
+# Use the startup script to run both services
+CMD ["./start_services.sh"] 

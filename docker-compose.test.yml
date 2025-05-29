@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Test service based on backend configuration
+  test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+      # Use the existing .secrets directory structure
+      - ./.secrets/gcp/generative-fashion-355408-d2acee530882.json:/app/gcp-key.json:ro
+      # Mount test files
+      - ./test_live_text_communication.py:/app/test_live_text_communication.py:ro
+      - ./test_results:/app/test_results
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      # Support both authentication methods
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
+      - PYTHONUNBUFFERED=1
+    command: python test_live_text_communication.py
+    # Remove profiles so it can be run more easily
+    
+  # Alternative: Run tests in the existing backend container
+  test-in-backend:
+    extends:
+      service: backend
+      file: docker-compose.yml
+    volumes:
+      - ./test_live_text_communication.py:/app/test_live_text_communication.py:ro
+      - ./test_results:/app/test_results
+    environment:
+      # Support both authentication methods
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
+      - PYTHONUNBUFFERED=1
+    command: python test_live_text_communication.py
+    depends_on:
+      db:
+        condition: service_healthy 

@@ -2,19 +2,24 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements first for better caching
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install an asynchronous worker for Gunicorn with SocketIO
-RUN pip install --no-cache-dir eventlet
+# Install additional packages for testing
+RUN pip install --no-cache-dir google-genai colorama
 
+# Copy application code
 COPY . .
 
-# Make startup script executable
-RUN chmod +x start_services.sh
+# Expose port
+EXPOSE 5000
 
-EXPOSE 5000 8080
-
-# Use the startup script to run both services
-CMD ["./start_services.sh"] 
+# Default command
+CMD ["gunicorn", "-k", "eventlet", "--bind", "0.0.0.0:5000", "wsgi:app"] 

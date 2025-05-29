@@ -25,6 +25,19 @@ venv/
 ENV/
 .env
 
+# Secrets and credentials
+.secrets/
+*.key
+*.pem
+*-key.json
+*key.json
+gcp-key.json
+service-account*.json
+
+# Test results
+test_results/
+*.test.log
+
 # Database
 *.sqlite3
 *.db

@@ -26,29 +26,6 @@ const LiveChat = () => {
     }
   }, [messages]);
 
-  // Get access token from backend
-  const getAccessToken = async () => {
-    try {
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
-      const response = await fetch(`${apiUrl}/token`);
-      const data = await response.json();
-      if (data.token) {
-        return data.token;
-      } else {
-        throw new Error(data.error || 'Failed to get access token');
-      }
-    } catch (error) {
-      console.error('Error getting access token:', error);
-      setMessages(prev => [...prev, {
-        role: 'system',
-        content: `Error getting access token: ${error.message}`,
-        type: 'text',
-        timestamp: Date.now()
-      }]);
-      return null;
-    }
-  };
-
   // Function to play audio data
   const playAudio = (base64AudioData) => {
     if (!audioRef.current) return;

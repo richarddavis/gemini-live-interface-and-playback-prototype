@@ -6,6 +6,7 @@ import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
 import { useChatApi } from './hooks/useChatApi';
 import LiveChat from './components/LiveChat';
+import LiveChatEnhanced from './components/LiveChatEnhanced';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -20,6 +21,7 @@ function App() {
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
   const [isLiveMode, setIsLiveMode] = useState(false);
+  const [useLegacyLiveChat, setUseLegacyLiveChat] = useState(false);
   const messageInputRef = useRef(null);
   
   // API hook
@@ -308,7 +310,30 @@ function App() {
         />
         
         {isLiveMode ? (
-          <LiveChat />
+          <div className="live-mode-container">
+            {/* Live Chat Version Selector */}
+            <div className="live-chat-selector">
+              <button
+                className={`version-btn ${!useLegacyLiveChat ? 'active' : ''}`}
+                onClick={() => setUseLegacyLiveChat(false)}
+              >
+                🚀 Enhanced Live Chat (Camera + Mic)
+              </button>
+              <button
+                className={`version-btn ${useLegacyLiveChat ? 'active' : ''}`}
+                onClick={() => setUseLegacyLiveChat(true)}
+              >
+                📡 Legacy Live Chat (WebSocket)
+              </button>
+            </div>
+            
+            {/* Render selected Live Chat component */}
+            {useLegacyLiveChat ? (
+              <LiveChat />
+            ) : (
+              <LiveChatEnhanced />
+            )}
+          </div>
         ) : (
           <>
             {activeChatSessionId ? (

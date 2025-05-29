@@ -53,7 +53,7 @@ async def test_text_communication():
     
     try:
         # Import the google-genai SDK components
-        try:
+try:
             from google import genai
             from google.genai.types import (
                 Content,
@@ -63,7 +63,7 @@ async def test_text_communication():
                 Part,
             )
             print_status("✓ Successfully imported google-genai SDK", "SUCCESS")
-        except ImportError as e:
+except ImportError as e:
             print_status(f"✗ Failed to import google-genai SDK: {e}", "ERROR")
             print_status("Install with: pip install google-genai", "WARNING")
             return False
@@ -310,7 +310,7 @@ async def test_conversation_memory():
             
             second_response = "".join(response_parts)
             print_status(f"Memory test - Response: {second_response}", "SUCCESS")
-            
+                
             # Check if it remembered
             memory_check = ("alice" in second_response.lower() and "blue" in second_response.lower())
             
@@ -365,7 +365,7 @@ async def main():
     
     # Test 2: Audio Communication  
     results["audio_communication"] = await test_audio_communication()
-    
+            
     # Test 3: Conversation Memory
     results["conversation_memory"] = await test_conversation_memory()
     

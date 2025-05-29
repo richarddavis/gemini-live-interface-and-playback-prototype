@@ -2,302 +2,565 @@
 Flask Routes for Live API Integration
 ====================================
 
-These routes show how to integrate Google AI Studio Live API
-into your existing Flask application for camera/microphone streaming.
+These routes provide real-time audio/video streaming capabilities
+using the Google Gemini Live API and GenAI SDK.
 """
 
 import json
 import logging
-from flask import Blueprint
-from flask import request, jsonify, Response
+import os
+import asyncio
+import base64
+from flask import Blueprint, request, jsonify, Response, stream_template
+from typing import Dict, Any
+
+from ..services.live_api_service import LiveAPIService, LiveSessionConfig
 
 logger = logging.getLogger(__name__)
 
 # Create blueprint for Live API routes
 live_api_bp = Blueprint('live_api', __name__, url_prefix='/live')
 
-# Store active sessions (in production, use Redis or similar)
-active_sessions = {}
+# Initialize the Live API service
+def get_live_api_service() -> LiveAPIService:
+    """Get Live API service instance with API key."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "GEMINI_API_KEY environment variable is required. "
+            "Get it from https://aistudio.google.com/app/apikey"
+        )
+    return LiveAPIService(api_key)
 
-@live_api_bp.route('/start-session', methods=['POST'])
-def start_live_session():
+def run_async(coro):
+    """Helper to run async functions in Flask context."""
+    try:
+        # Try to get existing event loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is running, create a new thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, coro)
+                return future.result()
+        else:
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        # No event loop in current thread
+        return asyncio.run(coro)
+
+@live_api_bp.route('/text-conversation', methods=['POST'])
+def text_conversation():
+    """Start a simple text conversation with the Live API."""
+    try:
+        data = request.get_json()
+        message = data.get('message', 'Hello!')
+        
+        service = get_live_api_service()
+        
+        # Create async function to handle the conversation
+        async def handle_conversation():
+            try:
+                # Use the simple conversation method
+                response_text = await service.create_simple_text_conversation(
+                    message=message,
+                    voice=data.get('voice', 'Puck'),
+                    model=data.get('model', 'gemini-2.0-flash-live-001')
+                )
+                
+                return {
+                    "success": True,
+                    "message": message,
+                    "response": response_text,
+                }
+            except Exception as e:
+                logger.error(f"Error in conversation: {e}")
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+        
+        # Run the async conversation
+        result = run_async(handle_conversation())
+        
+        if result.get("success"):
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        logger.error(f"Error in text conversation: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@live_api_bp.route('/audio-conversation', methods=['POST'])
+def audio_conversation():
     """
-    Start a new Live API session for camera/microphone streaming
+    Have an audio conversation with Live API
     
-    POST /api/live/start-session
+    POST /api/live/audio-conversation
+    Content-Type: application/json
     {
-        "session_type": "camera",  // "camera", "microphone", "text"
-        "voice_name": "Aoede",     // optional
-        "language": "en-US",       // optional
-        "system_instruction": "..."  // optional
+        "audio_data": "base64_encoded_audio_data",
+        "voice_name": "Aoede",           // optional
+        "language": "en-US",             // optional
+        "system_instruction": "...",     // optional
+        "model": "gemini-2.0-flash-live-001"  // optional
     }
     """
     try:
         data = request.get_json() or {}
-        session_type = data.get('session_type', 'camera')
+        audio_data_b64 = data.get('audio_data')
+        
+        if not audio_data_b64:
+            return jsonify({'success': False, 'error': 'Audio data is required'}), 400
+        
+        # Decode base64 audio data
+        try:
+            audio_data = base64.b64decode(audio_data_b64)
+        except Exception as e:
+            return jsonify({'success': False, 'error': 'Invalid base64 audio data'}), 400
         
         # Create session configuration
-        config = {
-            'session_type': session_type,
-            'voice_name': data.get('voice_name', 'Aoede'),
-            'language_code': data.get('language', 'en-US'),
-            'system_instruction': data.get('system_instruction', 
-                "You can see the user through their camera and hear them through their microphone. "
-                "Respond naturally and helpfully to what you observe."),
-            'enable_camera': session_type in ['camera'],
-            'enable_microphone': session_type in ['camera', 'microphone'],
-            'response_modalities': ['AUDIO'] if session_type != 'text' else ['TEXT']
-        }
+        session_config = LiveSessionConfig(
+            session_type="audio",
+            voice_name=data.get('voice_name', 'Aoede'),
+            language_code=data.get('language', 'en-US'),
+            system_instruction=data.get('system_instruction'),
+            model=data.get('model', 'gemini-2.0-flash-live-001')
+        )
         
-        # Create session ID
-        session_id = f"session_{len(active_sessions) + 1}_{hash(str(data))}"
+        live_service = get_live_api_service()
         
-        # Store session config
-        active_sessions[session_id] = {
-            'config': config,
-            'status': 'created',
-            'session': None
-        }
+        def generate():
+            try:
+                async def get_response():
+                    audio_chunks = []
+                    async for audio_chunk in live_service.audio_conversation(audio_data, session_config):
+                        if audio_chunk:
+                            # Convert audio bytes to base64 for JSON response
+                            audio_b64 = base64.b64encode(audio_chunk).decode('utf-8')
+                            yield f"data: {json.dumps({'audio': audio_b64})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                for chunk in run_async(get_response()):
+                    yield chunk
+                    
+            except Exception as e:
+                logger.error(f"Error in audio conversation: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
         
-        return jsonify({
-            'success': True,
-            'session_id': session_id,
-            'config': {
-                'session_type': session_type,
-                'voice_name': config['voice_name'],
-                'language': config['language_code'],
-                'camera_enabled': config['enable_camera'],
-                'microphone_enabled': config['enable_microphone']
-            }
-        })
+        return Response(generate(), mimetype='text/plain')
         
     except Exception as e:
-        logger.error(f"Error starting Live API session: {e}")
+        logger.error(f"Error in audio conversation endpoint: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@live_api_bp.route('/session/<session_id>/status', methods=['GET'])
-def get_session_status(session_id):
-    """Get status of a Live API session"""
-    session_info = active_sessions.get(session_id)
-    if not session_info:
-        return jsonify({'success': False, 'error': 'Session not found'}), 404
-    
-    return jsonify({
-        'success': True,
-        'session_id': session_id,
-        'status': session_info['status'],
-        'config': {
-            'camera_enabled': session_info['config']['enable_camera'],
-            'microphone_enabled': session_info['config']['enable_microphone'],
-            'voice_name': session_info['config']['voice_name']
-        }
-    })
-
-@live_api_bp.route('/session/<session_id>/end', methods=['POST'])
-def end_live_session(session_id):
-    """End a Live API session"""
-    try:
-        session_info = active_sessions.get(session_id)
-        if not session_info:
-            return jsonify({'success': False, 'error': 'Session not found'}), 404
-        
-        # Mark session as ended
-        session_info['status'] = 'ended'
-        
-        # Remove from active sessions
-        del active_sessions[session_id]
-        
-        return jsonify({'success': True, 'session_id': session_id})
-        
-    except Exception as e:
-        logger.error(f"Error ending Live API session: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@live_api_bp.route('/sessions', methods=['GET'])
-def list_sessions():
-    """List all active sessions"""
-    return jsonify({
-        'success': True,
-        'sessions': [
-            {
-                'session_id': sid,
-                'status': info['status'],
-                'config': info['config']
-            }
-            for sid, info in active_sessions.items()
-        ]
-    })
-
-@live_api_bp.route('/health', methods=['GET'])
-def live_api_health():
-    """Health check for Live API service"""
-    return jsonify({
-        'success': True,
-        'service': 'Live API',
-        'status': 'healthy',
-        'active_sessions': len(active_sessions)
-    })
-
-@live_api_bp.route('/send-message', methods=['POST'])
-def send_message():
+@live_api_bp.route('/text-to-audio', methods=['POST'])
+def text_to_audio():
     """
-    Send a message through the Live API session
+    Send text and receive audio response
     
-    POST /api/live/send-message
+    POST /api/live/text-to-audio
     {
-        "session_id": "session_123",
-        "message": "Hello, how are you?"
+        "message": "Hello, how are you?",
+        "voice_name": "Aoede",           // optional
+        "language": "en-US",             // optional
+        "system_instruction": "...",     // optional
+        "model": "gemini-2.0-flash-live-001"  // optional
     }
     """
     try:
         data = request.get_json() or {}
-        session_id = data.get('session_id')
-        message = data.get('message', '')
+        message = data.get('message')
         
-        if not session_id or not message:
-            return jsonify({'success': False, 'error': 'session_id and message are required'}), 400
+        if not message:
+            return jsonify({'success': False, 'error': 'Message is required'}), 400
+        
+        # Create session configuration for audio response
+        session_config = LiveSessionConfig(
+            session_type="audio",
+            voice_name=data.get('voice_name', 'Aoede'),
+            language_code=data.get('language', 'en-US'),
+            system_instruction=data.get('system_instruction'),
+            model=data.get('model', 'gemini-2.0-flash-live-001')
+        )
+        session_config.response_modalities = ["AUDIO"]
+        
+        live_service = get_live_api_service()
+        
+        def generate():
+            try:
+                async def get_response():
+                    async for audio_chunk in live_service.text_to_audio(message, session_config):
+                        if audio_chunk:
+                            # Convert audio bytes to base64 for JSON response
+                            audio_b64 = base64.b64encode(audio_chunk).decode('utf-8')
+                            yield f"data: {json.dumps({'audio': audio_b64})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                for chunk in run_async(get_response()):
+                    yield chunk
+                    
+            except Exception as e:
+                logger.error(f"Error in text-to-audio: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        
+        return Response(generate(), mimetype='text/plain')
+        
+    except Exception as e:
+        logger.error(f"Error in text-to-audio endpoint: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@live_api_bp.route('/audio-to-text', methods=['POST'])
+def audio_to_text():
+    """
+    Send audio and receive text response
+    
+    POST /api/live/audio-to-text
+    {
+        "audio_data": "base64_encoded_audio_data",
+        "voice_name": "Aoede",           // optional
+        "language": "en-US",             // optional
+        "system_instruction": "...",     // optional
+        "model": "gemini-2.0-flash-live-001"  // optional
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        audio_data_b64 = data.get('audio_data')
+        
+        if not audio_data_b64:
+            return jsonify({'success': False, 'error': 'Audio data is required'}), 400
+        
+        # Decode base64 audio data
+        try:
+            audio_data = base64.b64decode(audio_data_b64)
+        except Exception as e:
+            return jsonify({'success': False, 'error': 'Invalid base64 audio data'}), 400
+        
+        # Create session configuration for text response
+        session_config = LiveSessionConfig(
+            session_type="text",
+            voice_name=data.get('voice_name', 'Aoede'),
+            language_code=data.get('language', 'en-US'),
+            system_instruction=data.get('system_instruction'),
+            model=data.get('model', 'gemini-2.0-flash-live-001')
+        )
+        
+        live_service = get_live_api_service()
+        
+        def generate():
+            try:
+                async def get_response():
+                    async for text_chunk in live_service.audio_to_text(audio_data, session_config):
+                        yield f"data: {json.dumps({'text': text_chunk})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                for chunk in run_async(get_response()):
+                    yield chunk
+                    
+            except Exception as e:
+                logger.error(f"Error in audio-to-text: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        
+        return Response(generate(), mimetype='text/plain')
+        
+    except Exception as e:
+        logger.error(f"Error in audio-to-text endpoint: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@live_api_bp.route('/multimodal-conversation', methods=['POST'])
+def multimodal_conversation():
+    """
+    Have a multimodal conversation (text, audio, image)
+    
+    POST /api/live/multimodal-conversation
+    {
+        "text": "What do you see in this image?",     // optional
+        "audio_data": "base64_encoded_audio_data",  // optional
+        "image_data": "base64_encoded_image_data",  // optional
+        "response_type": "text",                    // "text" or "audio"
+        "voice_name": "Aoede",                      // optional
+        "language": "en-US",                        // optional
+        "system_instruction": "...",                // optional
+        "model": "gemini-2.0-flash-live-001"       // optional
+    }
+    """
+    try:
+        data = request.get_json() or {}
+        text = data.get('text')
+        audio_data_b64 = data.get('audio_data')
+        image_data_b64 = data.get('image_data')
+        response_type = data.get('response_type', 'text')
+        
+        if not any([text, audio_data_b64, image_data_b64]):
+            return jsonify({'success': False, 'error': 'At least one input (text, audio, or image) is required'}), 400
+        
+        # Decode data if provided
+        audio_data = None
+        image_data = None
+        
+        if audio_data_b64:
+            try:
+                audio_data = base64.b64decode(audio_data_b64)
+            except Exception as e:
+                return jsonify({'success': False, 'error': 'Invalid base64 audio data'}), 400
+        
+        if image_data_b64:
+            try:
+                image_data = base64.b64decode(image_data_b64)
+            except Exception as e:
+                return jsonify({'success': False, 'error': 'Invalid base64 image data'}), 400
+        
+        # Create session configuration
+        session_config = LiveSessionConfig(
+            session_type="multimodal",
+            voice_name=data.get('voice_name', 'Aoede'),
+            language_code=data.get('language', 'en-US'),
+            system_instruction=data.get('system_instruction'),
+            model=data.get('model', 'gemini-2.0-flash-live-001')
+        )
+        
+        if response_type == "audio":
+            session_config.response_modalities = ["AUDIO"]
+        else:
+            session_config.response_modalities = ["TEXT"]
+        
+        live_service = get_live_api_service()
+        
+        def generate():
+            try:
+                async def get_response():
+                    async for response_chunk in live_service.multimodal_conversation(
+                        text=text, 
+                        audio_data=audio_data, 
+                        image_data=image_data, 
+                        session_config=session_config
+                    ):
+                        if isinstance(response_chunk, str):
+                            yield f"data: {json.dumps({'text': response_chunk})}\n\n"
+                        elif isinstance(response_chunk, bytes):
+                            # Convert audio bytes to base64
+                            audio_b64 = base64.b64encode(response_chunk).decode('utf-8')
+                            yield f"data: {json.dumps({'audio': audio_b64})}\n\n"
+                    yield f"data: {json.dumps({'done': True})}\n\n"
+                
+                for chunk in run_async(get_response()):
+                    yield chunk
+                    
+            except Exception as e:
+                logger.error(f"Error in multimodal conversation: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        
+        return Response(generate(), mimetype='text/plain')
+        
+    except Exception as e:
+        logger.error(f"Error in multimodal conversation endpoint: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@live_api_bp.route('/process-audio', methods=['POST'])
+def process_audio():
+    """
+    Process audio to the format required by Live API
+    
+    POST /api/live/process-audio
+    Content-Type: multipart/form-data with audio file
+    or
+    Content-Type: application/json
+    {
+        "audio_data": "base64_encoded_audio_data",
+        "input_format": "wav"  // optional
+    }
+    """
+    try:
+        live_service = get_live_api_service()
+        
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            # Handle file upload
+            if 'audio' not in request.files:
+                return jsonify({'success': False, 'error': 'Audio file is required'}), 400
             
-        session_info = active_sessions.get(session_id)
-        if not session_info:
-            return jsonify({'success': False, 'error': 'Session not found'}), 404
+            audio_file = request.files['audio']
+            if audio_file.filename == '':
+                return jsonify({'success': False, 'error': 'No audio file selected'}), 400
+            
+            audio_data = audio_file.read()
+            input_format = audio_file.filename.split('.')[-1] if '.' in audio_file.filename else 'wav'
         
-        # TODO: Integrate with actual Google Live API here
-        # For now, return a simulated response
-        ai_response = f"🤖 I received your message: '{message}'. Live API integration working! Add Google Live API connection here."
+        else:
+            # Handle JSON data
+            data = request.get_json() or {}
+            audio_data_b64 = data.get('audio_data')
+            
+            if not audio_data_b64:
+                return jsonify({'success': False, 'error': 'Audio data is required'}), 400
+            
+            try:
+                audio_data = base64.b64decode(audio_data_b64)
+            except Exception as e:
+                return jsonify({'success': False, 'error': 'Invalid base64 audio data'}), 400
+            
+            input_format = data.get('input_format', 'wav')
+        
+        # Process the audio
+        processed_audio = live_service.process_audio_for_live_api(audio_data, input_format)
+        
+        # Return processed audio as base64
+        processed_b64 = base64.b64encode(processed_audio).decode('utf-8')
         
         return jsonify({
             'success': True,
-            'session_id': session_id,
-            'response': ai_response,
-            'message_received': message
+            'processed_audio': processed_b64,
+            'format': '16-bit PCM, 16kHz, mono',
+            'size_bytes': len(processed_audio)
         })
         
     except Exception as e:
-        logger.error(f"Error sending message: {e}")
+        logger.error(f"Error processing audio: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# Example frontend JavaScript integration
-FRONTEND_EXAMPLE = """
-// Frontend JavaScript Example for Live API Integration
-// ===================================================
+@live_api_bp.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for Live API service."""
+    try:
+        api_key = os.getenv("GEMINI_API_KEY")
+        return jsonify({
+            "success": True,
+            "service": "Live API",
+            "status": "healthy",
+            "api_key_configured": bool(api_key),
+            "supported_models": ["gemini-2.0-flash-live-001"],
+            "available_voices": ["Aoede", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Zephyr"]
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "success": False,
+            "service": "Live API",
+            "status": "unhealthy",
+            "error": str(e)
+        }), 500
 
-class LiveAPIClient {
-    constructor() {
-        this.sessionId = null;
-        this.mediaStream = null;
-        this.apiUrl = '/api/live';
-    }
-    
-    async startCameraSession() {
-        try {
-            // 1. Start session
-            const response = await fetch(`${this.apiUrl}/start-session`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    session_type: 'camera',
-                    voice_name: 'Aoede',
-                    language: 'en-US',
-                    system_instruction: 'You are a helpful AI assistant that can see and hear.'
-                })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-                this.sessionId = result.session_id;
-                console.log('Session started:', this.sessionId);
-                
-                // 2. Start camera and microphone
-                await this.startMedia();
-                
-                return result;
-            } else {
-                throw new Error(result.error);
+@live_api_bp.route('/example', methods=['GET'])
+def example_usage():
+    """Return example usage for the Live API endpoints."""
+    examples = {
+        "text_conversation": {
+            "url": "/api/live/text-conversation",
+            "method": "POST",
+            "body": {
+                "message": "Hello! Can you see me?"
             }
-        } catch (error) {
-            console.error('Error starting session:', error);
-            throw error;
+        },
+        "create_session": {
+            "url": "/api/live/create-session",
+            "method": "POST",
+            "body": {
+                "session_type": "multimodal",
+                "voice": "Puck",
+                "model": "gemini-2.0-flash-live-001"
+            }
+        },
+        "connect_session": {
+            "url": "/api/live/session/{session_id}/connect",
+            "method": "POST",
+            "body": {}
+        },
+        "send_message": {
+            "url": "/api/live/session/{session_id}/send-message",
+            "method": "POST",
+            "body": {
+                "message": "Hello!"
+            }
+        },
+        "send_audio": {
+            "url": "/api/live/session/{session_id}/send-audio",
+            "method": "POST",
+            "body": {
+                "audio_data": "base64_encoded_audio_data"
+            }
+        },
+        "send_video": {
+            "url": "/api/live/session/{session_id}/send-video",
+            "method": "POST",
+            "body": {
+                "video_data": "base64_encoded_image_data"
+            }
         }
     }
     
-    async startMedia() {
-        try {
-            // Get camera and microphone access
-            this.mediaStream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true
-            });
-            
-            // Display video in a video element
-            const videoElement = document.getElementById('camera-feed');
-            if (videoElement) {
-                videoElement.srcObject = this.mediaStream;
-            }
-            
-            console.log('Media stream started');
-            return this.mediaStream;
-            
-        } catch (error) {
-            console.error('Error accessing media:', error);
-            throw error;
-        }
-    }
-    
-    async endSession() {
-        if (this.sessionId) {
-            try {
-                const response = await fetch(`${this.apiUrl}/session/${this.sessionId}/end`, {
-                    method: 'POST'
-                });
+    return jsonify({
+        "success": True,
+        "service": "Live API",
+        "examples": examples,
+        "documentation": "See https://ai.google.dev/gemini-api/docs/live for more details"
+    })
+
+@live_api_bp.route('/test-connection', methods=['POST'])
+def test_connection():
+    """Test basic Live API connection."""
+    try:
+        data = request.get_json() or {}
+        message = data.get('message', 'Hello!')
+        
+        async def test_live_api():
+            try:
+                api_key = os.getenv("GEMINI_API_KEY")
+                from google import genai
+                client = genai.Client(api_key=api_key)
                 
-                const result = await response.json();
-                
-                // Stop media streams
-                if (this.mediaStream) {
-                    this.mediaStream.getTracks().forEach(track => track.stop());
-                    this.mediaStream = null;
+                config = {
+                    "response_modalities": ["TEXT"]
                 }
                 
-                this.sessionId = null;
-                console.log('Session ended');
-                return result;
-                
-            } catch (error) {
-                console.error('Error ending session:', error);
-                throw error;
-            }
-        }
-    }
-    
-    async getSessionStatus() {
-        if (this.sessionId) {
-            const response = await fetch(`${this.apiUrl}/session/${this.sessionId}/status`);
-            return await response.json();
-        }
-        return null;
-    }
-}
+                async with client.aio.live.connect(
+                    model="gemini-2.0-flash-live-001",
+                    config=config
+                ) as session:
+                    
+                    await session.send_client_content(
+                        turns={"role": "user", "parts": [{"text": message}]},
+                        turn_complete=True
+                    )
+                    
+                    responses = []
+                    async for response in session.receive():
+                        if response.text is not None:
+                            responses.append(response.text)
+                        if response.server_content and response.server_content.turn_complete:
+                            break
+                    
+                    return ''.join(responses)
+                    
+            except Exception as e:
+                logger.error(f"Error in Live API test: {e}")
+                return f"Error: {e}"
+        
+        result = run_async(test_live_api())
+        
+        return jsonify({
+            "success": True,
+            "message": message,
+            "response": result
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in test connection: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
-// Usage Example:
-// const liveClient = new LiveAPIClient();
-// 
-// // Start session
-// document.getElementById('start-btn').onclick = async () => {
-//     try {
-//         await liveClient.startCameraSession();
-//         console.log('Live AI session active!');
-//     } catch (error) {
-//         console.error('Failed to start session:', error);
-//     }
-// };
-// 
-// // End session
-// document.getElementById('end-btn').onclick = async () => {
-//     await liveClient.endSession();
-// };
-"""
-
-@live_api_bp.route('/example')
-def get_frontend_example():
-    """Get frontend integration example"""
-    return Response(FRONTEND_EXAMPLE, mimetype='text/plain') 
+# Error handlers
+@live_api_bp.errorhandler(Exception)
+def handle_live_api_error(error):
+    """Handle Live API errors"""
+    logger.error(f"Live API error: {error}")
+    return jsonify({
+        'success': False,
+        'error': str(error),
+        'service': 'Live API'
+    }), 500 

@@ -47,5 +47,9 @@ def create_app():
     # Register blueprints
     from .api import api as api_blueprint
     app.register_blueprint(api_blueprint, url_prefix='/api')
+    
+    # Register WebSocket handlers for Live API
+    from .services.websocket_handler import register_websocket_handlers
+    register_websocket_handlers(socketio)
 
     return app 

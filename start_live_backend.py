@@ -1,77 +1,66 @@
 #!/usr/bin/env python3
 """
-Script to start both the WebSocket proxy and Flask backend for live chat functionality.
+Start Live API Backend Server
+============================
+
+This script starts the Flask backend with Live API integration.
 """
 
-import subprocess
-import sys
 import os
-import time
-import signal
-from threading import Thread
+import sys
+from dotenv import load_dotenv
 
-def start_websocket_proxy():
-    """Start the WebSocket proxy server."""
-    print("🚀 Starting WebSocket proxy server...")
-    cmd = [sys.executable, "backend/run_live_proxy.py"]
-    return subprocess.Popen(cmd, cwd=".")
+# Load environment variables
+load_dotenv()
 
-def start_flask_backend():
-    """Start the Flask backend server."""
-    print("🚀 Starting Flask backend server...")
-    env = os.environ.copy()
-    env["FLASK_APP"] = "app"
-    env["FLASK_ENV"] = "development"
+# Add backend to path
+sys.path.append('backend')
+
+def main():
+    """Start the backend server."""
     
-    cmd = [sys.executable, "-m", "flask", "run", "--host=0.0.0.0", "--port=5001"]
-    return subprocess.Popen(cmd, cwd="backend", env=env)
-
-def signal_handler(sig, frame):
-    """Handle interrupt signal to cleanup processes."""
-    print("\n🛑 Shutting down servers...")
-    for process in processes:
-        if process.poll() is None:  # Process is still running
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-    sys.exit(0)
-
-if __name__ == "__main__":
-    processes = []
+    # Check for required environment variables
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("❌ GEMINI_API_KEY not found in environment")
+        print("   Get your API key from: https://aistudio.google.com/app/apikey")
+        print("   Add it to your .env file: GEMINI_API_KEY=your_key_here")
+        return 1
     
-    # Set up signal handler for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    print("🚀 Starting Live API Backend Server...")
+    print(f"   API Key: {api_key[:10]}...{api_key[-4:]}")
     
     try:
-        # Start WebSocket proxy
-        proxy_process = start_websocket_proxy()
-        processes.append(proxy_process)
-        time.sleep(2)  # Give it a moment to start
+        # Import and start the app
+        from backend.app import create_app, socketio
         
-        # Start Flask backend
-        flask_process = start_flask_backend()
-        processes.append(flask_process)
-        time.sleep(2)  # Give it a moment to start
+        app = create_app()
         
-        print("\n✅ Both servers are running!")
-        print("📡 WebSocket Proxy: ws://localhost:8080")
-        print("🌐 Flask Backend: http://localhost:5001")
-        print("\nPress Ctrl+C to stop both servers")
+        print("✅ Flask app created successfully")
+        print("🔧 Live API routes registered at /api/live/")
+        print("📡 WebSocket handlers registered")
+        print("\n🌐 Server starting on http://localhost:5000")
+        print("   Health check: http://localhost:5000/api/live/health")
+        print("   API docs: http://localhost:5000/api/live/example")
         
-        # Wait for processes to complete or be interrupted
-        while True:
-            time.sleep(1)
-            # Check if any process has died
-            for i, process in enumerate(processes):
-                if process.poll() is not None:
-                    print(f"❌ Process {i} has stopped unexpectedly")
-                    signal_handler(signal.SIGTERM, None)
-                    
-    except KeyboardInterrupt:
-        signal_handler(signal.SIGINT, None)
+        # Start the server
+        socketio.run(
+            app,
+            host='0.0.0.0',
+            port=5000,
+            debug=True,
+            allow_unsafe_werkzeug=True
+        )
+        
+    except ImportError as e:
+        print(f"❌ Import error: {e}")
+        print("   Make sure all dependencies are installed:")
+        print("   pip install -r backend/requirements.txt")
+        return 1
+        
     except Exception as e:
-        print(f"❌ Error: {e}")
-        signal_handler(signal.SIGTERM, None) 
+        print(f"❌ Failed to start server: {e}")
+        return 1
+
+if __name__ == "__main__":
+    exit(main()) 

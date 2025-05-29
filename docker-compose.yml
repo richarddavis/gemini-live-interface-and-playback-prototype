@@ -42,7 +42,7 @@ services:
       # Vertex AI settings
       - GOOGLE_CLOUD_PROJECT=generative-fashion-355408
       - GOOGLE_CLOUD_LOCATION=us-central1
-      - GOOGLE_GENAI_USE_VERTEXAI=True
+      - GOOGLE_GENAI_USE_VERTEXAI=False
     depends_on:
       db:
         condition: service_healthy

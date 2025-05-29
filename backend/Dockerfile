@@ -15,6 +15,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Install additional packages for testing
 RUN pip install --no-cache-dir google-genai colorama
 
+# Install test dependencies for Live API
+RUN pip install --no-cache-dir \
+    google-genai>=1.0.0 \
+    colorama \
+    numpy \
+    websockets \
+    aiofiles \
+    pytest-asyncio
+
 # Copy application code
 COPY . .
 

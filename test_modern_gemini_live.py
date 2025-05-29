@@ -1,411 +1,412 @@
 #!/usr/bin/env python3
 """
-Test script for Modern Gemini Live API setup.
-Verifies configuration, authentication, and basic functionality.
+Modern Gemini Live API Test Based on Official Documentation
+==========================================================
+
+This test implements the Live API following the official Vertex AI documentation:
+- Uses correct model: gemini-2.0-flash-live-preview-04-09
+- Uses google-genai SDK (v1.0+) with async WebSocket connections
+- Implements proper authentication for Vertex AI
+- Tests text-to-text and text-to-audio communication
+
+Requirements:
+- google-genai>=1.0.0
+- Vertex AI service account authentication
+- Project ID: generative-fashion-355408
 """
 
 import asyncio
 import json
 import os
 import sys
-import websockets
-from pathlib import Path
 import logging
-from google.auth.transport.requests import Request
-from google.oauth2.service_account import Credentials
+from datetime import datetime
+from pathlib import Path
+import traceback
 
-# Add backend app to path
-sys.path.insert(0, str(Path(__file__).parent / "backend" / "app"))
+# Color output for better readability
+class Colors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
 
-try:
-    from gemini_live_config import GeminiLiveConfig, GeminiLiveModels
-    from live_websocket_proxy import GeminiLiveProxy
-except ImportError as e:
-    print(f"❌ Import error: {e}")
-    print("Make sure you're running from the project root and backend dependencies are installed")
-    sys.exit(1)
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-class ModernGeminiLiveTest:
-    """Test suite for modern Gemini Live API setup."""
-    
-    def __init__(self):
-        self.results = {}
-        
-    def test_configuration(self):
-        """Test configuration classes and settings."""
-        try:
-            # Test GeminiLiveConfig
-            config = GeminiLiveConfig()
-            assert hasattr(config, 'API_HOST')
-            assert hasattr(config, 'WEBSOCKET_URL')
-            assert config.API_HOST == "generativelanguage.googleapis.com"
-            assert "v1beta" in config.WEBSOCKET_URL
-            assert "BidiGenerateContent" in config.WEBSOCKET_URL
-            
-            # Test GeminiLiveModels
-            models = GeminiLiveModels()
-            default_model = models.get_default_model()
-            all_models = models.get_all_models()
-            assert default_model in all_models
-            assert len(all_models) > 0
-            
-            # Test model validation
-            assert config.validate_model(default_model) == True
-            assert config.validate_model("invalid-model") == False
-            
-            return True, "Configuration tests passed"
-        except Exception as e:
-            return False, f"Configuration test failed: {e}"
-    
-    def test_environment(self):
-        """Test environment setup and variables."""
-        try:
-            cred_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-            debug = os.getenv('DEBUG', 'false').lower() == 'true'
-            project_id = os.getenv('GOOGLE_CLOUD_PROJECT', '')
-            
-            result_info = f"Credentials: {cred_path}\n   Project ID: {project_id}\n   Debug: {debug}"
-            
-            if cred_path and Path(cred_path).exists():
-                return True, f"Environment configured correctly\n   {result_info}"
-            else:
-                return False, f"Missing or invalid credentials file\n   {result_info}"
-        except Exception as e:
-            return False, f"Environment test failed: {e}"
-    
-    def test_credentials(self):
-        """Test Google Cloud credentials and token generation."""
-        try:
-            from google.auth.transport.requests import Request
-            from google.oauth2.service_account import Credentials
-            
-            cred_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-            if not cred_path:
-                return False, "GOOGLE_APPLICATION_CREDENTIALS not set"
-            
-            credentials = Credentials.from_service_account_file(
-                cred_path,
-                scopes=[
-                    "https://www.googleapis.com/auth/cloud-platform",
-                    "https://www.googleapis.com/auth/generative-language"
-                ]
-            )
-            
-            request = Request()
-            credentials.refresh(request)
-            
-            if credentials.token:
-                return True, "Credentials loaded and token generated successfully"
-            else:
-                return False, "Failed to generate authentication token"
-        except Exception as e:
-            return False, f"Credentials test failed: {e}"
-    
-    def test_models(self):
-        """Test model configuration and features."""
-        try:
-            models = GeminiLiveModels()
-            config = GeminiLiveConfig()
-            
-            # Test available models
-            all_models = models.get_all_models()
-            default_model = models.get_default_model()
-            
-            assert len(all_models) > 0
-            assert default_model in all_models
-            
-            # Test model validation
-            for model in all_models:
-                assert config.validate_model(model) == True
-            
-            # Test specific models exist
-            assert models.GEMINI_2_0_FLASH_LIVE in all_models
-            assert models.GEMINI_2_5_FLASH_PREVIEW_NATIVE_AUDIO in all_models
-            
-            return True, f"Model tests passed. Found {len(all_models)} models"
-        except Exception as e:
-            return False, f"Model feature test failed: {e}"
-    
-    def test_message_enhancement(self):
-        """Test message enhancement functionality."""
-        try:
-            proxy = GeminiLiveProxy()
-            
-            # Test setup message enhancement
-            test_setup = {"setup": {"model": "invalid-model"}}
-            enhanced = proxy._enhance_client_message(test_setup)
-            
-            # Should have default model set
-            assert "setup" in enhanced
-            assert "model" in enhanced["setup"]
-            
-            # Test client content enhancement
-            test_content = {"client_content": {"turns": []}}
-            enhanced_content = proxy._enhance_client_message(test_content)
-            assert "client_content" in enhanced_content
-            
-            return True, "Message enhancement tests passed"
-        except Exception as e:
-            return False, f"Message enhancement test failed: {e}"
-    
-    def test_websocket_server(self):
-        """Test WebSocket server configuration."""
-        try:
-            config = GeminiLiveConfig()
-            
-            # Test URL format
-            url = config.WEBSOCKET_URL
-            assert url.startswith("wss://")
-            assert config.API_HOST in url
-            assert "BidiGenerateContent" in url
-            
-            # Test host resolution (basic connectivity test)
-            import socket
-            socket.gethostbyname(config.API_HOST)
-            
-            return True, f"WebSocket server configuration is valid\n   Endpoint: {url}\n   Host: {config.API_HOST}"
-        except Exception as e:
-            return False, f"WebSocket test failed: {e}"
-    
-    async def run_all_tests(self):
-        """Run all tests and display results."""
-        tests = [
-            ("configuration", self.test_configuration),
-            ("environment", self.test_environment), 
-            ("credentials", self.test_credentials),
-            ("models", self.test_models),
-            ("enhancement", self.test_message_enhancement),
-            ("websocket", self.test_websocket_server)
-        ]
-        
-        print("🧪 Modern Gemini Live API Test Suite")
-        print("=" * 50)
-        print("🚀 Running Modern Gemini Live API Tests...")
-        print()
-        
-        passed = 0
-        total = len(tests)
-        
-        for test_name, test_func in tests:
-            print(f"🔧 Testing {test_name.title()}...")
-            try:
-                success, message = test_func()
-                if success:
-                    print(f"✅ {message}")
-                    passed += 1
-                    self.results[test_name] = "PASS"
-                else:
-                    print(f"❌ {message}")
-                    self.results[test_name] = "FAIL"
-            except Exception as e:
-                print(f"❌ {test_name.title()} test failed with exception: {e}")
-                self.results[test_name] = "FAIL"
-        
-        print("\n" + "=" * 50)
-        print("📊 Test Results Summary:")
-        print("=" * 50)
-        
-        for test_name, result in self.results.items():
-            status_icon = "✅" if result == "PASS" else "❌"
-            print(f"{test_name:<12} | {status_icon} {result}")
-        
-        print("=" * 50)
-        print(f"Overall: {passed}/{total} tests passed")
-        
-        if passed == total:
-            print("🎉 All tests passed! Your Gemini Live API setup is ready.")
-        else:
-            print("⚠️  Some tests failed. Check the output above for details.")
-            print("\nCommon fixes:")
-            print("- Ensure GOOGLE_APPLICATION_CREDENTIALS is set correctly")
-            print("- Verify service account has proper permissions")
-            print("- Check that all dependencies are installed")
-        
-        return passed == total
-
-async def test_direct_gemini_connection():
-    """Test direct connection to Gemini Live API with corrected 2025 endpoint."""
-    
-    print("🧪 Testing Modern Gemini Live API Connection (2025)")
-    print("=" * 50)
-    
-    # Load credentials
-    key_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", ".secrets/gcp/generative-fashion-355408-d2acee530882.json")
-    if not os.path.exists(key_path):
-        print(f"❌ Service account key not found at: {key_path}")
-        return False
-    
-    try:
-        credentials = Credentials.from_service_account_file(
-            key_path,
-            scopes=[
-                "https://www.googleapis.com/auth/cloud-platform",
-                "https://www.googleapis.com/auth/generative-language"
-            ]
-        )
-        
-        # Get fresh access token
-        request = Request()
-        credentials.refresh(request)
-        access_token = credentials.token
-        print("✅ Successfully obtained access token")
-        
-    except Exception as e:
-        print(f"❌ Failed to get access token: {e}")
-        return False
-    
-    # Get configuration info with 2025 endpoint
-    config_info = GeminiLiveConfig.get_debug_info()
-    print(f"📡 WebSocket URL: {config_info['websocket_url']}")
-    print(f"🤖 Default Model: {config_info['default_model']}")
-    print(f"🎵 Available Voices: {', '.join(config_info['available_voices'])}")
-    
-    # Prepare headers for WebSocket connection with proper authorization
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
+def print_status(message, status="INFO"):
+    """Print colored status messages"""
+    colors = {
+        "INFO": Colors.OKBLUE,
+        "SUCCESS": Colors.OKGREEN,
+        "WARNING": Colors.WARNING,
+        "ERROR": Colors.FAIL,
+        "HEADER": Colors.HEADER
     }
+    color = colors.get(status, Colors.OKBLUE)
+    print(f"{color}{status}: {message}{Colors.ENDC}")
+
+async def test_text_communication():
+    """Test basic text-to-text communication using Live API"""
+    print_status("Testing Text Communication with Live API", "HEADER")
     
     try:
-        print("🔌 Connecting to Gemini Live API (2025)...")
+        # Import the google-genai SDK components
+        try:
+            from google import genai
+            from google.genai.types import (
+                Content,
+                LiveConnectConfig,
+                HttpOptions,
+                Modality,
+                Part,
+            )
+            print_status("✓ Successfully imported google-genai SDK", "SUCCESS")
+        except ImportError as e:
+            print_status(f"✗ Failed to import google-genai SDK: {e}", "ERROR")
+            print_status("Install with: pip install google-genai", "WARNING")
+            return False
+
+        # Set up environment for Vertex AI
+        PROJECT_ID = "generative-fashion-355408"
+        LOCATION = "us-central1"  # Changed from global to us-central1 for Live API support
         
-        async with websockets.connect(
-            config_info['websocket_url'],
-            additional_headers=headers,
-            ping_interval=30,
-            ping_timeout=10,
-            close_timeout=10
-        ) as websocket:
+        os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
+        os.environ["GOOGLE_CLOUD_LOCATION"] = LOCATION
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+        
+        print_status(f"✓ Configured for Vertex AI - Project: {PROJECT_ID}, Location: {LOCATION}", "SUCCESS")
+
+        # Create client with proper configuration
+        client = genai.Client(
+            http_options=HttpOptions(api_version="v1beta1"),
+            vertexai=True,
+            project=PROJECT_ID,
+            location=LOCATION
+        )
+        print_status("✓ Created genai.Client for Vertex AI", "SUCCESS")
+
+        # CRITICAL: Use the correct Live API model name
+        MODEL_ID = "gemini-2.0-flash-live-preview-04-09"
+        print_status(f"✓ Using Live API model: {MODEL_ID}", "SUCCESS")
+
+        # Configure for text-only communication
+        config = LiveConnectConfig(
+            response_modalities=[Modality.TEXT]
+        )
+        print_status("✓ Configured for text-only communication", "SUCCESS")
+
+        # Test the connection and communication
+        async with client.aio.live.connect(
+            model=MODEL_ID,
+            config=config,
+        ) as session:
+            print_status("✓ Successfully connected to Live API session", "SUCCESS")
             
-            print("✅ Successfully connected to Gemini Live API!")
+            # Send a test message
+            text_input = "Hello? Gemini, are you there? Please confirm you can hear me."
+            print_status(f"Sending: {text_input}", "INFO")
             
-            # Create a setup message with modern 2025 format
-            setup_message = GeminiLiveConfig.get_default_setup_message(
-                model=GeminiLiveModels.get_default_model(),
-                response_modalities=["TEXT"],
-                voice_name="Aoede",
-                system_instruction="You are a helpful AI assistant. Please respond with 'Hello! The connection is working perfectly with the 2025 API.'"
+            await session.send_client_content(
+                turns=Content(role="user", parts=[Part(text=text_input)])
+            )
+            print_status("✓ Successfully sent client content", "SUCCESS")
+
+            # Collect response
+            response_parts = []
+            async for message in session.receive():
+                if message.text:
+                    response_parts.append(message.text)
+                    print_status(f"Received text chunk: {message.text[:50]}...", "INFO")
+
+            full_response = "".join(response_parts)
+            print_status(f"Complete Response: {full_response}", "SUCCESS")
+            
+            if full_response.strip():
+                print_status("✓ Live API text communication test PASSED", "SUCCESS")
+                return {
+                    "status": "success",
+                    "input": text_input,
+                    "output": full_response,
+                    "model": MODEL_ID,
+                    "modality": "text"
+                }
+            else:
+                print_status("✗ Received empty response", "ERROR")
+                return {"status": "failed", "error": "Empty response"}
+
+    except Exception as e:
+        print_status(f"✗ Text communication test failed: {str(e)}", "ERROR")
+        print_status(f"Traceback: {traceback.format_exc()}", "ERROR")
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+async def test_audio_communication():
+    """Test text-to-audio communication using Live API"""
+    print_status("Testing Text-to-Audio Communication with Live API", "HEADER")
+    
+    try:
+        # Check for numpy dependency
+        try:
+            import numpy as np
+        except ImportError:
+            print_status("⚠ Skipping audio test - numpy not installed", "WARNING")
+            return {"status": "skipped", "reason": "numpy dependency missing"}
+        
+        from google import genai
+        from google.genai.types import (
+            Content,
+            LiveConnectConfig,
+            HttpOptions,
+            Modality,
+            Part,
+            SpeechConfig,
+            VoiceConfig,
+            PrebuiltVoiceConfig,
+        )
+
+        # Configuration
+        PROJECT_ID = "generative-fashion-355408"
+        LOCATION = "us-central1"  # Changed from global to us-central1 for Live API support
+        
+        os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
+        os.environ["GOOGLE_CLOUD_LOCATION"] = LOCATION
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+
+        client = genai.Client(
+            http_options=HttpOptions(api_version="v1beta1"),
+            vertexai=True,
+            project=PROJECT_ID,
+            location=LOCATION
+        )
+
+        MODEL_ID = "gemini-2.0-flash-live-preview-04-09"
+        
+        # Configure for audio output with voice settings
+        config = LiveConnectConfig(
+            response_modalities=[Modality.AUDIO],
+            speech_config=SpeechConfig(
+                voice_config=VoiceConfig(
+                    prebuilt_voice_config=PrebuiltVoiceConfig(
+                        voice_name="Aoede",  # Can be: Aoede, Puck, Charon, Kore, Fenrir, Leda, Orus, Zephyr
+                    )
+                ),
+            ),
+        )
+        print_status("✓ Configured for audio output with Aoede voice", "SUCCESS")
+
+        async with client.aio.live.connect(
+            model=MODEL_ID,
+            config=config,
+        ) as session:
+            print_status("✓ Successfully connected to Live API session", "SUCCESS")
+            
+            text_input = "Hello! Please say a brief greeting in a friendly voice."
+            print_status(f"Sending: {text_input}", "INFO")
+            
+            await session.send_client_content(
+                turns=Content(role="user", parts=[Part(text=text_input)])
+            )
+
+            # Collect audio data
+            audio_chunks = []
+            async for message in session.receive():
+                if (
+                    message.server_content.model_turn
+                    and message.server_content.model_turn.parts
+                ):
+                    for part in message.server_content.model_turn.parts:
+                        if part.inline_data:
+                            audio_data = np.frombuffer(part.inline_data.data, dtype=np.int16)
+                            audio_chunks.append(audio_data)
+                            print_status(f"Received audio chunk: {len(audio_data)} samples", "INFO")
+
+            if audio_chunks:
+                total_audio = np.concatenate(audio_chunks)
+                print_status(f"✓ Received {len(total_audio)} total audio samples at 24kHz", "SUCCESS")
+                print_status("✓ Live API audio communication test PASSED", "SUCCESS")
+                
+                # Optionally save audio file
+                audio_file = Path(f"test_results/live_api_audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.raw")
+                audio_file.parent.mkdir(exist_ok=True)
+                total_audio.tofile(audio_file)
+                print_status(f"Audio saved to: {audio_file}", "INFO")
+                
+                return {
+                    "status": "success",
+                    "input": text_input,
+                    "audio_samples": len(total_audio),
+                    "audio_file": str(audio_file),
+                    "model": MODEL_ID,
+                    "modality": "audio",
+                    "voice": "Aoede"
+                }
+            else:
+                print_status("✗ No audio data received", "ERROR")
+                return {"status": "failed", "error": "No audio data received"}
+
+    except Exception as e:
+        print_status(f"✗ Audio communication test failed: {str(e)}", "ERROR")
+        return {"status": "error", "error": str(e)}
+
+async def test_conversation_memory():
+    """Test conversation memory across multiple turns"""
+    print_status("Testing Conversation Memory with Live API", "HEADER")
+    
+    try:
+        from google import genai
+        from google.genai.types import (
+            Content,
+            LiveConnectConfig,
+            HttpOptions,
+            Modality,
+            Part,
+        )
+
+        PROJECT_ID = "generative-fashion-355408"
+        LOCATION = "us-central1"
+        
+        os.environ["GOOGLE_CLOUD_PROJECT"] = PROJECT_ID
+        os.environ["GOOGLE_CLOUD_LOCATION"] = LOCATION
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+
+        client = genai.Client(
+            http_options=HttpOptions(api_version="v1beta1"),
+            vertexai=True,
+            project=PROJECT_ID,
+            location=LOCATION
+        )
+
+        MODEL_ID = "gemini-2.0-flash-live-preview-04-09"
+        config = LiveConnectConfig(response_modalities=[Modality.TEXT])
+
+        async with client.aio.live.connect(model=MODEL_ID, config=config) as session:
+            print_status("✓ Connected for memory test", "SUCCESS")
+            
+            # First exchange - set context
+            first_input = "My name is Alice and my favorite color is blue. Remember this."
+            await session.send_client_content(
+                turns=Content(role="user", parts=[Part(text=first_input)])
             )
             
-            print("📤 Sending setup message...")
-            await websocket.send(json.dumps(setup_message))
+            response_parts = []
+            async for message in session.receive():
+                if message.text:
+                    response_parts.append(message.text)
             
-            # Wait for setup complete
-            setup_response = await websocket.recv()
-            setup_data = json.loads(setup_response)
-            print(f"📥 Setup response: {setup_data}")
+            first_response = "".join(response_parts)
+            print_status(f"First exchange - Response: {first_response[:100]}...", "INFO")
             
-            if setup_data.get("setupComplete") is not None:
-                print("✅ Setup completed successfully!")
-                
-                # Send a test message
-                test_message = {
-                    "clientContent": {
-                        "turns": [{
-                            "role": "user",
-                            "parts": [{"text": "Hello, Gemini! Can you confirm the 2025 connection is working?"}]
-                        }],
-                        "turnComplete": True
-                    }
+            # Second exchange - test memory
+            second_input = "What is my name and favorite color?"
+            await session.send_client_content(
+                turns=Content(role="user", parts=[Part(text=second_input)])
+            )
+            
+            response_parts = []
+            async for message in session.receive():
+                if message.text:
+                    response_parts.append(message.text)
+            
+            second_response = "".join(response_parts)
+            print_status(f"Memory test - Response: {second_response}", "SUCCESS")
+            
+            # Check if it remembered
+            memory_check = ("alice" in second_response.lower() and "blue" in second_response.lower())
+            
+            if memory_check:
+                print_status("✓ Live API conversation memory test PASSED", "SUCCESS")
+                return {
+                    "status": "success",
+                    "memory_retained": True,
+                    "first_input": first_input,
+                    "first_response": first_response,
+                    "second_input": second_input,
+                    "second_response": second_response
                 }
-                
-                print("📤 Sending test message...")
-                await websocket.send(json.dumps(test_message))
-                
-                # Receive response
-                response = await asyncio.wait_for(websocket.recv(), timeout=10.0)
-                response_data = json.loads(response)
-                print(f"📥 Response received: {response_data}")
-                
-                # Check if we got a text response
-                if response_data.get("serverContent", {}).get("modelTurn", {}).get("parts"):
-                    parts = response_data["serverContent"]["modelTurn"]["parts"]
-                    if parts and parts[0].get("text"):
-                        text_response = parts[0]["text"]
-                        print(f"🎉 SUCCESS! Gemini responded: {text_response}")
-                        return True
-                
-                print("⚠️ Received response but no text content found")
-                return False
-                
             else:
-                print(f"❌ Setup failed: {setup_data}")
-                return False
-            
-    except websockets.exceptions.InvalidStatusCode as e:
-        print(f"❌ WebSocket connection failed with status code: {e.status_code}")
-        print(f"   Headers: {e.response_headers}")
-        return False
-    except asyncio.TimeoutError:
-        print("❌ Timeout waiting for response")
-        return False
-    except Exception as e:
-        print(f"❌ Connection error: {e}")
-        return False
+                print_status("✗ Memory test failed - context not retained", "ERROR")
+                return {
+                    "status": "failed",
+                    "memory_retained": False,
+                    "second_response": second_response
+                }
 
-async def test_proxy_connection():
-    """Test connection through our WebSocket proxy."""
-    
-    print("\n🔄 Testing WebSocket Proxy Connection")
-    print("=" * 50)
-    
-    proxy_url = "ws://localhost:8080"
-    
-    try:
-        print(f"🔌 Connecting to proxy: {proxy_url}")
-        
-        async with websockets.connect(proxy_url) as websocket:
-            print("✅ Connected to proxy!")
-            
-            # Send a simple setup message through proxy
-            setup_message = {
-                "type": "setup",
-                "model": GeminiLiveModels.get_default_model(),
-                "systemInstructions": "You are a helpful AI assistant.",
-                "responseModalities": ["TEXT"]
-            }
-            
-            print("📤 Sending setup through proxy...")
-            await websocket.send(json.dumps(setup_message))
-            
-            # Wait for response
-            response = await asyncio.wait_for(websocket.recv(), timeout=10.0)
-            print(f"📥 Proxy response: {response}")
-            
-            return True
-            
     except Exception as e:
-        print(f"❌ Proxy connection error: {e}")
-        return False
+        print_status(f"✗ Memory test failed: {str(e)}", "ERROR")
+        return {"status": "error", "error": str(e)}
 
 async def main():
-    """Run all tests."""
-    print("🚀 Starting Gemini Live API Tests")
-    print("=" * 50)
+    """Run all Live API tests"""
+    print_status("Starting Modern Gemini Live API Tests", "HEADER")
+    print_status("=" * 60, "HEADER")
     
-    # Test 1: Direct connection to Gemini Live API
-    direct_success = await test_direct_gemini_connection()
+    # Configuration
+    PROJECT_ID = "generative-fashion-355408"
+    LOCATION = "us-central1"  # Changed from global to us-central1 for Live API support
+    MODEL_ID = "gemini-2.0-flash-live-preview-04-09"
     
-    # Test 2: Connection through proxy 
-    proxy_success = await test_proxy_connection()
+    # Test results storage
+    results = {}
+    
+    # Check dependencies
+    try:
+        import google.genai
+        print_status(f"✓ google-genai version: {google.genai.__version__}", "SUCCESS")
+    except ImportError:
+        print_status("✗ google-genai not installed. Install with: pip install google-genai", "ERROR")
+        return
+    except AttributeError:
+        print_status("✓ google-genai installed (version info not available)", "SUCCESS")
+
+    # Run tests
+    # Test 1: Text Communication
+    results["text_communication"] = await test_text_communication()
+    
+    # Test 2: Audio Communication  
+    results["audio_communication"] = await test_audio_communication()
+    
+    # Test 3: Conversation Memory
+    results["conversation_memory"] = await test_conversation_memory()
+    
+    # Save results
+    results_file = Path(f"test_results/modern_live_api_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    results_file.parent.mkdir(exist_ok=True)
+    
+    with open(results_file, 'w') as f:
+        json.dump({
+            "timestamp": datetime.now().isoformat(),
+            "test_framework": "Modern Gemini Live API Test",
+            "model": MODEL_ID,
+            "results": results
+        }, f, indent=2)
+    
+    print_status(f"Results saved to: {results_file}", "INFO")
     
     # Summary
-    print("\n📊 Test Results Summary")
-    print("=" * 50)
-    print(f"Direct Gemini Connection: {'✅ PASS' if direct_success else '❌ FAIL'}")
-    print(f"Proxy Connection: {'✅ PASS' if proxy_success else '❌ FAIL'}")
+    print_status("\n" + "=" * 60, "HEADER")
+    print_status("TEST SUMMARY", "HEADER")
+    print_status("=" * 60, "HEADER")
     
-    if direct_success and proxy_success:
-        print("\n🎉 All tests passed! Your Gemini Live API setup is working correctly.")
-    elif direct_success:
-        print("\n⚠️ Direct connection works, but proxy has issues.")
-    elif proxy_success:
-        print("\n⚠️ Proxy works, but direct connection has issues.")
-    else:
-        print("\n❌ Both tests failed. Please check your configuration.")
+    passed = sum(1 for result in results.values() if result.get("status") == "success")
+    total = len(results)
+    
+    for test_name, result in results.items():
+        status = "✓ PASSED" if result.get("status") == "success" else "✗ FAILED"
+        color = "SUCCESS" if result.get("status") == "success" else "ERROR"
+        print_status(f"{test_name}: {status}", color)
+        if result.get("error"):
+            print_status(f"  Error: {result.get('error')}", "ERROR")
+    
+    print_status(f"\nOverall: {passed}/{total} tests passed", 
+                "SUCCESS" if passed == total else "WARNING")
 
 if __name__ == "__main__":
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    
+    # Create results directory
+    Path("test_results").mkdir(exist_ok=True)
+    
+    # Run the tests
     asyncio.run(main()) 

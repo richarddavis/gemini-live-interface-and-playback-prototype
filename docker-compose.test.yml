@@ -12,11 +12,20 @@ services:
       - ./test_modern_gemini_live.py:/app/test_modern_gemini_live.py:ro
       - ./test_live_text_communication.py:/app/test_live_text_communication.py:ro
       - ./test_basic_auth.py:/app/test_basic_auth.py:ro
+      - ./test_comprehensive_live_api.py:/app/test_comprehensive_live_api.py:ro
+      - ./test_vertex_ai_live_alternatives.py:/app/test_vertex_ai_live_alternatives.py:ro
+      - ./test_google_ai_studio_live_api.py:/app/test_google_ai_studio_live_api.py:ro
+      - ./test_google_ai_studio_text_demo.py:/app/test_google_ai_studio_text_demo.py:ro
+      - ./test_live_connection.py:/app/test_live_connection.py:ro
       - ./test_results:/app/test_results
     environment:
+      # Vertex AI Authentication (existing)
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
       - GOOGLE_CLOUD_PROJECT=generative-fashion-355408
       - GOOGLE_CLOUD_LOCATION=us-central1
+      # Google AI Studio Authentication (new for Live API)
+      - GEMINI_API_KEY=AIzaSyAof56iear1iUvaJB-3UhRZtHy2ehT3c8U
+      # Application settings
       - PYTHONUNBUFFERED=1
       - DEBUG=false
     working_dir: /app
@@ -34,12 +43,20 @@ services:
       - ./test_modern_gemini_live.py:/app/test_modern_gemini_live.py:ro
       - ./test_live_text_communication.py:/app/test_live_text_communication.py:ro
       - ./test_basic_auth.py:/app/test_basic_auth.py:ro
+      - ./test_comprehensive_live_api.py:/app/test_comprehensive_live_api.py:ro
+      - ./test_vertex_ai_live_alternatives.py:/app/test_vertex_ai_live_alternatives.py:ro
+      - ./test_google_ai_studio_live_api.py:/app/test_google_ai_studio_live_api.py:ro
+      - ./test_google_ai_studio_text_demo.py:/app/test_google_ai_studio_text_demo.py:ro
+      - ./test_live_connection.py:/app/test_live_connection.py:ro
       - ./test_results:/app/test_results
     environment:
+      # Vertex AI Authentication (existing)
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
       - GOOGLE_CLOUD_PROJECT=generative-fashion-355408
       - GOOGLE_CLOUD_LOCATION=us-central1
+      # Google AI Studio Authentication (new for Live API)
+      - GEMINI_API_KEY=AIzaSyAof56iear1iUvaJB-3UhRZtHy2ehT3c8U
+      # Application settings
       - PYTHONUNBUFFERED=1
-      - DEBUG=false
     working_dir: /app
-    command: python test_modern_gemini_live.py 
+    command: python test_comprehensive_live_api.py 

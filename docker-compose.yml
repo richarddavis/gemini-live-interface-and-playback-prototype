@@ -27,8 +27,10 @@ services:
       - "5001:5000"
     volumes:
       - ./backend:/app
-      # Fixed GCP service account key path
-      - ./.secrets/gcp/generative-fashion-355408-d2acee530882.json:/app/gcp-key.json:ro
+      # Updated to use new working service account key
+      - ./.secrets/gcp/generative-fashion-355408-new-key.json:/app/gcp-key.json:ro
+    env_file:
+      - .env  # Load environment variables from .env file (including GEMINI_API_KEY)
     environment:
       - FLASK_APP=wsgi.py
       - FLASK_ENV=development
@@ -37,6 +39,10 @@ services:
       - GCS_BUCKET_NAME=cursor-test-llm-assets
       # Service account key for authentication
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      # Vertex AI settings
+      - GOOGLE_CLOUD_PROJECT=generative-fashion-355408
+      - GOOGLE_CLOUD_LOCATION=us-central1
+      - GOOGLE_GENAI_USE_VERTEXAI=True
     depends_on:
       db:
         condition: service_healthy
@@ -56,10 +62,14 @@ services:
       - "8080:8080"
     volumes:
       - ./backend:/app
-      # Mount the same service account key
-      - ./.secrets/gcp/generative-fashion-355408-d2acee530882.json:/app/gcp-key.json:ro
+      # Updated to use new working service account key
+      - ./.secrets/gcp/generative-fashion-355408-new-key.json:/app/gcp-key.json:ro
+    env_file:
+      - .env  # Load environment variables from .env file (including GEMINI_API_KEY)
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-key.json
+      - GOOGLE_CLOUD_PROJECT=generative-fashion-355408
+      - GOOGLE_CLOUD_LOCATION=us-central1
       - DEBUG=true
     command: python run_live_proxy.py
     depends_on:

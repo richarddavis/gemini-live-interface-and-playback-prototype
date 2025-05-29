@@ -136,7 +136,7 @@ async def test_text_communication():
                 print_status("✗ Received empty response", "ERROR")
                 return {"status": "failed", "error": "Empty response"}
 
-    except Exception as e:
+        except Exception as e:
         print_status(f"✗ Text communication test failed: {str(e)}", "ERROR")
         print_status(f"Traceback: {traceback.format_exc()}", "ERROR")
         return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
@@ -245,7 +245,7 @@ async def test_audio_communication():
                 print_status("✗ No audio data received", "ERROR")
                 return {"status": "failed", "error": "No audio data received"}
 
-    except Exception as e:
+        except Exception as e:
         print_status(f"✗ Audio communication test failed: {str(e)}", "ERROR")
         return {"status": "error", "error": str(e)}
 

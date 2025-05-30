@@ -1,24 +1,26 @@
 Flask==2.3.3
-Flask-SQLAlchemy==3.1.1
+Flask-CORS==4.0.0
+Flask-SQLAlchemy==3.0.5
 Flask-Migrate==4.0.5
-Flask-Cors==4.0.0
-psycopg2-binary==2.9.9
 python-dotenv==1.0.0
 gunicorn==21.2.0
+alembic==1.12.0
+
+# For logging and basic analytics
+requests==2.31.0
+psycopg2-binary==2.9.7
+
+# LLM Providers (for traditional chat)
 openai>=1.0.0
-google-cloud-storage==2.14.0
-google-auth>=2.40.0
-google-auth-oauthlib>=1.0.0
-google-genai>=1.16.0
-flask-socketio>=5.3.0
-websockets>=12.0
-eventlet>=0.40.0
-# Audio processing for Live API
-librosa>=0.10.0
-soundfile>=0.12.0
-# WebSocket client for real-time communication
-websocket-client>=1.6.0
-# Async HTTP client
-aiohttp>=3.9.0
-# JSON handling
-orjson>=3.9.0 
+google-generativeai
+anthropic
+
+# Google Cloud (for Vertex AI provider)
+google-cloud-aiplatform
+google-auth
+google-auth-oauthlib
+
+# Remove complex dependencies:
+# - librosa (audio processing moved to frontend)
+# - numpy (not needed for simple backend)
+# - asyncio-related packages (WebSocket proxy removed) 

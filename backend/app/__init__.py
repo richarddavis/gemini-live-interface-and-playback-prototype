@@ -2,7 +2,6 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
-from flask_socketio import SocketIO
 import os
 from dotenv import load_dotenv
 from .config import Config
@@ -11,7 +10,6 @@ load_dotenv()
 
 db = SQLAlchemy()
 migrate = Migrate()
-socketio = SocketIO()
 
 def create_app():
     app = Flask(__name__)
@@ -23,21 +21,12 @@ def create_app():
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@db:5432/webapp')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Enable CORS
-    CORS(app)
+    # Enable CORS for frontend connections
+    CORS(app, origins=['http://localhost:3000', 'http://127.0.0.1:3000'])
     
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
-    
-    # Initialize SocketIO with more explicit configuration
-    socketio.init_app(
-        app, 
-        cors_allowed_origins="*",
-        async_mode='eventlet',
-        logger=True,
-        engineio_logger=True
-    )
     
     # Create uploads directory
     with app.app_context():
@@ -47,9 +36,5 @@ def create_app():
     # Register blueprints
     from .api import api as api_blueprint
     app.register_blueprint(api_blueprint, url_prefix='/api')
-    
-    # Register WebSocket handlers for Live API
-    from .services.websocket_handler import register_websocket_handlers
-    register_websocket_handlers(socketio)
 
     return app 

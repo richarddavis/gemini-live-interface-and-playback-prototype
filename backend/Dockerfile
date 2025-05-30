@@ -12,23 +12,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional packages for testing
-RUN pip install --no-cache-dir google-genai colorama
-
-# Install test dependencies for Live API
-RUN pip install --no-cache-dir \
-    google-genai>=1.0.0 \
-    colorama \
-    numpy \
-    websockets \
-    aiofiles \
-    pytest-asyncio
-
 # Copy application code
 COPY . .
 
 # Expose port
 EXPOSE 5000
 
-# Default command
-CMD ["gunicorn", "-k", "eventlet", "--bind", "0.0.0.0:5000", "wsgi:app"] 
+# Default command - use sync workers for simplified backend
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "wsgi:app"] 

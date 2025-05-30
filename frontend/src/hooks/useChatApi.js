@@ -8,7 +8,7 @@ export function useChatApi(apiUrl) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/chat_sessions`);
+      const response = await fetch(`${apiUrl}/api/chat_sessions`);
       if (!response.ok) throw new Error('Failed to fetch chat sessions');
       return await response.json();
     } catch (error) {
@@ -24,7 +24,7 @@ export function useChatApi(apiUrl) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/chat_sessions`, { 
+      const response = await fetch(`${apiUrl}/api/chat_sessions`, { 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -47,7 +47,7 @@ export function useChatApi(apiUrl) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/chat_sessions/${sessionId}/messages`);
+      const response = await fetch(`${apiUrl}/api/chat_sessions/${sessionId}/messages`);
       if (!response.ok) throw new Error('Failed to fetch messages for session');
       return await response.json();
     } catch (error) {
@@ -71,8 +71,8 @@ export function useChatApi(apiUrl) {
     console.log('Uploading file:', file.name, 'type:', file.type);
     
     try {
-      console.log('Upload request to:', `${apiUrl}/uploads`);
-      const response = await fetch(`${apiUrl}/uploads`, {
+      console.log('Upload request to:', `${apiUrl}/api/uploads`);
+      const response = await fetch(`${apiUrl}/api/uploads`, {
         method: 'POST',
         body: formData,
       });
@@ -117,7 +117,7 @@ export function useChatApi(apiUrl) {
     
     console.log('Streaming message data:', messageObj);
     
-    const eventSourceUrl = `${apiUrl}/chat_sessions/${sessionId}/respond_llm_stream?${params.toString()}`;
+    const eventSourceUrl = `${apiUrl}/api/chat_sessions/${sessionId}/respond_llm_stream?${params.toString()}`;
     console.log('Event source URL:', eventSourceUrl);
     
     const es = new EventSource(eventSourceUrl);

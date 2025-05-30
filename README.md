@@ -1,237 +1,279 @@
-# Full Stack Starter App with Live AI Integration
+# Full-Stack Chat Application with Google Gemini Live API
 
-A containerized starter application with:
-- React frontend
-- Flask backend with **Google AI Live API integration**
-- PostgreSQL database
-- **Real-time camera and microphone streaming** with Gemini Live
+A modern, dockerized full-stack web application featuring traditional chat with multiple LLM providers and **direct Google Gemini Live API integration** for real-time multimodal conversations.
 
-This starter app implements a task manager with **Live AI conversation capabilities** including camera vision and voice interaction.
+## 🏗️ Architecture
 
-## ✨ New: Live AI Features
+### Traditional Chat
+```
+Frontend (React) ↔ Backend (Flask) ↔ LLM APIs (OpenAI, Anthropic, etc.)
+                           ↓
+                  Database (PostgreSQL)
+```
 
-🎥 **Camera Streaming** - AI can see through user's camera  
-🎤 **Microphone Streaming** - AI can hear user's voice  
-🗣 **Voice Responses** - AI responds with natural speech  
-💬 **Real-time Chat** - Bidirectional text and voice communication  
-🤖 **AI Vision** - Gemini can analyze video feed in real-time  
+### Gemini Live API (NEW!)
+```
+Frontend (React) ↔ WebSocket ↔ Google Gemini Live API
+        ↓
+Backend (Analytics Only)
+```
 
-## Features
+## ✨ Features
 
-- **React Frontend**: Modern UI with state management
-- **Flask Backend**: RESTful API with SQLAlchemy ORM + **Live API integration**
-- **PostgreSQL**: Relational database
-- **Docker**: Containerized for easy setup and deployment
-- **Flask-Migrate**: For database schema migrations
-- **Live API Service**: Camera/microphone streaming with Google AI Studio
-- **Dual Authentication**: Vertex AI for enterprise + Google AI Studio for Live API
-- **Sample Application**: Task manager with Live AI conversation
+### 💬 Traditional Chat
+- **Multiple LLM Providers**: OpenAI, Anthropic, Google, Vertex AI
+- **Rich Media Support**: Images, videos, files
+- **Session Management**: Create, switch, delete conversations
+- **Streaming Responses**: Real-time message streaming
+- **Persistent Storage**: PostgreSQL database
 
-## Prerequisites
-
-- [Docker](https://www.docker.com/get-started) and Docker Compose
-- [Git](https://git-scm.com/downloads)
-- **Google AI Studio API Key** (for Live API features)
+### 🎤 Gemini Live API (Direct Connection)
+- **Real-time Voice Chat**: Natural voice conversations
+- **Video Streaming**: Camera input for visual context
+- **Multiple Voices**: Choose from 5 different AI voices
+- **Text + Voice**: Seamless switching between modalities
+- **Session Analytics**: Usage tracking and statistics
+- **Modern UI**: Clean, responsive interface
 
 ## 🚀 Quick Start
 
-### 1. Clone and Basic Setup
+### 1. Environment Setup
+
+Create `.env` file in the root directory:
+
 ```bash
-git clone <your-repo-url>
-cd webapp_starter_cursor
+# Database
+DATABASE_URL=postgresql://admin:password@db:5432/webapp
+
+# API Keys
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+GOOGLE_API_KEY=your_google_key
+
+# Gemini Live API (for direct connection)
+REACT_APP_GOOGLE_AI_STUDIO_API_KEY=your_gemini_live_key
+REACT_APP_API_URL=http://localhost:5001
+
+# Development
+FLASK_ENV=development
+REACT_APP_DEBUG=true
 ```
 
-### 2. Set Up Live AI (Optional but Recommended)
-```bash
-# Run the automated setup script
-./setup_google_ai_studio.sh
-```
-This will guide you to get your Google AI Studio API key and configure Live API features.
+### 2. Start with Docker
 
-**📚 For detailed setup: See [SETUP_LIVE_API_GUIDE.md](./SETUP_LIVE_API_GUIDE.md)**
-
-### 3. Start the Application
 ```bash
+# Start all services
 docker-compose up --build
+
+# Access the application
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:5001
 ```
 
-### 4. Access the Application
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:5001/api
-- **Live API**: http://localhost:5001/api/live/* (when configured)
+### 3. Manual Setup (Development)
 
-## Project Structure
-
-```
-.
-├── frontend/              # React frontend
-├── backend/               # Flask backend
-│   ├── app/               # Application package
-│   │   ├── api/           # API routes
-│   │   │   └── live_api_routes.py  # Live API routes (NEW)
-│   │   ├── services/      # Service layer
-│   │   │   └── live_api_service.py  # Live API service (NEW)
-│   │   ├── models.py      # Database models
-│   │   └── __init__.py    # App factory
-│   ├── migrations/        # Flask-Migrate migration scripts
-│   └── requirements.txt   # Python dependencies
-├── test_*.py              # Live API test suites
-├── docker-compose.yml     # Docker configuration
-├── .env.example           # Environment template
-└── SETUP_LIVE_API_GUIDE.md  # Live API setup guide
-```
-
-## API Endpoints
-
-### Original Endpoints
-- `GET /api/health` - Health check
-- `GET /api/tasks` - Get all tasks
-- `GET /api/tasks/:id` - Get a specific task
-- `POST /api/tasks` - Create a new task
-- `PUT /api/tasks/:id` - Update a task
-- `DELETE /api/tasks/:id` - Delete a task
-
-### 🆕 Live API Endpoints
-- `POST /api/live/start-session` - Start Live AI session
-- `GET /api/live/session/:id/status` - Get session status
-- `POST /api/live/session/:id/end` - End Live AI session
-- WebSocket events for real-time camera/microphone streaming
-
-## 🎯 Live AI Integration
-
-### Backend Integration
-```python
-from app.services.live_api_service import LiveAPIService
-
-# Start camera and microphone session
-live_service = LiveAPIService()
-session = await live_service.start_camera_session()
-
-# Send video frame
-await session.send_video_frame(frame_bytes)
-
-# Send audio chunk  
-await session.send_audio(audio_bytes)
-
-# Receive AI responses
-async for response in session.receive_responses():
-    if response.get("text"):
-        print(f"AI: {response['text']}")
-```
-
-### Frontend Integration
-```javascript
-// Start Live AI session
-const response = await fetch('/api/live/start-session', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({
-    session_type: 'camera',
-    voice_name: 'Aoede'
-  })
-});
-
-// Get camera and microphone access
-const stream = await navigator.mediaDevices.getUserMedia({
-  video: true,
-  audio: true
-});
-```
-
-## Development
-
-### Environment Setup
 ```bash
-# Copy environment template
-cp .env.example .env
+# Backend
+cd backend
+pip install -r requirements.txt
+flask db upgrade
+python wsgi.py
 
-# Add your Google AI Studio API key
-GEMINI_API_KEY="your_api_key_here"
-```
-
-### Testing Live API
-```bash
-# Test Live API functionality
-docker-compose -f docker-compose.test.yml run --rm backend python test_live_connection.py
-
-# Full test suite
-./run_comprehensive_tests.sh
-```
-
-### Frontend Development
-```bash
+# Frontend (new terminal)
 cd frontend
 npm install
 npm start
 ```
 
-### Backend Development
+## 📁 Project Structure
+
+```
+webapp_starter_cursor/
+├── frontend/                 # React application
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── GeminiLiveDirect.js    # Live API component
+│   │   │   ├── ChatHeader.js          # Chat controls
+│   │   │   └── ...
+│   │   └── hooks/
+│   └── package.json
+├── backend/                  # Flask application
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── analytics_routes.py    # Live API analytics
+│   │   │   ├── routes.py              # Traditional chat API
+│   │   │   └── ...
+│   │   └── services/
+│   ├── requirements.txt
+│   └── Dockerfile
+├── docker-compose.yml        # Container orchestration
+├── README.md                 # This file
+└── GEMINI_LIVE_DIRECT.md    # Live API documentation
+```
+
+## 🎯 Usage
+
+### Traditional Chat
+1. Open http://localhost:3000
+2. Add your API keys in the header
+3. Select an LLM provider
+4. Start chatting with text, images, or videos
+
+### Gemini Live API
+1. Click "Toggle Live Mode" in the chat header
+2. Click "Connect to Gemini"
+3. Configure voice and response settings
+4. Enable camera/microphone as needed
+5. Start your multimodal conversation!
+
+## 🔧 Configuration
+
+### Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | PostgreSQL connection string | Yes |
+| `OPENAI_API_KEY` | OpenAI API key | Optional |
+| `ANTHROPIC_API_KEY` | Anthropic API key | Optional |
+| `GOOGLE_API_KEY` | Google AI API key | Optional |
+| `REACT_APP_GOOGLE_AI_STUDIO_API_KEY` | Gemini Live API key | For Live API |
+| `REACT_APP_API_URL` | Backend URL | Yes |
+
+### Google AI Studio Setup
+
+1. Go to [Google AI Studio](https://aistudio.google.com/)
+2. Create a new project
+3. Enable Gemini Live API
+4. Generate an API key
+5. Add to `REACT_APP_GOOGLE_AI_STUDIO_API_KEY`
+
+## 🛠️ Development
+
+### Adding New Features
+
+1. **Traditional Chat**: Modify backend routes and frontend components
+2. **Live API**: Enhance `GeminiLiveDirect.js` component
+3. **Analytics**: Add endpoints to `analytics_routes.py`
+
+### Database Migrations
+
 ```bash
 cd backend
-pip install -r requirements.txt
-flask run --host=0.0.0.0 --port=5001
+
+# Create migration
+flask db migrate -m "Description"
+
+# Apply migration
+flask db upgrade
 ```
 
-## Database Migrations (Flask-Migrate)
+### Testing
 
-This project uses Flask-Migrate to handle database schema changes.
-
-1. **Modify Models**: Make changes to your SQLAlchemy models in `backend/app/models.py`.
-2. **Generate Migration**: 
-   ```bash
-   docker-compose exec backend flask db migrate -m "Your migration message"
-   ```
-3. **Apply Migration**: Automatically applied on startup or manually:
-   ```bash
-   docker-compose exec backend flask db upgrade
-   ```
-
-## 🔧 Authentication Architecture
-
-This app uses a **hybrid authentication approach**:
-
-- **Vertex AI**: For enterprise features, text AI, function calling
-- **Google AI Studio**: For Live API camera/microphone streaming
-
-Both work together seamlessly - no conflicts or complications.
-
-## 📖 Documentation
-
-- **[SETUP_LIVE_API_GUIDE.md](./SETUP_LIVE_API_GUIDE.md)** - Complete Live API setup
-- **[LIVE_API_PLATFORM_COMPARISON.md](./LIVE_API_PLATFORM_COMPARISON.md)** - Platform comparison
-- **[API Examples](./backend/app/api/live_api_routes.py)** - Live API route examples
-
-## 🧪 Testing
-
-### Quick Test
 ```bash
-# Test basic functionality
-docker-compose -f docker-compose.test.yml run --rm backend python test_live_connection.py
+# Backend tests
+cd backend
+pytest
+
+# Frontend tests
+cd frontend
+npm test
 ```
 
-### Comprehensive Testing
+## 🐳 Docker
+
+### Development
 ```bash
-# Run all Live API tests
-./run_comprehensive_tests.sh --docker
+docker-compose up --build
 ```
 
-## Customizing
+### Production
+```bash
+docker-compose -f docker-compose.prod.yml up --build
+```
 
-This starter app is designed to be a foundation for your Live AI projects:
+### Individual Services
+```bash
+# Database only
+docker-compose up db
 
-1. **Add Live AI to existing components** using the LiveAPIService
-2. **Customize voice personalities** in Live API configurations  
-3. **Implement camera-based features** with computer vision
-4. **Build voice-controlled interfaces** with speech recognition
-5. **Create multimodal AI experiences** combining text, voice, and vision
+# Backend only
+docker-compose up backend
 
-## 🎯 Next Steps
+# Frontend only
+docker-compose up frontend
+```
 
-1. **Set up Live API**: Follow [SETUP_LIVE_API_GUIDE.md](./SETUP_LIVE_API_GUIDE.md)
-2. **Test camera/microphone**: Run the test suite
-3. **Integrate into your UI**: Use the Live API service and routes
-4. **Build AI features**: Camera analysis, voice commands, real-time chat
+## 📊 Analytics
 
-## License
+The backend provides analytics for Live API usage:
 
-MIT 
+- Session tracking (start/end times)
+- Interaction counting (text, audio, video)
+- Usage statistics
+- Error monitoring
+
+Access analytics at: `GET /api/analytics/stats`
+
+## 🔒 Security
+
+- **API Keys**: Store securely, never commit to version control
+- **HTTPS**: Required for camera/microphone in production
+- **CORS**: Properly configured for frontend domain
+- **Database**: Use strong passwords and secure connections
+
+## 🚨 Troubleshooting
+
+### Common Issues
+
+1. **Database Connection**: Check `DATABASE_URL` format
+2. **API Keys**: Ensure all required keys are set
+3. **CORS Errors**: Verify backend CORS configuration
+4. **Live API Connection**: Check Google AI Studio project status
+5. **Media Permissions**: Grant browser camera/microphone access
+
+### Logs
+
+```bash
+# All services
+docker-compose logs
+
+# Specific service
+docker-compose logs backend
+docker-compose logs frontend
+```
+
+## 📚 Documentation
+
+- [Gemini Live API Guide](./GEMINI_LIVE_DIRECT.md) - Detailed Live API documentation
+- [API Documentation](./backend/README.md) - Backend API reference
+- [Frontend Guide](./frontend/README.md) - Frontend development guide
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆕 What's New
+
+### v2.0 - Direct Gemini Live API
+- ✅ Removed complex backend proxy architecture
+- ✅ Direct frontend WebSocket connections to Google
+- ✅ Simplified backend to analytics-only
+- ✅ Modern React component with clean UI
+- ✅ Real-time multimodal conversations
+- ✅ Comprehensive error handling
+
+### Previous Versions
+- v1.x - Traditional multi-LLM chat with media support
+- v0.x - Basic chat functionality
+
+---
+
+**Built with ❤️ using React, Flask, PostgreSQL, and Google Gemini Live API** 

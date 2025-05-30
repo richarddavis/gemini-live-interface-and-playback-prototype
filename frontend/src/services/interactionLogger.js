@@ -3,6 +3,7 @@ class InteractionLogger {
     this.sessionId = this.generateSessionId();
     this.chatSessionId = null;
     this.isEnabled = true;
+    this.replayMode = false; // Set to true to capture full media for replay
     this.batchSize = 10;
     this.batchTimeout = 5000; // 5 seconds
     this.logQueue = [];
@@ -177,8 +178,9 @@ class InteractionLogger {
     };
 
     this.logInteraction('video_frame', frameData, videoMetadata, {
-      storageType: 'hash_only', // Privacy-focused by default
-      isAnonymized: true
+      storageType: this.replayMode ? 'inline' : 'hash_only',
+      isAnonymized: !this.replayMode,
+      retentionDays: this.replayMode ? 1 : 7 // Shorter retention for full data
     });
   }
 
@@ -191,8 +193,9 @@ class InteractionLogger {
     };
 
     this.logInteraction('audio_chunk', audioData, audioMetadata, {
-      storageType: 'hash_only', // Privacy-focused by default
-      isAnonymized: true
+      storageType: this.replayMode ? 'inline' : 'hash_only',
+      isAnonymized: !this.replayMode,
+      retentionDays: this.replayMode ? 1 : 7
     });
   }
 
@@ -284,12 +287,46 @@ class InteractionLogger {
     this.isEnabled = enabled;
   }
 
+  setReplayMode(enabled) {
+    this.replayMode = enabled;
+    console.log(`Replay mode ${enabled ? 'enabled' : 'disabled'} - ${enabled ? 'capturing full media data' : 'hash-only mode'}`);
+  }
+
   setBatchSize(size) {
     this.batchSize = Math.max(1, size);
   }
 
   setBatchTimeout(timeout) {
     this.batchTimeout = Math.max(1000, timeout);
+  }
+
+  // Replay-specific methods
+  async getReplayData(sessionId = null) {
+    const targetSessionId = sessionId || this.sessionId;
+    try {
+      const response = await fetch(`${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=1000`);
+      if (response.ok) {
+        const data = await response.json();
+        // Sort by timestamp for chronological replay
+        data.logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        return data;
+      }
+    } catch (error) {
+      console.warn('Error fetching replay data:', error);
+    }
+    return null;
+  }
+
+  async getAllReplaySessions() {
+    try {
+      const response = await fetch(`${this.baseUrl}/interaction-logs/sessions`);
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (error) {
+      console.warn('Error fetching replay sessions:', error);
+    }
+    return null;
   }
 
   // Cleanup method

@@ -6,6 +6,7 @@ import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
 import { useChatApi } from './hooks/useChatApi';
 import GeminiLiveDirect from './components/GeminiLiveDirect';
+import InteractionReplay from './components/InteractionReplay';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -20,6 +21,7 @@ function App() {
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
   const [isLiveMode, setIsLiveMode] = useState(false);
+  const [isReplayMode, setIsReplayMode] = useState(false);
   const messageInputRef = useRef(null);
   
   // API hook
@@ -280,7 +282,15 @@ function App() {
     // Live mode uses backend service account authentication, no API key needed
     console.log('Toggling live mode. Current:', isLiveMode);
     setIsLiveMode(prevMode => !prevMode);
+    setIsReplayMode(false); // Disable replay mode when entering live mode
     console.log('Live mode will be:', !isLiveMode);
+  };
+
+  const handleToggleReplayMode = () => {
+    console.log('Toggling replay mode. Current:', isReplayMode);
+    setIsReplayMode(prevMode => !prevMode);
+    setIsLiveMode(false); // Disable live mode when entering replay mode
+    console.log('Replay mode will be:', !isReplayMode);
   };
 
   const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingMedia;
@@ -305,11 +315,17 @@ function App() {
           activeChatSessionId={activeChatSessionId}
           isLiveMode={isLiveMode}
           onToggleLiveMode={handleToggleLiveMode}
+          isReplayMode={isReplayMode}
+          onToggleReplayMode={handleToggleReplayMode}
         />
         
         {isLiveMode ? (
           <div className="live-mode-container">
             <GeminiLiveDirect />
+          </div>
+        ) : isReplayMode ? (
+          <div className="replay-mode-container">
+            <InteractionReplay />
           </div>
         ) : (
           <>

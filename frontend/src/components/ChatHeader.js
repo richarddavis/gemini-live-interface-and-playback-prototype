@@ -7,7 +7,9 @@ function ChatHeader({
   onProviderChange, 
   activeChatSessionId,
   isLiveMode,
-  onToggleLiveMode
+  onToggleLiveMode,
+  isReplayMode,
+  onToggleReplayMode
 }) {
   const initialLoadDone = useRef(false);
 
@@ -68,6 +70,9 @@ function ChatHeader({
         </select>
         <button onClick={onToggleLiveMode} disabled={isLiveButtonDisabled}>
           {isLiveMode ? 'Switch to Chat' : 'Switch to Live'}
+        </button>
+        <button onClick={onToggleReplayMode} className="replay-button">
+          {isReplayMode ? 'Exit Replay' : '🎬 View Replays'}
         </button>
         <div className="api-key-info">
           <small>Your API key is stored in your browser and sent directly to the AI provider.</small>

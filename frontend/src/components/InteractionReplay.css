@@ -1,0 +1,261 @@
+.interaction-replay {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.replay-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.replay-header h2 {
+  color: #333;
+  margin: 0;
+}
+
+.replay-content {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 30px;
+  align-items: start;
+}
+
+/* Session Selection */
+.session-selector {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.session-selector h3 {
+  margin-top: 0;
+  color: #495057;
+}
+
+.sessions-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.session-item {
+  background: white;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.session-item:hover {
+  border-color: #007bff;
+  box-shadow: 0 2px 8px rgba(0,123,255,0.1);
+}
+
+.session-item.selected {
+  border-color: #007bff;
+  background: #e7f3ff;
+}
+
+.session-info strong {
+  color: #333;
+  font-size: 14px;
+}
+
+.session-info small {
+  color: #6c757d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Replay Controls */
+.replay-controls {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.playback-controls button {
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.playback-controls button:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.playback-controls button:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.playback-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #495057;
+}
+
+.playback-controls select {
+  padding: 5px 10px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.progress-info {
+  color: #495057;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* Replay Display */
+.replay-display {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.video-replay {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.video-replay h4 {
+  margin-top: 0;
+  color: #495057;
+}
+
+.replay-video {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  border-radius: 8px;
+}
+
+/* Timeline */
+.interaction-timeline {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e9ecef;
+}
+
+.interaction-timeline h4 {
+  margin-top: 0;
+  color: #495057;
+}
+
+.timeline-container {
+  max-height: 400px;
+  overflow-y: auto;
+  position: relative;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 10px 0;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 5px;
+  transition: background-color 0.2s ease;
+}
+
+.timeline-item:hover {
+  background: #f8f9fa;
+}
+
+.timeline-item.current {
+  background: #e7f3ff;
+  border-left: 4px solid #007bff;
+}
+
+.timeline-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #6c757d;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.timeline-item.current .timeline-marker {
+  background: #007bff;
+}
+
+.timeline-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-content strong {
+  color: #333;
+  font-size: 14px;
+  text-transform: capitalize;
+}
+
+.timeline-content small {
+  color: #6c757d;
+  font-size: 12px;
+}
+
+.metadata {
+  margin-top: 5px;
+  font-size: 11px;
+  color: #868e96;
+}
+
+.metadata span {
+  background: #e9ecef;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-right: 5px;
+}
+
+/* Loading state */
+.replay-content p {
+  text-align: center;
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .replay-content {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .replay-display {
+    grid-template-columns: 1fr;
+  }
+  
+  .playback-controls {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+} 

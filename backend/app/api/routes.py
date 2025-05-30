@@ -1,18 +1,17 @@
-from flask import jsonify, request, Response, stream_with_context, url_for, current_app
+from flask import jsonify, request, Response, stream_with_context, current_app
 from . import api
 from .. import db
 from ..models import Task, ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
 from app.llm_providers import OpenAIProvider, GeminiProvider
 from app.services.storage import GCSStorageService
-import openai
 import json
 import os
 from werkzeug.utils import secure_filename
-import uuid
 import base64
 import hashlib
 from datetime import datetime, timedelta
 from sqlalchemy import func
+from io import BytesIO
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
@@ -21,7 +20,8 @@ def allowed_file(filename):
 
 @api.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy"}), 200
+    """Health check endpoint"""
+    return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()}), 200
 
 @api.route('/tasks', methods=['GET'])
 def get_tasks():
@@ -438,6 +438,9 @@ def log_interaction():
         if media_data_info:
             storage_type = media_data_info.get('storage_type', 'hash_only')
             
+            # Get interaction type for file extension logic (move this outside nested blocks)
+            interaction_type = data['interaction_type']
+            
             media_data = InteractionMediaData(
                 interaction_log_id=interaction_log.id,
                 storage_type=storage_type,
@@ -446,17 +449,120 @@ def log_interaction():
             )
             
             # Handle different storage types
-            if storage_type == 'inline' and 'data' in media_data_info:
-                # Store small data directly (be careful with size)
+            if (storage_type == 'inline' or storage_type == 'cloud_storage') and 'data' in media_data_info:
+                # For replay mode, upload to GCS instead of storing inline
                 if isinstance(media_data_info['data'], str):
-                    # Base64 encoded data
                     try:
-                        decoded_data = base64.b64decode(media_data_info['data'])
-                        if len(decoded_data) <= 1024 * 1024:  # Max 1MB for inline storage
-                            media_data.data_inline = decoded_data
-                            media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                        # For API responses that are JSON, handle differently
+                        if interaction_type == 'api_response':
+                            # Try to parse as JSON first to extract base64 data
+                            try:
+                                json_data = json.loads(media_data_info['data'])
+                                if isinstance(json_data, dict) and 'data' in json_data:
+                                    # Extract the actual base64 data from JSON
+                                    base64_data = json_data['data']
+                                    
+                                    # Validate and fix base64 padding if necessary
+                                    # Base64 strings should be multiples of 4 characters
+                                    missing_padding = len(base64_data) % 4
+                                    if missing_padding != 0:
+                                        padding_needed = 4 - missing_padding
+                                        base64_data += '=' * padding_needed
+                                        current_app.logger.warning(f"Fixed base64 padding: added {padding_needed} '=' characters")
+                                    
+                                    try:
+                                        decoded_data = base64.b64decode(base64_data)
+                                    except Exception as b64_error:
+                                        current_app.logger.error(f"Failed to decode base64 data: {str(b64_error)}")
+                                        # Fallback: store as text if base64 decode fails
+                                        decoded_data = media_data_info['data'].encode('utf-8')
+                                        file_extension = 'json'
+                                        content_type = 'application/json'
+                                    else:
+                                        file_extension = 'pcm'  # Based on the mimeType
+                                        content_type = json_data.get('mimeType', 'audio/pcm')
+                                else:
+                                    # Store as JSON if it's not media data
+                                    decoded_data = media_data_info['data'].encode('utf-8')
+                                    file_extension = 'json'
+                                    content_type = 'application/json'
+                            except (json.JSONDecodeError, KeyError):
+                                # If not JSON, try as regular base64
+                                try:
+                                    # Validate and fix base64 padding if necessary
+                                    base64_data = media_data_info['data']
+                                    missing_padding = len(base64_data) % 4
+                                    if missing_padding != 0:
+                                        padding_needed = 4 - missing_padding
+                                        base64_data += '=' * padding_needed
+                                        current_app.logger.warning(f"Fixed non-JSON base64 padding: added {padding_needed} '=' characters")
+                                    
+                                    decoded_data = base64.b64decode(base64_data)
+                                    file_extension = 'json'
+                                    content_type = 'application/json'
+                                except Exception as b64_error:
+                                    current_app.logger.error(f"Failed to decode non-JSON base64: {str(b64_error)}")
+                                    # Final fallback: store as text
+                                    decoded_data = media_data_info['data'].encode('utf-8')
+                                    file_extension = 'txt'
+                                    content_type = 'text/plain'
                         else:
-                            return jsonify({"error": "Data too large for inline storage"}), 400
+                            # For non-API responses, decode base64 data directly
+                            try:
+                                # Validate and fix base64 padding if necessary
+                                base64_data = media_data_info['data']
+                                missing_padding = len(base64_data) % 4
+                                if missing_padding != 0:
+                                    padding_needed = 4 - missing_padding
+                                    base64_data += '=' * padding_needed
+                                    current_app.logger.warning(f"Fixed {interaction_type} base64 padding: added {padding_needed} '=' characters")
+                                
+                                decoded_data = base64.b64decode(base64_data)
+                                
+                                # Determine file extension based on interaction type
+                                if interaction_type == 'audio_chunk':
+                                    file_extension = 'pcm'
+                                    content_type = 'audio/pcm'
+                                elif interaction_type == 'video_frame':
+                                    file_extension = 'jpg'
+                                    content_type = 'image/jpeg'
+                                else:
+                                    file_extension = 'bin'
+                                    content_type = 'application/octet-stream'
+                            except Exception as b64_error:
+                                current_app.logger.error(f"Failed to decode {interaction_type} base64: {str(b64_error)}")
+                                # Fallback: store as text
+                                decoded_data = media_data_info['data'].encode('utf-8')
+                                file_extension = 'txt'
+                                content_type = 'text/plain'
+                        
+                        # Create a unique filename
+                        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                        session_short = data['session_id'][-8:]  # Last 8 chars of session ID
+                        filename = f"interactions/{timestamp}_{session_short}_{interaction_type}_{interaction_log.id}.{file_extension}"
+                        
+                        # Create a temporary file-like object for GCS upload
+                        temp_file = BytesIO(decoded_data)
+                        temp_file.name = filename
+                        temp_file.content_type = content_type
+                        
+                        # Upload to GCS
+                        try:
+                            gcs_url, _ = GCSStorageService.upload_file(temp_file, filename)
+                            
+                            # Store GCS URL and hash
+                            media_data.cloud_storage_url = gcs_url
+                            media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                            media_data.storage_type = 'cloud_storage'  # Update storage type
+                            
+                            current_app.logger.info(f"Uploaded {interaction_type} to GCS: {filename}")
+                            
+                        except Exception as gcs_error:
+                            current_app.logger.error(f"GCS upload failed: {str(gcs_error)}")
+                            # Fallback to hash-only storage
+                            media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                            media_data.storage_type = 'hash_only'
+                            
                     except Exception as e:
                         return jsonify({"error": f"Invalid base64 data: {str(e)}"}), 400
             
@@ -631,19 +737,33 @@ def start_interaction_session(session_id):
             }), 200
         
         if existing_summary:
-            # End the previous session
-            existing_summary.ended_at = datetime.utcnow()
-            existing_summary.duration_seconds = int((existing_summary.ended_at - existing_summary.started_at).total_seconds())
-        
-        # Create new session summary
-        session_summary = InteractionSessionSummary(
-            session_id=session_id,
-            chat_session_id=chat_session_id,
-            started_at=datetime.utcnow()
-        )
-        
-        db.session.add(session_summary)
-        db.session.commit()
+            # Update the existing session to restart it
+            existing_summary.ended_at = None
+            existing_summary.duration_seconds = None
+            existing_summary.started_at = datetime.utcnow()
+            existing_summary.chat_session_id = chat_session_id
+            # Reset counters for new session
+            existing_summary.total_interactions = 0
+            existing_summary.video_frames_sent = 0
+            existing_summary.audio_chunks_sent = 0
+            existing_summary.text_messages_sent = 0
+            existing_summary.api_responses_received = 0
+            existing_summary.total_data_sent_bytes = 0
+            existing_summary.total_errors = 0
+            existing_summary.last_error_timestamp = None
+            
+            db.session.commit()
+            session_summary = existing_summary
+        else:
+            # Create new session summary
+            session_summary = InteractionSessionSummary(
+                session_id=session_id,
+                chat_session_id=chat_session_id,
+                started_at=datetime.utcnow()
+            )
+            
+            db.session.add(session_summary)
+            db.session.commit()
         
         return jsonify({
             "message": "Session started",

@@ -8,7 +8,7 @@ class InteractionLogger {
     this.batchTimeout = 5000; // 5 seconds
     this.logQueue = [];
     this.batchTimer = null;
-    this.baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    this.baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
   }
 
   generateSessionId() {
@@ -76,24 +76,44 @@ class InteractionLogger {
       session_id: this.sessionId,
       chat_session_id: this.chatSessionId,
       interaction_type: type,
-      metadata: {
-        ...metadata,
-        timestamp_client: Date.now()
-      }
+      timestamp: new Date().toISOString(),
+      user_agent: navigator.userAgent,
+      ip_address: null, // Will be determined by backend
+      metadata: metadata
     };
 
     // Handle media data based on storage preference
     if (data) {
-      const storageType = options.storageType || 'hash_only';
+      // Use cloud_storage for replay mode (uploads to GCS), hash_only for privacy mode
+      const storageType = this.replayMode ? 'cloud_storage' : 'hash_only';
+      console.log(`🎬 Logging ${type} with storageType: ${storageType}, replayMode: ${this.replayMode}`);
+      
       interactionData.media_data = {
         storage_type: storageType,
         is_anonymized: options.isAnonymized || false,
         retention_days: options.retentionDays || 7
       };
 
-      if (storageType === 'inline' && data.length <= 1024 * 1024) {
-        // Only for small data
-        interactionData.media_data.data = data;
+      // Check data size for inline storage (10MB limit to match backend)
+      const maxInlineSize = 10 * 1024 * 1024; // 10MB
+      
+      if (storageType === 'inline' || storageType === 'cloud_storage') {
+        // Both inline and cloud_storage need the data sent to backend
+        // Backend will decide whether to store inline or upload to GCS
+        if (data.length <= maxInlineSize) {
+          interactionData.media_data.data = data;
+          
+          // Log size info for debugging
+          const dataSizeMB = (data.length / 1024 / 1024).toFixed(2);
+          console.log(`📦 ${storageType} storage for ${type}: ${dataSizeMB}MB`);
+        } else {
+          const dataSizeMB = (data.length / 1024 / 1024).toFixed(2);
+          console.warn(`⚠️ Data too large for ${storageType} storage: ${dataSizeMB}MB (max: ${maxInlineSize/1024/1024}MB). Falling back to hash_only.`);
+          
+          // Fallback to hash_only for oversized data
+          interactionData.media_data.storage_type = 'hash_only';
+          interactionData.media_data.data = data;
+        }
       } else if (storageType === 'hash_only') {
         // Store hash only for privacy
         interactionData.media_data.data = data;
@@ -147,6 +167,14 @@ class InteractionLogger {
 
   async sendLog(logData) {
     try {
+      // Debug: Log the data being sent
+      console.log('🔍 Sending log data:', {
+        interaction_type: logData.interaction_type,
+        storage_type: logData.media_data?.storage_type,
+        data_size: logData.media_data?.data?.length || 0,
+        data_preview: logData.media_data?.data ? logData.media_data.data.substring(0, 100) + '...' : 'no data'
+      });
+
       const response = await fetch(`${this.baseUrl}/interaction-logs`, {
         method: 'POST',
         headers: {
@@ -156,6 +184,18 @@ class InteractionLogger {
       });
 
       if (!response.ok) {
+        // Enhanced error logging
+        const errorText = await response.text();
+        console.error('❌ Backend error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText,
+          sentData: {
+            interaction_type: logData.interaction_type,
+            storage_type: logData.media_data?.storage_type,
+            data_size: logData.media_data?.data?.length || 0
+          }
+        });
         console.warn('Failed to send interaction log:', response.statusText);
         return false;
       }
@@ -170,7 +210,7 @@ class InteractionLogger {
   // Convenience methods for specific interaction types
   logVideoFrame(frameData, metadata = {}) {
     const videoMetadata = {
-      frame_rate: 2, // Your current frame rate
+      video_resolution: metadata.video_resolution || { width: 640, height: 480 },
       video_format: 'base64_jpeg',
       compression_quality: 0.7,
       data_size_bytes: frameData ? frameData.length : 0,
@@ -178,9 +218,9 @@ class InteractionLogger {
     };
 
     this.logInteraction('video_frame', frameData, videoMetadata, {
-      storageType: this.replayMode ? 'inline' : 'hash_only',
+      storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
       isAnonymized: !this.replayMode,
-      retentionDays: this.replayMode ? 1 : 7 // Shorter retention for full data
+      retentionDays: this.replayMode ? 1 : 7
     });
   }
 
@@ -192,48 +232,77 @@ class InteractionLogger {
       ...metadata
     };
 
+    // Check data size for replay mode
+    if (this.replayMode && audioData) {
+      const dataSizeKB = (audioData.length / 1024).toFixed(2);
+      console.log(`🎬 Logging audio chunk in replay mode: ${dataSizeKB}KB`);
+      
+      // Warn if approaching size limits (8MB warning for 10MB limit)
+      if (audioData.length > 8 * 1024 * 1024) {
+        console.warn(`⚠️ Large audio chunk detected: ${dataSizeKB}KB - may approach backend limit`);
+      }
+    }
+
     this.logInteraction('audio_chunk', audioData, audioMetadata, {
-      storageType: this.replayMode ? 'inline' : 'hash_only',
+      storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
       isAnonymized: !this.replayMode,
       retentionDays: this.replayMode ? 1 : 7
     });
   }
 
-  logTextInput(text, metadata = {}) {
+  logTextInput(textData, metadata = {}) {
     const textMetadata = {
-      data_size_bytes: text ? text.length : 0,
+      text_length: textData ? textData.length : 0,
       ...metadata
     };
 
-    this.logInteraction('text_input', text, textMetadata, {
-      storageType: 'hash_only',
-      isAnonymized: true
+    this.logInteraction('text_input', textData, textMetadata, {
+      storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
+      isAnonymized: !this.replayMode,
+      retentionDays: this.replayMode ? 1 : 7
     });
   }
 
   logApiResponse(responseData, metadata = {}) {
+    // responseData is already an object (e.g., {mimeType: "audio/pcm;rate=24000", data: "base64string"})
+    // Don't double-stringify it
+    const responseString = typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
     const apiMetadata = {
       api_endpoint: 'gemini_live_api',
       api_response_time_ms: metadata.responseTime,
       api_status_code: metadata.statusCode || 200,
-      data_size_bytes: responseData ? JSON.stringify(responseData).length : 0,
+      data_size_bytes: responseString ? responseString.length : 0,
       ...metadata
     };
 
-    this.logInteraction('api_response', JSON.stringify(responseData), apiMetadata, {
-      storageType: 'hash_only'
+    // Check size for replay mode logging
+    if (this.replayMode && responseString) {
+      const dataSizeMB = (responseString.length / 1024 / 1024).toFixed(2);
+      console.log(`🎬 Logging API response in replay mode: ${dataSizeMB}MB`);
+      
+      // Warn if approaching size limits
+      if (responseString.length > 8 * 1024 * 1024) {
+        console.warn(`⚠️ Large API response detected: ${dataSizeMB}MB - may approach backend limit`);
+      }
+    }
+
+    this.logInteraction('api_response', responseString, apiMetadata, {
+      storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
+      isAnonymized: !this.replayMode,
+      retentionDays: this.replayMode ? 1 : 7
     });
   }
 
-  logUserAction(action, details = {}, metadata = {}) {
+  logUserAction(actionType, metadata = {}) {
     const actionMetadata = {
-      action_type: action,
-      action_details: details,
+      action_type: actionType,
       ...metadata
     };
 
-    this.logInteraction('user_action', JSON.stringify(details), actionMetadata, {
-      storageType: 'hash_only'
+    this.logInteraction('user_action', actionType, actionMetadata, {
+      storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
+      isAnonymized: !this.replayMode,
+      retentionDays: this.replayMode ? 1 : 7
     });
   }
 
@@ -288,7 +357,10 @@ class InteractionLogger {
   }
 
   setReplayMode(enabled) {
+    console.log(`🎬 setReplayMode called with: ${enabled}`);
+    console.log(`🎬 Previous replayMode was: ${this.replayMode}`);
     this.replayMode = enabled;
+    console.log(`🎬 New replayMode is: ${this.replayMode}`);
     console.log(`Replay mode ${enabled ? 'enabled' : 'disabled'} - ${enabled ? 'capturing full media data' : 'hash-only mode'}`);
   }
 
@@ -318,15 +390,24 @@ class InteractionLogger {
   }
 
   async getAllReplaySessions() {
+    const url = `${this.baseUrl}/interaction-logs/sessions`;
+    console.log('🔍 InteractionLogger URL Test:', {
+      baseUrl: this.baseUrl,
+      fullUrl: url,
+      env: process.env.REACT_APP_API_URL
+    });
+    
     try {
-      const response = await fetch(`${this.baseUrl}/interaction-logs/sessions`);
+      const response = await fetch(url);
       if (response.ok) {
         return await response.json();
       }
+      console.error('❌ getAllReplaySessions failed:', response.status, response.statusText);
+      return { sessions: [], total_count: 0 };
     } catch (error) {
-      console.warn('Error fetching replay sessions:', error);
+      console.error('❌ getAllReplaySessions error:', error);
+      return { sessions: [], total_count: 0 };
     }
-    return null;
   }
 
   // Cleanup method

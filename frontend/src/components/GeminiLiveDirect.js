@@ -53,12 +53,30 @@ const GeminiLiveDirect = () => {
 
   // Initialize interaction logging
   useEffect(() => {
-    // Start interaction session when component mounts
-    interactionLogger.startSession();
+    // Enable replay mode to capture full media data for playback
+    try {
+      console.log('🎬 Setting replay mode to true...');
+      interactionLogger.setReplayMode(true);
+      console.log('🎬 Replay mode enabled - Current replayMode:', interactionLogger.replayMode);
+      console.log('🎬 InteractionLogger instance:', interactionLogger);
+      
+      // Start interaction session when component mounts
+      interactionLogger.startSession();
+    } catch (error) {
+      console.warn('⚠️ Failed to initialize interaction logging:', error);
+    }
     
     // Cleanup when component unmounts
     return () => {
-      interactionLogger.endSession();
+      try {
+        interactionLogger.endSession();
+        // Reset replay mode when leaving live mode
+        console.log('🎬 Resetting replay mode to false...');
+        interactionLogger.setReplayMode(false);
+        console.log('🎬 Replay mode disabled - Current replayMode:', interactionLogger.replayMode);
+      } catch (error) {
+        console.warn('⚠️ Failed to cleanup interaction logging:', error);
+      }
     };
   }, []);
 
@@ -99,11 +117,16 @@ const GeminiLiveDirect = () => {
       // Log video frame (occasionally to avoid spam)
       if (Math.random() < 0.05) { // 5% of frames
         console.log(`📹 Sent video frame: ${canvas.width}x${canvas.height}`);
-        interactionLogger.logVideoFrame(base64Data, {
-          video_resolution: { width: canvas.width, height: canvas.height },
-          camera_on: isCameraOn,
-          is_connected: isConnected
-        });
+        // Log video frame with error handling
+        try {
+          interactionLogger.logVideoFrame(base64Data, {
+            video_resolution: { width: canvas.width, height: canvas.height },
+            camera_on: isCameraOn,
+            is_connected: isConnected
+          });
+        } catch (logError) {
+          console.warn('⚠️ Failed to log video frame:', logError);
+        }
       }
       
     } catch (error) {
@@ -185,7 +208,8 @@ const GeminiLiveDirect = () => {
   // Log analytics events (simplified)
   const logAnalytics = useCallback(async (event, data = {}) => {
     try {
-      await fetch(`${API_URL}/api/analytics/log-interaction`, {
+      // Use the correct API URL - API_URL already includes /api
+      await fetch(`${API_URL}/analytics/log-interaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -207,19 +231,28 @@ const GeminiLiveDirect = () => {
   const connectToGemini = useCallback(() => {
     if (!API_KEY) {
       addMessage('error', 'Google AI Studio API key not found. Please check your environment configuration.');
-      interactionLogger.logError(new Error('API key not found'), { context: 'connection_attempt' });
+      // Log error with error handling
+      try {
+        interactionLogger.logError(new Error('API key not found'), { context: 'connection_attempt' });
+      } catch (logError) {
+        console.warn('⚠️ Failed to log error:', logError);
+      }
       return;
     }
 
     setIsConnecting(true);
     setupCompleteRef.current = false;
     
-    // Log connection attempt
-    interactionLogger.logUserAction('connect_attempt', {
-      voice: selectedVoice,
-      response_mode: responseMode,
-      has_api_key: !!API_KEY
-    });
+    // Log connection attempt with error handling
+    try {
+      interactionLogger.logUserAction('connect_attempt', {
+        voice: selectedVoice,
+        response_mode: responseMode,
+        has_api_key: !!API_KEY
+      });
+    } catch (logError) {
+      console.warn('⚠️ Failed to log connection attempt:', logError);
+    }
 
     try {
       const ws = new WebSocket(WS_URL);
@@ -228,11 +261,15 @@ const GeminiLiveDirect = () => {
       ws.onopen = () => {
         console.log('✅ Connected to Google Live API');
         
-        // Log successful connection
-        interactionLogger.logUserAction('connection_success', {
-          voice: selectedVoice,
-          response_mode: responseMode
-        });
+        // Log successful connection with error handling
+        try {
+          interactionLogger.logUserAction('connection_success', {
+            voice: selectedVoice,
+            response_mode: responseMode
+          });
+        } catch (logError) {
+          console.warn('⚠️ Failed to log connection success:', logError);
+        }
         
         // Send setup message using Google's official format
         const setupMessage = {
@@ -287,11 +324,15 @@ const GeminiLiveDirect = () => {
                   setIsConnecting(false);
                   addMessage('system', '🎉 Connected successfully! You can now chat with Gemini.');
                   
-                  // Log setup completion
-                  interactionLogger.logUserAction('setup_complete', {
-                    voice: selectedVoice,
-                    response_mode: responseMode
-                  });
+                  // Log setup completion with error handling
+                  try {
+                    interactionLogger.logUserAction('setup_complete', {
+                      voice: selectedVoice,
+                      response_mode: responseMode
+                    });
+                  } catch (logError) {
+                    console.warn('⚠️ Failed to log setup completion:', logError);
+                  }
                 } else if (message.serverContent) {
                   handleServerContent(message.serverContent);
                 } else if (message.toolCall) {
@@ -320,11 +361,15 @@ const GeminiLiveDirect = () => {
               setIsConnecting(false);
               addMessage('system', '🎉 Connected successfully! You can now chat with Gemini.');
               
-              // Log setup completion
-              interactionLogger.logUserAction('setup_complete', {
-                voice: selectedVoice,
-                response_mode: responseMode
-              });
+              // Log setup completion with error handling
+              try {
+                interactionLogger.logUserAction('setup_complete', {
+                  voice: selectedVoice,
+                  response_mode: responseMode
+                });
+              } catch (logError) {
+                console.warn('⚠️ Failed to log setup completion:', logError);
+              }
             } else if (message.serverContent) {
               handleServerContent(message.serverContent);
             } else if (message.toolCall) {
@@ -598,21 +643,29 @@ const GeminiLiveDirect = () => {
           console.log('💬 Adding AI message:', part.text);
           addMessage('ai', part.text);
           
-          // Log API text response
-          interactionLogger.logApiResponse(part.text, {
-            response_type: 'text',
-            response_length: part.text.length
-          });
+          // Log API text response with error handling
+          try {
+            interactionLogger.logApiResponse(part.text, {
+              response_type: 'text',
+              response_length: part.text.length
+            });
+          } catch (logError) {
+            console.warn('⚠️ Failed to log text response:', logError);
+          }
         } else if (part.inlineData) {
           console.log('🎵 Processing inline audio data');
           handleAudioResponse(part.inlineData);
           
-          // Log API audio response
-          interactionLogger.logApiResponse(part.inlineData, {
-            response_type: 'audio',
-            mime_type: part.inlineData.mimeType,
-            data_size: part.inlineData.data ? part.inlineData.data.length : 0
-          });
+          // Log API audio response with error handling
+          try {
+            interactionLogger.logApiResponse(part.inlineData, {
+              response_type: 'audio',
+              mime_type: part.inlineData.mimeType,
+              data_size: part.inlineData.data ? part.inlineData.data.length : 0
+            });
+          } catch (logError) {
+            console.warn('⚠️ Failed to log audio response:', logError);
+          }
         }
       }
     }
@@ -650,11 +703,15 @@ const GeminiLiveDirect = () => {
     wsRef.current.send(JSON.stringify(message));
     addMessage('user', textInput.trim());
     
-    // Log text input
-    interactionLogger.logTextInput(textInput.trim(), {
-      message_length: textInput.trim().length,
-      is_connected: isConnected
-    });
+    // Log text input with error handling
+    try {
+      interactionLogger.logTextInput(textInput.trim(), {
+        message_length: textInput.trim().length,
+        is_connected: isConnected
+      });
+    } catch (logError) {
+      console.warn('⚠️ Failed to log text input:', logError);
+    }
     
     setTextInput('');
     logAnalytics('text_input', { message_length: textInput.trim().length });
@@ -736,7 +793,13 @@ const GeminiLiveDirect = () => {
           
           // Convert to Uint8Array for base64 encoding (maintaining little-endian byte order)
           const uint8Data = new Uint8Array(pcmData.buffer);
-          const base64Audio = btoa(String.fromCharCode(...uint8Data));
+          
+          // Properly encode to base64 without stack overflow or invalid characters
+          let binaryString = '';
+          for (let i = 0; i < uint8Data.length; i++) {
+            binaryString += String.fromCharCode(uint8Data[i]);
+          }
+          const base64Audio = btoa(binaryString);
           
           const audioMessage = {
             realtimeInput: {
@@ -747,15 +810,19 @@ const GeminiLiveDirect = () => {
             }
           };
           
-          // Reduced logging - only log occasionally
+          // Log audio chunk with error handling
           if (Math.random() < 0.1) { // 10% of chunks
             console.log(`📤 Sending PCM audio chunk: ${pcmData.length} samples, ${uint8Data.length} bytes`);
-            interactionLogger.logAudioChunk(base64Audio, {
-              audio_sample_rate: sampleRate,
-              data_size_bytes: uint8Data.length,
-              microphone_on: isMicOn,
-              is_connected: isConnected
-            });
+            try {
+              interactionLogger.logAudioChunk(base64Audio, {
+                audio_sample_rate: sampleRate,
+                data_size_bytes: uint8Data.length,
+                microphone_on: isMicOn,
+                is_connected: isConnected
+              });
+            } catch (logError) {
+              console.warn('⚠️ Failed to log audio chunk:', logError);
+            }
           }
           wsRef.current.send(JSON.stringify(audioMessage));
         }

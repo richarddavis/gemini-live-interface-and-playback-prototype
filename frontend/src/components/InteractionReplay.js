@@ -10,6 +10,14 @@ const InteractionReplay = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [shouldStartPlayback, setShouldStartPlayback] = useState(false);
+  
+  // State for displaying replay content
+  const [currentVideoFrame, setCurrentVideoFrame] = useState(null);
+  const [currentTextInput, setCurrentTextInput] = useState('');
+  const [currentApiResponse, setCurrentApiResponse] = useState('');
+  const [currentUserAction, setCurrentUserAction] = useState('');
+  const [replayStatus, setReplayStatus] = useState('Ready to replay...');
 
   const videoRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -19,6 +27,15 @@ const InteractionReplay = () => {
   useEffect(() => {
     loadSessions();
   }, []);
+
+  // Handle playback start after state updates
+  useEffect(() => {
+    if (shouldStartPlayback && isPlaying && replayData?.logs?.length > 0) {
+      console.log('🎬 useEffect: Starting playback after state update');
+      setShouldStartPlayback(false);
+      playNextInteraction(0);
+    }
+  }, [shouldStartPlayback, isPlaying, replayData]);
 
   const loadSessions = async () => {
     setLoading(true);
@@ -52,15 +69,27 @@ const InteractionReplay = () => {
   };
 
   const startReplay = () => {
-    if (!replayData || !replayData.logs || replayData.logs.length === 0) return;
+    console.log('🎬 startReplay called');
+    console.log('🎬 replayData:', replayData);
+    console.log('🎬 replayData.logs:', replayData?.logs);
+    console.log('🎬 logs length:', replayData?.logs?.length);
     
+    if (!replayData || !replayData.logs || replayData.logs.length === 0) {
+      console.log('🎬 startReplay: No data to replay');
+      setReplayStatus('No data available for replay');
+      return;
+    }
+    
+    console.log('🎬 Starting replay with', replayData.logs.length, 'interactions');
+    setReplayStatus(`Starting replay of ${replayData.logs.length} interactions...`);
     setIsPlaying(true);
     setCurrentIndex(0);
-    playNextInteraction(0);
+    setShouldStartPlayback(true); // Trigger useEffect after state updates
   };
 
   const stopReplay = () => {
     setIsPlaying(false);
+    setReplayStatus('Replay stopped');
     if (playbackTimeoutRef.current) {
       clearTimeout(playbackTimeoutRef.current);
       playbackTimeoutRef.current = null;
@@ -68,12 +97,19 @@ const InteractionReplay = () => {
   };
 
   const playNextInteraction = (index) => {
+    console.log('🎬 playNextInteraction called with index:', index);
+    console.log('🎬 isPlaying:', isPlaying);
+    console.log('🎬 replayData exists:', !!replayData);
+    console.log('🎬 index >= replayData.logs.length:', index >= (replayData?.logs?.length || 0));
+    
     if (!isPlaying || !replayData || index >= replayData.logs.length) {
+      console.log('🎬 playNextInteraction: Stopping playback');
       setIsPlaying(false);
       return;
     }
 
     const currentLog = replayData.logs[index];
+    console.log('🎬 Processing interaction:', currentLog);
     setCurrentIndex(index);
 
     // Process the current interaction
@@ -87,13 +123,15 @@ const InteractionReplay = () => {
       delay = Math.max(100, timeDiff / playbackSpeed); // Minimum 100ms delay
     }
 
+    console.log('🎬 Setting timeout for next interaction in', delay, 'ms');
     playbackTimeoutRef.current = setTimeout(() => {
       playNextInteraction(index + 1);
     }, delay);
   };
 
   const processInteraction = (log) => {
-    console.log('Replaying:', log.interaction_type, log.timestamp);
+    console.log('🎬 Replaying:', log.interaction_type, log.timestamp);
+    console.log('🎬 Log data:', log);
 
     switch (log.interaction_type) {
       case 'video_frame':
@@ -180,16 +218,32 @@ const InteractionReplay = () => {
 
   const displayTextInput = (log) => {
     // This would be displayed in a chat-like interface
-    console.log('User typed:', log.media_data?.data || 'Text not stored');
+    const textContent = log.media_data?.data || log.interaction_metadata?.text || `Text input detected (${log.id}) - Data stored as hash only`;
+    console.log('🎬 User typed:', textContent);
+    setCurrentTextInput(textContent);
+    setReplayStatus(`Processing text input...`);
   };
 
   const displayApiResponse = (log) => {
     // This would be displayed in a chat-like interface
-    console.log('Gemini responded:', log.media_data?.data || 'Response not stored');
+    console.log('🎬 API Response log:', log);
+    console.log('🎬 media_data:', log.media_data);
+    console.log('🎬 interaction_metadata:', log.interaction_metadata);
+    
+    const responseText = log.media_data?.data || log.interaction_metadata?.response_text || 
+      `Gemini response detected (${log.id}) - Data stored as hash only. Enable replay mode for full content.`;
+    console.log('🎬 Gemini responded:', responseText);
+    setCurrentApiResponse(responseText);
+    setReplayStatus(`Processing API response...`);
   };
 
   const displayUserAction = (log) => {
-    console.log('User action:', log.interaction_metadata?.action_type, log.interaction_metadata?.action_details);
+    const actionType = log.interaction_metadata?.action_type || 'action';
+    const actionDetails = log.interaction_metadata?.action_details || `User interaction (${log.id})`;
+    const actionText = `${actionType}: ${actionDetails}`;
+    console.log('🎬 User action:', actionType, actionDetails);
+    setCurrentUserAction(actionText);
+    setReplayStatus(`Processing user action: ${actionType}`);
   };
 
   const jumpToInteraction = (index) => {
@@ -213,6 +267,10 @@ const InteractionReplay = () => {
         {/* Session Selection */}
         <div className="session-selector">
           <h3>Select Session to Replay</h3>
+          <div className="replay-mode-notice">
+            <strong>📝 Note:</strong> For full replay with actual content, use "Live Mode" to record a new session. 
+            Old sessions only have hash data for privacy.
+          </div>
           {loading && <p>Loading sessions...</p>}
           {sessions.length === 0 && !loading && (
             <p>No replay sessions found. Enable replay mode during interactions to record full data.</p>
@@ -239,84 +297,122 @@ const InteractionReplay = () => {
         </div>
 
         {/* Replay Controls */}
-        {replayData && (
-          <div className="replay-controls">
-            <div className="playback-controls">
-              <button onClick={startReplay} disabled={isPlaying}>
-                ▶️ Play
-              </button>
-              <button onClick={stopReplay} disabled={!isPlaying}>
-                ⏹️ Stop
-              </button>
-              <label>
-                Speed:
-                <select value={playbackSpeed} onChange={(e) => setPlaybackSpeed(Number(e.target.value))}>
-                  <option value={0.5}>0.5x</option>
-                  <option value={1}>1x</option>
-                  <option value={2}>2x</option>
-                  <option value={4}>4x</option>
-                </select>
-              </label>
-            </div>
+        <div className="replay-main-content">
+          {replayData && (
+            <div className="replay-controls">
+              <div className="playback-controls">
+                <button onClick={startReplay} disabled={isPlaying}>
+                  ▶️ Play
+                </button>
+                <button onClick={stopReplay} disabled={!isPlaying}>
+                  ⏹️ Stop
+                </button>
+                <label>
+                  Speed:
+                  <select value={playbackSpeed} onChange={(e) => setPlaybackSpeed(Number(e.target.value))}>
+                    <option value={0.5}>0.5x</option>
+                    <option value={1}>1x</option>
+                    <option value={2}>2x</option>
+                    <option value={4}>4x</option>
+                  </select>
+                </label>
+              </div>
 
-            <div className="progress-info">
-              <p>
-                Interaction {currentIndex + 1} of {replayData.logs.length}
-                {replayData.logs[currentIndex] && (
-                  <span> - {replayData.logs[currentIndex].interaction_type} at {formatTimestamp(replayData.logs[currentIndex].timestamp)}</span>
-                )}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Replay Display */}
-        {replayData && (
-          <div className="replay-display">
-            <div className="video-replay">
-              <h4>Video Replay</h4>
-              <video
-                ref={videoRef}
-                className="replay-video"
-                autoPlay
-                muted
-                style={{
-                  width: '320px',
-                  height: '240px',
-                  backgroundColor: '#000',
-                  border: '1px solid #ccc'
-                }}
-              />
-            </div>
-
-            <div className="interaction-timeline">
-              <h4>Interaction Timeline</h4>
-              <div className="timeline-container">
-                {replayData.logs.map((log, index) => (
-                  <div
-                    key={index}
-                    className={`timeline-item ${index === currentIndex ? 'current' : ''}`}
-                    onClick={() => jumpToInteraction(index)}
-                  >
-                    <div className="timeline-marker"></div>
-                    <div className="timeline-content">
-                      <strong>{log.interaction_type}</strong>
-                      <br />
-                      <small>{formatTimestamp(log.timestamp)}</small>
-                      {log.interaction_metadata && (
-                        <div className="metadata">
-                          {log.interaction_metadata.data_size_bytes && (
-                            <span>{log.interaction_metadata.data_size_bytes} bytes</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
+              <div className="progress-info">
+                <p>
+                  Interaction {currentIndex + 1} of {replayData.logs.length}
+                  {replayData.logs[currentIndex] && (
+                    <span> - {replayData.logs[currentIndex].interaction_type} at {formatTimestamp(replayData.logs[currentIndex].timestamp)}</span>
+                  )}
+                </p>
               </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Replay Display */}
+          {replayData && (
+            <div className="replay-display">
+              <div className="replay-display-content">
+                <div className="video-replay">
+                  <h4>Video Replay</h4>
+                  <video
+                    ref={videoRef}
+                    className="replay-video"
+                    autoPlay
+                    muted
+                    style={{
+                      width: '320px',
+                      height: '240px',
+                      backgroundColor: '#000',
+                      border: '1px solid #ccc'
+                    }}
+                  />
+                  {currentVideoFrame && (
+                    <div className="current-frame-info">
+                      <small>Current frame: {new Date().toLocaleTimeString()}</small>
+                    </div>
+                  )}
+                </div>
+
+                <div className="replay-content-display">
+                  <h4>Current Content</h4>
+                  <div className="replay-status">
+                    <strong>Status:</strong> <span className={isPlaying ? 'status-playing' : 'status-stopped'}>{replayStatus}</span>
+                  </div>
+                  <div className="content-sections">
+                    {currentUserAction && (
+                      <div className="content-item user-action">
+                        <strong>User Action:</strong> {currentUserAction}
+                      </div>
+                    )}
+                    {currentTextInput && (
+                      <div className="content-item text-input">
+                        <strong>User Text:</strong> {currentTextInput}
+                      </div>
+                    )}
+                    {currentApiResponse && (
+                      <div className="content-item api-response">
+                        <strong>Gemini Response:</strong> {currentApiResponse}
+                      </div>
+                    )}
+                    {!currentUserAction && !currentTextInput && !currentApiResponse && !isPlaying && (
+                      <div className="content-item placeholder">
+                        <em>Select a session and click Play to see replay content...</em>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="interaction-timeline">
+                  <h4>Interaction Timeline</h4>
+                  <div className="timeline-container">
+                    {replayData.logs.map((log, index) => (
+                      <div
+                        key={index}
+                        className={`timeline-item ${index === currentIndex ? 'current' : ''}`}
+                        onClick={() => jumpToInteraction(index)}
+                      >
+                        <div className="timeline-marker"></div>
+                        <div className="timeline-content">
+                          <strong>{log.interaction_type}</strong>
+                          <br />
+                          <small>{formatTimestamp(log.timestamp)}</small>
+                          {log.interaction_metadata && (
+                            <div className="metadata">
+                              {log.interaction_metadata.data_size_bytes && (
+                                <span>{log.interaction_metadata.data_size_bytes} bytes</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -31,6 +31,8 @@ const GeminiLiveDirect = () => {
   const mediaStreamRef = useRef(null);
   const setupCompleteRef = useRef(false);
   const messagesEndRef = useRef(null);
+  const cameraStreamRef = useRef(null); // Store camera stream separately
+  const videoFrameIntervalRef = useRef(null); // For video frame capture interval
 
   // Available voices from Google's 2025 documentation
   const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
@@ -47,6 +49,111 @@ const GeminiLiveDirect = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Capture and send video frame to Gemini Live API
+  const captureAndSendVideoFrame = useCallback(() => {
+    if (!videoRef.current || !isConnected || !wsRef.current || !isCameraOn) {
+      return;
+    }
+
+    try {
+      // Create a canvas to capture the current video frame
+      const canvas = document.createElement('canvas');
+      const video = videoRef.current;
+      
+      // Set canvas size to match video
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Convert to base64 JPEG (smaller than PNG for real-time streaming)
+      const dataURL = canvas.toDataURL('image/jpeg', 0.7); // 70% quality for smaller size
+      const base64Data = dataURL.split(',')[1]; // Remove data:image/jpeg;base64, prefix
+      
+      // Send frame to Gemini Live API
+      const videoMessage = {
+        realtimeInput: {
+          mediaChunks: [{
+            mimeType: 'image/jpeg',
+            data: base64Data
+          }]
+        }
+      };
+      
+      wsRef.current.send(JSON.stringify(videoMessage));
+      
+      // Log occasionally (every ~20 frames to avoid spam)
+      if (Math.random() < 0.05) { // 5% of frames
+        console.log(`📹 Sent video frame: ${canvas.width}x${canvas.height}`);
+      }
+      
+    } catch (error) {
+      console.error('Video frame capture error:', error);
+    }
+  }, [isConnected, isCameraOn]);
+
+  // Start video frame capture when camera is active
+  const startVideoFrameCapture = useCallback(() => {
+    if (videoFrameIntervalRef.current) {
+      clearInterval(videoFrameIntervalRef.current);
+    }
+    
+    // Capture frames every 500ms (2 FPS) for real-time analysis without overwhelming the API
+    videoFrameIntervalRef.current = setInterval(captureAndSendVideoFrame, 500);
+    console.log('📹 Started video frame capture at 2 FPS');
+  }, [captureAndSendVideoFrame]);
+
+  // Stop video frame capture
+  const stopVideoFrameCapture = useCallback(() => {
+    if (videoFrameIntervalRef.current) {
+      clearInterval(videoFrameIntervalRef.current);
+      videoFrameIntervalRef.current = null;
+      console.log('📹 Stopped video frame capture');
+    }
+  }, []);
+
+  // Handle video element setup when camera is turned on
+  useEffect(() => {
+    if (isCameraOn && cameraStreamRef.current && videoRef.current) {
+      console.log('Setting up video element with stream');
+      const stream = cameraStreamRef.current;
+      
+      videoRef.current.srcObject = stream;
+      videoRef.current.muted = true;
+      
+      console.log('Video element srcObject set');
+      
+      // Add event listeners for debugging
+      videoRef.current.onloadstart = () => console.log('Video load start');
+      videoRef.current.onloadedmetadata = () => {
+        console.log('Video metadata loaded, starting playback');
+        console.log('Video dimensions:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+        videoRef.current.play().catch(console.error);
+      };
+      videoRef.current.oncanplay = () => console.log('Video can start playing');
+      videoRef.current.onplaying = () => {
+        console.log('Video is playing');
+        // Start sending frames to Gemini Live API when video starts playing and we're connected
+        if (isConnected) {
+          startVideoFrameCapture();
+        }
+      };
+      videoRef.current.onerror = (e) => console.error('Video error:', e);
+      
+      // Force play attempt
+      videoRef.current.play().then(() => {
+        console.log('Video play() succeeded');
+        // Also start frame capture here in case onplaying doesn't fire
+        if (isConnected) {
+          startVideoFrameCapture();
+        }
+      }).catch((playError) => {
+        console.error('Video play() failed:', playError);
+      });
+    }
+  }, [isCameraOn, isConnected, startVideoFrameCapture]); // Added isConnected and startVideoFrameCapture dependencies
 
   // Add message to chat
   const addMessage = useCallback((type, message) => {
@@ -608,6 +715,7 @@ const GeminiLiveDirect = () => {
     try {
       if (!isCameraOn) {
         addMessage('system', '📹 Requesting camera access...');
+        console.log('Requesting camera access...');
         
         const stream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
@@ -617,22 +725,24 @@ const GeminiLiveDirect = () => {
           } 
         });
         
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.muted = true;
-          
-          videoRef.current.onloadedmetadata = () => {
-            videoRef.current.play().catch(console.error);
-          };
-        }
+        console.log('Camera stream obtained:', stream);
+        console.log('Video tracks:', stream.getVideoTracks());
         
+        // Store the stream and let useEffect handle video element setup
+        cameraStreamRef.current = stream;
         setIsCameraOn(true);
         addMessage('system', '📹 Camera started - video preview should be visible');
       } else {
-        if (videoRef.current && videoRef.current.srcObject) {
-          const stream = videoRef.current.srcObject;
-          stream.getTracks().forEach(track => track.stop());
+        console.log('Turning off camera...');
+        stopVideoFrameCapture(); // Stop sending frames to API
+        if (cameraStreamRef.current) {
+          cameraStreamRef.current.getTracks().forEach(track => track.stop());
+          cameraStreamRef.current = null;
+          console.log('Camera stream stopped');
+        }
+        if (videoRef.current) {
           videoRef.current.srcObject = null;
+          console.log('Video element cleared');
         }
         setIsCameraOn(false);
         addMessage('system', '📹 Camera turned off');
@@ -641,10 +751,11 @@ const GeminiLiveDirect = () => {
       console.error('Camera error:', error);
       addMessage('error', `Camera error: ${error.message}`);
     }
-  }, [isCameraOn, addMessage]);
+  }, [isCameraOn, addMessage, stopVideoFrameCapture]);
 
   // Disconnect
   const disconnect = useCallback(() => {
+    stopVideoFrameCapture(); // Stop sending video frames
     if (wsRef.current) {
       wsRef.current.close();
     }
@@ -652,9 +763,11 @@ const GeminiLiveDirect = () => {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
     }
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject;
-      stream.getTracks().forEach(track => track.stop());
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     
@@ -671,7 +784,7 @@ const GeminiLiveDirect = () => {
     setIsCameraOn(false);
     setupCompleteRef.current = false;
     logAnalytics('session_end');
-  }, [logAnalytics]);
+  }, [logAnalytics, stopVideoFrameCapture]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -754,7 +867,33 @@ const GeminiLiveDirect = () => {
 
       {isCameraOn && (
         <div className="video-preview">
-          <video ref={videoRef} className="video-element" autoPlay muted />
+          <video 
+            ref={videoRef} 
+            className="video-element" 
+            autoPlay 
+            muted 
+            playsInline
+            style={{ 
+              display: 'block',
+              width: '320px', 
+              height: '240px',
+              backgroundColor: '#000'
+            }}
+          >
+            Your browser does not support the video element.
+          </video>
+          {!videoRef.current?.srcObject && (
+            <div style={{ 
+              position: 'absolute', 
+              top: '50%', 
+              left: '50%', 
+              transform: 'translate(-50%, -50%)',
+              color: '#666',
+              fontSize: '14px'
+            }}>
+              Loading camera...
+            </div>
+          )}
         </div>
       )}
 

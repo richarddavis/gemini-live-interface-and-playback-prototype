@@ -169,6 +169,11 @@
   border: 2px solid #2196f3;
   border-radius: 12px;
   background: #f8f9fa;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 270px; /* Account for video height + padding */
 }
 
 .video-element {
@@ -178,6 +183,7 @@
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   background: #000;
   object-fit: cover;
+  display: block !important;
 }
 
 /* Chat Section - Fixed Layout */

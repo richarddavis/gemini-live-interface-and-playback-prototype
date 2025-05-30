@@ -160,6 +160,58 @@ class TestGeminiLiveIntegration(unittest.TestCase):
             
         print(f"✅ Rapid interaction logging test PASSED")
 
+    def test_replay_data_with_cloud_storage_urls(self):
+        """Test that replay data includes cloud storage URLs for media content"""
+        # First create an interaction with cloud storage
+        payload = {
+            'session_id': 'test_replay_session',
+            'interaction_type': 'audio_chunk',
+            'media_data': {
+                'storage_type': 'cloud_storage',
+                'data': 'VGVzdCBhdWRpbyBkYXRh',  # "Test audio data" in base64
+                'is_anonymized': False,
+                'retention_days': 7
+            },
+            'metadata': {
+                'audio_sample_rate': 24000,
+                'audio_format': 'pcm_16bit',
+                'data_size_bytes': 1000
+            }
+        }
+        
+        response = requests.post(f"{API_BASE_URL}/interaction-logs", 
+                               json=payload,
+                               headers={'Content-Type': 'application/json'})
+        
+        self.assertEqual(response.status_code, 201)
+        interaction_data = response.json()
+        print(f"🎵 Audio chunk for replay logged: {response.status_code}")
+        
+        # Now fetch the replay data
+        replay_response = requests.get(f"{API_BASE_URL}/interaction-logs/test_replay_session?include_media=true")
+        self.assertEqual(replay_response.status_code, 200)
+        
+        replay_data = replay_response.json()
+        self.assertIn('logs', replay_data)
+        self.assertGreater(len(replay_data['logs']), 0)
+        
+        # Check that we have media_data with cloud_storage_url
+        audio_log = None
+        for log in replay_data['logs']:
+            if log['interaction_type'] == 'audio_chunk':
+                audio_log = log
+                break
+        
+        self.assertIsNotNone(audio_log, "Audio chunk log not found in replay data")
+        self.assertIn('media_data', audio_log)
+        self.assertEqual(audio_log['media_data']['storage_type'], 'cloud_storage')
+        self.assertIn('cloud_storage_url', audio_log['media_data'])
+        self.assertTrue(audio_log['media_data']['cloud_storage_url'].startswith('https://storage.googleapis.com/'))
+        
+        # Verify the URL is accessible (optional - might require credentials)
+        print(f"🎬 Replay data includes cloud storage URL: {audio_log['media_data']['cloud_storage_url'][:100]}...")
+        print("✅ Replay data with cloud storage URLs test PASSED")
+
 if __name__ == "__main__":
     # Check if API is available
     try:

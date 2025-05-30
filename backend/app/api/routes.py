@@ -12,6 +12,7 @@ import hashlib
 from datetime import datetime, timedelta
 from sqlalchemy import func
 from io import BytesIO
+import requests
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
@@ -858,3 +859,90 @@ def _update_session_summary(session_id, interaction_type, metadata):
         current_app.logger.error(f"Error updating session summary: {str(e)}")
         # Don't fail the main request if summary update fails
         db.session.rollback() 
+
+@api.route('/interaction-logs/media/<int:interaction_id>', methods=['GET'])
+def get_interaction_media(interaction_id):
+    """Proxy media files from cloud storage to avoid CORS issues"""
+    try:
+        # Find the interaction log
+        interaction_log = InteractionLog.query.get(interaction_id)
+        if not interaction_log:
+            return jsonify({"error": "Interaction not found"}), 404
+        
+        # Check if it has media data
+        if not interaction_log.media_data:
+            return jsonify({"error": "No media data for this interaction"}), 404
+        
+        media_data = interaction_log.media_data
+        
+        # Handle different storage types
+        if media_data.storage_type == 'cloud_storage' and media_data.cloud_storage_url:
+            try:
+                # Fetch the file from GCS
+                gcs_response = requests.get(media_data.cloud_storage_url, timeout=30)
+                
+                if gcs_response.status_code == 200:
+                    # Determine content type based on interaction type
+                    content_type = 'application/octet-stream'  # Default
+                    if interaction_log.interaction_type == 'audio_chunk':
+                        content_type = 'audio/pcm'
+                    elif interaction_log.interaction_type == 'video_frame':
+                        content_type = 'image/jpeg'
+                    elif interaction_log.interaction_type == 'api_response':
+                        # Check if it's audio or text
+                        if media_data.cloud_storage_url.endswith('.pcm'):
+                            content_type = 'audio/pcm'
+                        elif media_data.cloud_storage_url.endswith('.json'):
+                            content_type = 'application/json'
+                        else:
+                            # For API responses, check if it looks like audio data
+                            if len(gcs_response.content) > 1000 and interaction_log.interaction_metadata and interaction_log.interaction_metadata.api_endpoint == 'gemini_live_api':
+                                content_type = 'audio/pcm'
+                    
+                    # Return the file content with proper headers
+                    response = Response(
+                        gcs_response.content,
+                        status=200,
+                        headers={
+                            'Content-Type': content_type,
+                            'Access-Control-Allow-Origin': '*',
+                            'Cache-Control': 'public, max-age=3600'
+                        }
+                    )
+                    return response
+                else:
+                    current_app.logger.error(f"GCS fetch failed: {gcs_response.status_code}")
+                    return jsonify({"error": "Failed to fetch from cloud storage"}), 502
+                    
+            except Exception as e:
+                current_app.logger.error(f"Error fetching from GCS: {str(e)}")
+                return jsonify({"error": f"Cloud storage error: {str(e)}"}), 502
+        
+        elif media_data.storage_type == 'inline' and media_data.data_inline:
+            # Return inline data
+            content_type = 'application/octet-stream'
+            if interaction_log.interaction_type == 'audio_chunk':
+                content_type = 'audio/pcm'
+            elif interaction_log.interaction_type == 'video_frame':
+                content_type = 'image/jpeg'
+            
+            response = Response(
+                media_data.data_inline,
+                status=200,
+                headers={
+                    'Content-Type': content_type,
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=3600'
+                }
+            )
+            return response
+        
+        elif media_data.storage_type == 'hash_only':
+            return jsonify({"error": "Media data stored as hash only - no content available for replay"}), 404
+        
+        else:
+            return jsonify({"error": "Unsupported storage type or no media URL"}), 404
+            
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving interaction media: {str(e)}")
+        return jsonify({"error": f"Failed to retrieve media: {str(e)}"}), 500 

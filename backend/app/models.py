@@ -106,7 +106,7 @@ class InteractionLog(db.Model):
             result['interaction_metadata'] = self.interaction_metadata.to_dict()
         
         if include_media and self.media_data:
-            result['media_data'] = self.media_data.to_dict()
+            result['media_data'] = self.media_data.to_dict(include_data=True)
             
         return result
 

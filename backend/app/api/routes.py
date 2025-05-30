@@ -1,7 +1,7 @@
 from flask import jsonify, request, Response, stream_with_context, url_for, current_app
 from . import api
 from .. import db
-from ..models import Task, ChatMessage, ChatSession
+from ..models import Task, ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
 from app.llm_providers import OpenAIProvider, GeminiProvider
 from app.services.storage import GCSStorageService
 import openai
@@ -10,6 +10,9 @@ import os
 from werkzeug.utils import secure_filename
 import uuid
 import base64
+import hashlib
+from datetime import datetime, timedelta
+from sqlalchemy import func
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
@@ -375,3 +378,363 @@ def upload_file():
     else:
         print(f"[DEBUG] File type not allowed: {file.filename}")
         return jsonify({"error": "File type not allowed"}), 400 
+
+# ===========================
+# INTERACTION LOGGING ENDPOINTS
+# ===========================
+
+@api.route('/interaction-logs', methods=['POST'])
+def log_interaction():
+    """Log a user interaction with optional media data"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data or not data.get('session_id') or not data.get('interaction_type'):
+            return jsonify({"error": "session_id and interaction_type are required"}), 400
+        
+        # Extract user context from request
+        user_agent = request.headers.get('User-Agent')
+        ip_address = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR'))
+        
+        # Create main interaction log
+        interaction_log = InteractionLog(
+            session_id=data['session_id'],
+            chat_session_id=data.get('chat_session_id'),
+            interaction_type=data['interaction_type'],
+            user_agent=user_agent,
+            ip_address=ip_address
+        )
+        
+        db.session.add(interaction_log)
+        db.session.flush()  # Get the ID
+        
+        # Add metadata if provided
+        metadata_data = data.get('metadata', {})
+        if metadata_data:
+            interaction_metadata = InteractionMetadata(
+                interaction_log_id=interaction_log.id,
+                frame_rate=metadata_data.get('frame_rate'),
+                audio_sample_rate=metadata_data.get('audio_sample_rate'),
+                video_resolution_width=metadata_data.get('video_resolution', {}).get('width'),
+                video_resolution_height=metadata_data.get('video_resolution', {}).get('height'),
+                audio_format=metadata_data.get('audio_format'),
+                video_format=metadata_data.get('video_format'),
+                compression_quality=metadata_data.get('compression_quality'),
+                data_size_bytes=metadata_data.get('data_size_bytes'),
+                processing_time_ms=metadata_data.get('processing_time_ms'),
+                api_endpoint=metadata_data.get('api_endpoint'),
+                api_response_time_ms=metadata_data.get('api_response_time_ms'),
+                api_status_code=metadata_data.get('api_status_code'),
+                camera_on=metadata_data.get('camera_on'),
+                microphone_on=metadata_data.get('microphone_on'),
+                is_connected=metadata_data.get('is_connected'),
+                custom_metadata=metadata_data.get('custom_metadata')
+            )
+            db.session.add(interaction_metadata)
+        
+        # Handle media data if provided
+        media_data_info = data.get('media_data')
+        if media_data_info:
+            storage_type = media_data_info.get('storage_type', 'hash_only')
+            
+            media_data = InteractionMediaData(
+                interaction_log_id=interaction_log.id,
+                storage_type=storage_type,
+                is_anonymized=media_data_info.get('is_anonymized', False),
+                retention_until=datetime.utcnow() + timedelta(days=media_data_info.get('retention_days', 7))
+            )
+            
+            # Handle different storage types
+            if storage_type == 'inline' and 'data' in media_data_info:
+                # Store small data directly (be careful with size)
+                if isinstance(media_data_info['data'], str):
+                    # Base64 encoded data
+                    try:
+                        decoded_data = base64.b64decode(media_data_info['data'])
+                        if len(decoded_data) <= 1024 * 1024:  # Max 1MB for inline storage
+                            media_data.data_inline = decoded_data
+                            media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                        else:
+                            return jsonify({"error": "Data too large for inline storage"}), 400
+                    except Exception as e:
+                        return jsonify({"error": f"Invalid base64 data: {str(e)}"}), 400
+            
+            elif storage_type == 'hash_only' and 'data' in media_data_info:
+                # Only store hash for privacy
+                if isinstance(media_data_info['data'], str):
+                    try:
+                        decoded_data = base64.b64decode(media_data_info['data'])
+                        media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                    except:
+                        # Assume it's already text, hash directly
+                        media_data.data_hash = hashlib.sha256(media_data_info['data'].encode()).hexdigest()
+            
+            elif storage_type == 'file_path' and 'file_path' in media_data_info:
+                media_data.file_path = media_data_info['file_path']
+                # Generate hash if data is provided
+                if 'data' in media_data_info:
+                    try:
+                        decoded_data = base64.b64decode(media_data_info['data'])
+                        media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                    except:
+                        pass
+            
+            db.session.add(media_data)
+        
+        db.session.commit()
+        
+        # Update session summary
+        _update_session_summary(data['session_id'], data['interaction_type'], metadata_data)
+        
+        return jsonify({
+            "message": "Interaction logged successfully",
+            "interaction_id": interaction_log.id
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error logging interaction: {str(e)}")
+        return jsonify({"error": f"Failed to log interaction: {str(e)}"}), 500
+
+@api.route('/interaction-logs/<session_id>', methods=['GET'])
+def get_interaction_logs(session_id):
+    """Get interaction logs for a specific session"""
+    try:
+        # Query parameters
+        interaction_type = request.args.get('interaction_type')
+        limit = request.args.get('limit', 100, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        include_media = request.args.get('include_media', 'false').lower() == 'true'
+        
+        # Build query
+        query = InteractionLog.query.filter_by(session_id=session_id)
+        
+        if interaction_type:
+            query = query.filter_by(interaction_type=interaction_type)
+        
+        # Get total count
+        total_count = query.count()
+        
+        # Apply pagination
+        logs = query.order_by(InteractionLog.timestamp.desc())\
+                   .offset(offset)\
+                   .limit(limit)\
+                   .all()
+        
+        return jsonify({
+            "logs": [log.to_dict(include_media=include_media) for log in logs],
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving interaction logs: {str(e)}")
+        return jsonify({"error": f"Failed to retrieve logs: {str(e)}"}), 500
+
+@api.route('/interaction-logs/analytics/<session_id>', methods=['GET'])
+def get_session_analytics(session_id):
+    """Get analytics for a specific session"""
+    try:
+        # Get session summary
+        summary = InteractionSessionSummary.query.filter_by(session_id=session_id).first()
+        
+        if not summary:
+            return jsonify({"error": "Session not found"}), 404
+        
+        # Get interaction type breakdown
+        interaction_counts = db.session.query(
+            InteractionLog.interaction_type,
+            func.count(InteractionLog.id).label('count')
+        ).filter_by(session_id=session_id)\
+         .group_by(InteractionLog.interaction_type)\
+         .all()
+        
+        # Get recent errors (if any)
+        recent_errors = InteractionLog.query\
+            .join(InteractionMetadata)\
+            .filter(
+                InteractionLog.session_id == session_id,
+                InteractionMetadata.api_status_code >= 400
+            )\
+            .order_by(InteractionLog.timestamp.desc())\
+            .limit(10)\
+            .all()
+        
+        # Calculate quality metrics
+        avg_processing_time = db.session.query(func.avg(InteractionMetadata.processing_time_ms))\
+            .join(InteractionLog)\
+            .filter(InteractionLog.session_id == session_id)\
+            .scalar()
+        
+        avg_data_size = db.session.query(func.avg(InteractionMetadata.data_size_bytes))\
+            .join(InteractionLog)\
+            .filter(InteractionLog.session_id == session_id)\
+            .scalar()
+        
+        return jsonify({
+            "session_summary": summary.to_dict(),
+            "interaction_breakdown": {item.interaction_type: item.count for item in interaction_counts},
+            "quality_metrics": {
+                "average_processing_time_ms": float(avg_processing_time) if avg_processing_time else None,
+                "average_data_size_bytes": float(avg_data_size) if avg_data_size else None
+            },
+            "recent_errors": [log.to_dict() for log in recent_errors]
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting session analytics: {str(e)}")
+        return jsonify({"error": f"Failed to get analytics: {str(e)}"}), 500
+
+@api.route('/interaction-logs/sessions', methods=['GET'])
+def get_interaction_sessions():
+    """Get all interaction sessions with summaries"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        
+        sessions = InteractionSessionSummary.query\
+            .order_by(InteractionSessionSummary.started_at.desc())\
+            .offset(offset)\
+            .limit(limit)\
+            .all()
+        
+        total_count = InteractionSessionSummary.query.count()
+        
+        return jsonify({
+            "sessions": [session.to_dict() for session in sessions],
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error getting interaction sessions: {str(e)}")
+        return jsonify({"error": f"Failed to get sessions: {str(e)}"}), 500
+
+@api.route('/interaction-logs/session/<session_id>/start', methods=['POST'])
+def start_interaction_session(session_id):
+    """Start a new interaction session or resume existing one"""
+    try:
+        data = request.get_json() or {}
+        chat_session_id = data.get('chat_session_id')
+        
+        # Check if session already exists
+        existing_summary = InteractionSessionSummary.query.filter_by(session_id=session_id).first()
+        
+        if existing_summary and not existing_summary.ended_at:
+            # Session already active
+            return jsonify({
+                "message": "Session already active",
+                "session": existing_summary.to_dict()
+            }), 200
+        
+        if existing_summary:
+            # End the previous session
+            existing_summary.ended_at = datetime.utcnow()
+            existing_summary.duration_seconds = int((existing_summary.ended_at - existing_summary.started_at).total_seconds())
+        
+        # Create new session summary
+        session_summary = InteractionSessionSummary(
+            session_id=session_id,
+            chat_session_id=chat_session_id,
+            started_at=datetime.utcnow()
+        )
+        
+        db.session.add(session_summary)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Session started",
+            "session": session_summary.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error starting session: {str(e)}")
+        return jsonify({"error": f"Failed to start session: {str(e)}"}), 500
+
+@api.route('/interaction-logs/session/<session_id>/end', methods=['POST'])
+def end_interaction_session(session_id):
+    """End an interaction session"""
+    try:
+        session_summary = InteractionSessionSummary.query.filter_by(session_id=session_id).first()
+        
+        if not session_summary:
+            return jsonify({"error": "Session not found"}), 404
+        
+        if session_summary.ended_at:
+            return jsonify({"message": "Session already ended"}), 200
+        
+        session_summary.ended_at = datetime.utcnow()
+        session_summary.duration_seconds = int((session_summary.ended_at - session_summary.started_at).total_seconds())
+        
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Session ended",
+            "session": session_summary.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error ending session: {str(e)}")
+        return jsonify({"error": f"Failed to end session: {str(e)}"}), 500
+
+def _update_session_summary(session_id, interaction_type, metadata):
+    """Helper function to update session summary statistics"""
+    try:
+        summary = InteractionSessionSummary.query.filter_by(session_id=session_id).first()
+        
+        if not summary:
+            # Create if doesn't exist
+            summary = InteractionSessionSummary(
+                session_id=session_id,
+                started_at=datetime.utcnow()
+            )
+            db.session.add(summary)
+            db.session.flush()
+        
+        # Update counters
+        summary.total_interactions += 1
+        
+        if interaction_type == 'video_frame':
+            summary.video_frames_sent += 1
+        elif interaction_type == 'audio_chunk':
+            summary.audio_chunks_sent += 1
+        elif interaction_type == 'text_input':
+            summary.text_messages_sent += 1
+        elif interaction_type == 'api_response':
+            summary.api_responses_received += 1
+        
+        # Update metrics from metadata
+        if metadata:
+            if metadata.get('data_size_bytes'):
+                summary.total_data_sent_bytes += metadata['data_size_bytes']
+            
+            if metadata.get('frame_rate') and interaction_type == 'video_frame':
+                # Calculate running average
+                if summary.average_video_frame_rate:
+                    summary.average_video_frame_rate = (summary.average_video_frame_rate + metadata['frame_rate']) / 2
+                else:
+                    summary.average_video_frame_rate = metadata['frame_rate']
+            
+            if metadata.get('api_response_time_ms'):
+                # Calculate running average
+                if summary.average_api_response_time_ms:
+                    summary.average_api_response_time_ms = (summary.average_api_response_time_ms + metadata['api_response_time_ms']) / 2
+                else:
+                    summary.average_api_response_time_ms = metadata['api_response_time_ms']
+            
+            # Track errors
+            if metadata.get('api_status_code', 200) >= 400:
+                summary.total_errors += 1
+                summary.last_error_timestamp = datetime.utcnow()
+        
+        db.session.commit()
+        
+    except Exception as e:
+        current_app.logger.error(f"Error updating session summary: {str(e)}")
+        # Don't fail the main request if summary update fails
+        db.session.rollback() 

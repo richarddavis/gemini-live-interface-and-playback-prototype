@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import './GeminiLiveDirect.css';
+import { interactionLogger } from '../services/interactionLogger';
 
 /**
  * Direct Google Gemini Live API Integration
@@ -50,6 +51,17 @@ const GeminiLiveDirect = () => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // Initialize interaction logging
+  useEffect(() => {
+    // Start interaction session when component mounts
+    interactionLogger.startSession();
+    
+    // Cleanup when component unmounts
+    return () => {
+      interactionLogger.endSession();
+    };
+  }, []);
+
   // Capture and send video frame to Gemini Live API
   const captureAndSendVideoFrame = useCallback(() => {
     if (!videoRef.current || !isConnected || !wsRef.current || !isCameraOn) {
@@ -84,9 +96,14 @@ const GeminiLiveDirect = () => {
       
       wsRef.current.send(JSON.stringify(videoMessage));
       
-      // Log occasionally (every ~20 frames to avoid spam)
+      // Log video frame (occasionally to avoid spam)
       if (Math.random() < 0.05) { // 5% of frames
         console.log(`📹 Sent video frame: ${canvas.width}x${canvas.height}`);
+        interactionLogger.logVideoFrame(base64Data, {
+          video_resolution: { width: canvas.width, height: canvas.height },
+          camera_on: isCameraOn,
+          is_connected: isConnected
+        });
       }
       
     } catch (error) {
@@ -190,11 +207,19 @@ const GeminiLiveDirect = () => {
   const connectToGemini = useCallback(() => {
     if (!API_KEY) {
       addMessage('error', 'Google AI Studio API key not found. Please check your environment configuration.');
+      interactionLogger.logError(new Error('API key not found'), { context: 'connection_attempt' });
       return;
     }
 
     setIsConnecting(true);
     setupCompleteRef.current = false;
+    
+    // Log connection attempt
+    interactionLogger.logUserAction('connect_attempt', {
+      voice: selectedVoice,
+      response_mode: responseMode,
+      has_api_key: !!API_KEY
+    });
 
     try {
       const ws = new WebSocket(WS_URL);
@@ -202,6 +227,12 @@ const GeminiLiveDirect = () => {
 
       ws.onopen = () => {
         console.log('✅ Connected to Google Live API');
+        
+        // Log successful connection
+        interactionLogger.logUserAction('connection_success', {
+          voice: selectedVoice,
+          response_mode: responseMode
+        });
         
         // Send setup message using Google's official format
         const setupMessage = {
@@ -255,6 +286,12 @@ const GeminiLiveDirect = () => {
                   setIsConnected(true);
                   setIsConnecting(false);
                   addMessage('system', '🎉 Connected successfully! You can now chat with Gemini.');
+                  
+                  // Log setup completion
+                  interactionLogger.logUserAction('setup_complete', {
+                    voice: selectedVoice,
+                    response_mode: responseMode
+                  });
                 } else if (message.serverContent) {
                   handleServerContent(message.serverContent);
                 } else if (message.toolCall) {
@@ -282,6 +319,12 @@ const GeminiLiveDirect = () => {
               setIsConnected(true);
               setIsConnecting(false);
               addMessage('system', '🎉 Connected successfully! You can now chat with Gemini.');
+              
+              // Log setup completion
+              interactionLogger.logUserAction('setup_complete', {
+                voice: selectedVoice,
+                response_mode: responseMode
+              });
             } else if (message.serverContent) {
               handleServerContent(message.serverContent);
             } else if (message.toolCall) {
@@ -554,9 +597,22 @@ const GeminiLiveDirect = () => {
         if (part.text) {
           console.log('💬 Adding AI message:', part.text);
           addMessage('ai', part.text);
+          
+          // Log API text response
+          interactionLogger.logApiResponse(part.text, {
+            response_type: 'text',
+            response_length: part.text.length
+          });
         } else if (part.inlineData) {
           console.log('🎵 Processing inline audio data');
           handleAudioResponse(part.inlineData);
+          
+          // Log API audio response
+          interactionLogger.logApiResponse(part.inlineData, {
+            response_type: 'audio',
+            mime_type: part.inlineData.mimeType,
+            data_size: part.inlineData.data ? part.inlineData.data.length : 0
+          });
         }
       }
     }
@@ -593,6 +649,13 @@ const GeminiLiveDirect = () => {
     console.log('📤 Sending text message:', message);
     wsRef.current.send(JSON.stringify(message));
     addMessage('user', textInput.trim());
+    
+    // Log text input
+    interactionLogger.logTextInput(textInput.trim(), {
+      message_length: textInput.trim().length,
+      is_connected: isConnected
+    });
+    
     setTextInput('');
     logAnalytics('text_input', { message_length: textInput.trim().length });
   }, [textInput, isConnected, addMessage, logAnalytics]);
@@ -687,6 +750,12 @@ const GeminiLiveDirect = () => {
           // Reduced logging - only log occasionally
           if (Math.random() < 0.1) { // 10% of chunks
             console.log(`📤 Sending PCM audio chunk: ${pcmData.length} samples, ${uint8Data.length} bytes`);
+            interactionLogger.logAudioChunk(base64Audio, {
+              audio_sample_rate: sampleRate,
+              data_size_bytes: uint8Data.length,
+              microphone_on: isMicOn,
+              is_connected: isConnected
+            });
           }
           wsRef.current.send(JSON.stringify(audioMessage));
         }

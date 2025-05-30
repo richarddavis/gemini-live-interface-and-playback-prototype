@@ -1,8 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('renders webapp interface', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  // Test for elements that actually exist in our app
+  const chatInterface = screen.getByText(/Chat/i);
+  expect(chatInterface).toBeInTheDocument();
+});
+
+test('renders live mode toggle', () => {
+  render(<App />);
+  // Test for the live mode functionality
+  const liveToggle = screen.getByText(/Live Mode/i);
+  expect(liveToggle).toBeInTheDocument();
 });

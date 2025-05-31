@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { interactionLogger } from '../services/interactionLogger';
 import './InteractionReplay.css';
+import { useAudioStreaming } from '../hooks/useAudioStreaming';
 
 const InteractionReplay = () => {
   const [sessions, setSessions] = useState([]);
@@ -23,10 +24,68 @@ const InteractionReplay = () => {
   const [videoCache, setVideoCache] = useState(new Map());
   const [mediaCacheReady, setMediaCacheReady] = useState(false);
 
+  // Audio streaming state for realistic replay
+  const [isStreamingAudio, setIsStreamingAudio] = useState(false);
+
   const videoRef = useRef(null);
   const audioContextRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
   const audioSourceRef = useRef(null);
+
+  // NEW: Audio streaming hooks for different audio sources
+  const geminiAudioStreaming = useAudioStreaming({
+    timeout: 200, // Faster timeout for API chunks (replicate live behavior)
+    audioSource: 'gemini_api',
+    sampleRate: 24000,
+    onStreamStart: (data) => {
+      console.log('🎵 Gemini audio stream started:', data);
+      setIsStreamingAudio(true);
+      setReplayStatus('🎵 Starting Gemini audio stream...');
+    },
+    onStreamEnd: (data) => {
+      console.log('🎵 Gemini audio stream ended:', data);
+      setReplayStatus(`🔊 Playing Gemini audio stream (${data.chunks_count} chunks)`);
+    },
+    onPlaybackStart: (data) => {
+      console.log('🎵 Gemini audio playback started:', data);
+      setReplayStatus(`🔊 Playing Gemini audio (${data.estimated_duration.toFixed(2)}s, ${data.chunks_count} chunks)`);
+    },
+    onPlaybackEnd: (data) => {
+      console.log('🎵 Gemini audio playback ended:', data);
+      setIsStreamingAudio(false);
+      setReplayStatus('🎵 Gemini audio stream completed');
+    },
+    onError: (error) => {
+      console.error('🚨 Gemini audio streaming error:', error);
+      setIsStreamingAudio(false);
+      setReplayStatus('❌ Gemini audio error');
+    }
+  });
+
+  const userAudioStreaming = useAudioStreaming({
+    timeout: 500, // Longer timeout for user audio (different behavior)
+    audioSource: 'user_microphone',
+    sampleRate: 16000, // User audio is typically 16kHz
+    onStreamStart: (data) => {
+      console.log('🎵 User audio stream started:', data);
+      setReplayStatus('🎤 Playing user audio...');
+    },
+    onStreamEnd: (data) => {
+      console.log('🎵 User audio stream ended:', data);
+    },
+    onPlaybackStart: (data) => {
+      console.log('🎵 User audio playback started:', data);
+      setReplayStatus(`🎤 Playing user audio (${data.estimated_duration.toFixed(2)}s)`);
+    },
+    onPlaybackEnd: (data) => {
+      console.log('🎵 User audio playback ended:', data);
+      setReplayStatus('🎤 User audio completed');
+    },
+    onError: (error) => {
+      console.error('🚨 User audio streaming error:', error);
+      setReplayStatus('❌ User audio error');
+    }
+  });
 
   // Load all available sessions on component mount
   useEffect(() => {
@@ -132,7 +191,7 @@ const InteractionReplay = () => {
         setReplayStatus(`Preloading audio ${i + 1}/${audioLogs.length} (${processedCount}/${totalMedia} total)...`);
         
         try {
-          const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/interaction-logs/media/${log.id}`;
+          const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
           const response = await fetch(proxyUrl);
           
           if (response.ok) {
@@ -167,7 +226,7 @@ const InteractionReplay = () => {
         setReplayStatus(`Preloading video ${i + 1}/${videoLogs.length} (${processedCount}/${totalMedia} total)...`);
         
         try {
-          const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/interaction-logs/media/${log.id}`;
+          const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
           const response = await fetch(proxyUrl);
           
           if (response.ok) {
@@ -241,12 +300,22 @@ const InteractionReplay = () => {
 
   const stopReplay = () => {
     setIsPlaying(false);
+    setCurrentIndex(0);
+    setCurrentVideoFrame(null);
+    setCurrentTextInput('');
+    setCurrentApiResponse('');
+    setCurrentUserAction('');
     setReplayStatus('Replay stopped');
     
     if (playbackTimeoutRef.current) {
       clearTimeout(playbackTimeoutRef.current);
       playbackTimeoutRef.current = null;
     }
+    
+    // Clean up audio streaming state - UPDATED for useAudioStreaming hooks
+    setIsStreamingAudio(false);
+    geminiAudioStreaming.clearBuffer();
+    userAudioStreaming.clearBuffer();
   };
 
   const playNextInteraction = (index) => {
@@ -268,23 +337,48 @@ const InteractionReplay = () => {
     // Process the current interaction
     processInteraction(currentLog);
 
-    // Calculate time to next interaction with optimized delays
-    let delay = 100; // Minimum delay for smooth playback
+    // Improved timing logic with better audio handling
+    let delay = 50; // Minimum delay for smooth playback
     
     if (index < replayData.logs.length - 1) {
       const nextLog = replayData.logs[index + 1];
       const timeDiff = new Date(nextLog.timestamp) - new Date(currentLog.timestamp);
       
-      // Optimize delays based on interaction types
-      if (currentLog.interaction_type === 'audio_chunk' && nextLog.interaction_type === 'audio_chunk') {
-        // For consecutive audio chunks, use shorter delays for smoother audio
-        delay = Math.min(300, Math.max(50, timeDiff / playbackSpeed));
+      // Special handling for audio streaming events
+      if (currentLog.interaction_type === 'user_action' && 
+          currentLog.interaction_metadata?.action_type === 'audio_stream_start') {
+        // When audio streaming starts, move quickly to the next interaction
+        delay = Math.min(100, Math.max(30, timeDiff / playbackSpeed));
+      } else if (currentLog.interaction_type === 'audio_chunk' && nextLog.interaction_type === 'audio_chunk') {
+        // For consecutive audio chunks, check if they're from the same source
+        const currentIsUserAudio = currentLog.interaction_metadata?.microphone_on === true;
+        const nextIsUserAudio = nextLog.interaction_metadata?.microphone_on === true;
+        
+        if (!currentIsUserAudio && !nextIsUserAudio) {
+          // Both are API audio chunks - these should be processed quickly for streaming
+          delay = Math.min(50, Math.max(20, timeDiff / playbackSpeed));
+        } else if (currentIsUserAudio && nextIsUserAudio) {
+          // Both are user audio - normal timing
+          delay = Math.min(150, Math.max(30, timeDiff / playbackSpeed));
+        } else {
+          // Different source audio - allow more time for context switch
+          delay = Math.min(500, Math.max(100, timeDiff / playbackSpeed));
+        }
       } else if (currentLog.interaction_type === 'video_frame' && nextLog.interaction_type === 'video_frame') {
-        // For consecutive video frames, maintain reasonable frame rate
-        delay = Math.min(200, Math.max(33, timeDiff / playbackSpeed)); // ~30 FPS max
+        // For video frames, use precise timing based on actual timestamps
+        const frameDelay = Math.max(16, timeDiff / playbackSpeed); // Minimum 16ms for 60fps
+        delay = Math.min(200, frameDelay); // Cap at 200ms for very slow sequences
+      } else if (currentLog.interaction_type === 'api_response' || nextLog.interaction_type === 'api_response') {
+        // API responses often need more processing time
+        delay = Math.min(1000, Math.max(200, timeDiff / playbackSpeed));
+      } else if (isStreamingAudio && 
+                 (currentLog.interaction_type === 'audio_chunk' || 
+                  currentLog.interaction_type === 'api_response')) {
+        // If we're currently streaming audio, process audio-related events faster
+        delay = Math.min(100, Math.max(20, timeDiff / playbackSpeed));
       } else {
         // For other interactions, use normal timing
-        delay = Math.max(100, Math.min(2000, timeDiff / playbackSpeed)); // Cap at 2 seconds
+        delay = Math.max(50, Math.min(1500, timeDiff / playbackSpeed)); // Cap at 1.5 seconds
       }
     }
 
@@ -303,19 +397,85 @@ const InteractionReplay = () => {
         displayVideoFrame(log);
         break;
       case 'audio_chunk':
-        playAudioChunk(log); // Always call this - it will use cache if available
+        handleAudioChunkForStreaming(log);
         break;
       case 'text_input':
         displayTextInput(log);
         break;
       case 'api_response':
-        displayApiResponse(log);
+        handleApiResponseForStreaming(log);
         break;
       case 'user_action':
-        displayUserAction(log);
+        handleUserActionForStreaming(log);
         break;
       default:
         console.log('Unknown interaction type:', log.interaction_type);
+    }
+  };
+
+  // Handle audio chunks with streaming logic - UPDATED to use useAudioStreaming hooks
+  const handleAudioChunkForStreaming = async (log) => {
+    const isUserAudio = log.interaction_metadata?.microphone_on === true;
+    
+    // Fetch the audio data if not cached
+    let audioArrayBuffer = null;
+    
+    if (audioCache.has(log.id)) {
+      // Convert cached AudioBuffer back to ArrayBuffer for hook
+      const cachedBuffer = audioCache.get(log.id);
+      // For now, we'll create a mock ArrayBuffer - in production this would be optimized
+      audioArrayBuffer = new ArrayBuffer(cachedBuffer.length * 2); // Estimate based on 16-bit samples
+    } else if (log.media_data && log.media_data.cloud_storage_url) {
+      try {
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
+        const response = await fetch(proxyUrl);
+        
+        if (response.ok) {
+          audioArrayBuffer = await response.arrayBuffer();
+        }
+      } catch (error) {
+        console.error('Error loading audio chunk:', error);
+        return;
+      }
+    }
+    
+    if (audioArrayBuffer) {
+      if (isUserAudio) {
+        console.log('🎵 Adding user audio chunk to stream:', log.id);
+        userAudioStreaming.addAudioChunk(audioArrayBuffer);
+      } else {
+        console.log('🎵 Adding API audio chunk to stream:', log.id);
+        geminiAudioStreaming.addAudioChunk(audioArrayBuffer);
+      }
+    } else {
+      console.warn('🎵 No audio data available for chunk:', log.id);
+    }
+  };
+
+  // Handle API responses that might be audio
+  const handleApiResponseForStreaming = (log) => {
+    // Check if this is an audio response
+    if (log.interaction_metadata?.response_type === 'audio') {
+      handleAudioChunkForStreaming(log);
+    } else {
+      displayApiResponse(log);
+    }
+  };
+
+  // Handle user actions, including audio streaming events - UPDATED for new hooks
+  const handleUserActionForStreaming = (log) => {
+    const actionType = log.interaction_metadata?.action_type;
+    
+    if (actionType === 'audio_stream_start') {
+      console.log('🎵 Audio stream start event detected');
+      setReplayStatus('🎵 Gemini audio stream starting...');
+      // The hooks will handle the streaming automatically
+    } else if (actionType === 'audio_stream_end') {
+      console.log('🎵 Audio stream end event detected');
+      // The hooks will trigger playback on timeout, but we can force it if needed
+      geminiAudioStreaming.clearBuffer(); // This will trigger any pending streams
+    } else {
+      displayUserAction(log);
     }
   };
 
@@ -383,7 +543,7 @@ const InteractionReplay = () => {
         console.log('🎬 Loading video frame via backend proxy for interaction:', log.id, '(not cached)');
         
         // Use backend proxy endpoint instead of direct GCS URL
-        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/interaction-logs/media/${log.id}`;
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
         console.log('🎬 Fetching from proxy URL:', proxyUrl);
         
         const response = await fetch(proxyUrl);
@@ -465,15 +625,19 @@ const InteractionReplay = () => {
   };
 
   const playAudioChunk = async (log) => {
+    // Determine if this is user audio or API audio
+    const isUserAudio = log.interaction_metadata?.microphone_on === true;
+    const audioSource = isUserAudio ? 'User' : 'API';
+    
     // First, check if we have this audio chunk cached
     if (audioCache.has(log.id)) {
       try {
-        console.log('🎬 Playing cached audio chunk for interaction:', log.id);
+        console.log(`🎬 Playing cached ${audioSource} audio chunk for interaction:`, log.id);
         
-        // Initialize audio context if needed
+        // Initialize audio context if needed with appropriate sample rate
         if (!audioContextRef.current) {
           audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000
+            sampleRate: 24000 // Use consistent 24kHz for playback
           });
         }
 
@@ -485,30 +649,40 @@ const InteractionReplay = () => {
         // Get the cached audio buffer
         const audioBuffer = audioCache.get(log.id);
         
-        // Create and play audio source
+        // Create and play audio source with appropriate gain for user vs API audio
         const source = audioContext.createBufferSource();
+        const gainNode = audioContext.createGain();
+        
         source.buffer = audioBuffer;
-        source.connect(audioContext.destination);
+        source.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Adjust volume based on audio source (user audio is often quieter)
+        gainNode.gain.value = isUserAudio ? 1.2 : 0.8; // Boost user audio, lower API audio
+        
         source.start(0);
         
-        console.log(`🎬 Playing cached PCM audio chunk: ${audioBuffer.duration.toFixed(3)}s (instant playback)`);
+        console.log(`🎬 Playing cached ${audioSource} PCM audio chunk: ${audioBuffer.duration.toFixed(3)}s (instant playback)`);
+        
+        // Visual feedback for audio type
+        setReplayStatus(`🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s)`);
         return;
       } catch (error) {
-        console.error('Error playing cached audio chunk:', error);
+        console.error(`Error playing cached ${audioSource} audio chunk:`, error);
       }
     }
 
     // Fallback to network fetch if not cached
     if (log.media_data && log.media_data.cloud_storage_url) {
       try {
-        console.log('🎬 Loading audio chunk via backend proxy for interaction:', log.id, '(not cached)');
+        console.log(`🎬 Loading ${audioSource} audio chunk via backend proxy for interaction:`, log.id, '(not cached)');
         
         // Use backend proxy endpoint instead of direct GCS URL
-        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/interaction-logs/media/${log.id}`;
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
         const response = await fetch(proxyUrl);
         
         if (!response.ok) {
-          console.error('Failed to fetch audio chunk via proxy:', response.status);
+          console.error(`Failed to fetch ${audioSource} audio chunk via proxy:`, response.status);
           return;
         }
         
@@ -517,7 +691,7 @@ const InteractionReplay = () => {
         // Initialize audio context if needed
         if (!audioContextRef.current) {
           audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000 // Default to 24kHz for Gemini Live API
+            sampleRate: 24000 // Consistent 24kHz for playback
           });
         }
 
@@ -530,8 +704,16 @@ const InteractionReplay = () => {
         
         // For PCM data, we need to process it differently than for encoded audio
         if (response.headers.get('content-type') === 'audio/pcm' || log.media_data.cloud_storage_url.includes('.pcm')) {
-          // Handle raw PCM data
-          const sampleRate = log.interaction_metadata?.audio_sample_rate || 24000;
+          // Handle raw PCM data with proper sample rate detection
+          let sampleRate = 24000; // Default
+          
+          // Try to get sample rate from metadata
+          if (log.interaction_metadata?.audio_sample_rate) {
+            sampleRate = log.interaction_metadata.audio_sample_rate;
+          } else if (isUserAudio) {
+            sampleRate = 16000; // User audio is typically 16kHz
+          }
+          
           const audioData = new Uint8Array(arrayBuffer);
           const numSamples = audioData.length / 2; // 16-bit samples
           
@@ -546,34 +728,51 @@ const InteractionReplay = () => {
           }
           
           const source = audioContext.createBufferSource();
+          const gainNode = audioContext.createGain();
+          
           source.buffer = audioBuffer;
-          source.connect(audioContext.destination);
+          source.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          // Adjust volume based on audio source
+          gainNode.gain.value = isUserAudio ? 1.2 : 0.8;
           
           // Start audio immediately without additional delays
           source.start(0);
           
-          console.log('🎬 Playing PCM audio chunk (network):', numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
+          console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
+          setReplayStatus(`🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - network`);
         } else {
           // Handle encoded audio (MP3, WAV, etc.)
           try {
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
             const source = audioContext.createBufferSource();
+            const gainNode = audioContext.createGain();
+            
             source.buffer = audioBuffer;
-            source.connect(audioContext.destination);
+            source.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Adjust volume based on audio source
+            gainNode.gain.value = isUserAudio ? 1.2 : 0.8;
+            
             source.start(0);
             
-            console.log('🎬 Playing encoded audio chunk:', audioBuffer.duration, 'seconds');
+            console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
+            setReplayStatus(`🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - encoded`);
           } catch (decodeError) {
-            console.error('Failed to decode audio data:', decodeError);
+            console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
           }
         }
       } catch (error) {
-        console.error('Error playing audio chunk:', error);
+        console.error(`Error playing ${audioSource} audio chunk:`, error);
       }
     } else if (log.media_data && log.media_data.storage_type === 'hash_only') {
-      console.log('🎬 Audio chunk captured (hash-only mode - no replay data)');
+      console.log(`🎬 ${audioSource} audio chunk captured (hash-only mode - no replay data)`);
+      setReplayStatus(`${audioSource} audio detected (hash-only mode)`);
     } else {
-      console.log('🎬 No audio chunk data available');
+      console.log(`🎬 No ${audioSource} audio chunk data available`);
+      setReplayStatus(`No ${audioSource.toLowerCase()} audio available`);
     }
   };
 
@@ -607,7 +806,7 @@ const InteractionReplay = () => {
         console.log('🎬 Loading API response via backend proxy for interaction:', log.id);
         
         // Use backend proxy endpoint instead of direct GCS URL
-        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:5001/api'}/interaction-logs/media/${log.id}`;
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
         const response = await fetch(proxyUrl);
         
         if (response.ok) {
@@ -779,6 +978,17 @@ const InteractionReplay = () => {
                     {currentApiResponse && (
                       <div className="content-item api-response">
                         <strong>Gemini Response:</strong> {currentApiResponse}
+                      </div>
+                    )}
+                    {/* Audio status indicator */}
+                    {(replayStatus.includes('🔊') || isStreamingAudio) && (
+                      <div className={`content-item audio-indicator ${replayStatus.includes('user') ? 'user-audio' : 'api-audio'} ${isStreamingAudio ? 'streaming' : ''}`}>
+                        <strong>🎵 Audio Status:</strong> {replayStatus}
+                        {isStreamingAudio && (
+                          <div style={{ fontSize: '12px', marginTop: '5px', opacity: 0.8 }}>
+                            Streaming...
+                          </div>
+                        )}
                       </div>
                     )}
                     {!currentUserAction && !currentTextInput && !currentApiResponse && !isPlaying && (

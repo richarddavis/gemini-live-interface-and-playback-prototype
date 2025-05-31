@@ -1,12 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { useAudioStreaming } from '../useAudioStreaming';
 
-// Mock the interaction logger
-const mockInteractionLogger = {
-  logUserAction: jest.fn(),
-  logAudioChunk: jest.fn()
-};
-
 // Mock global dependencies
 global.AudioContext = jest.fn(() => ({
   state: 'running',

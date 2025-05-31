@@ -159,7 +159,7 @@ const InteractionReplay = () => {
         return;
       }
 
-      console.log(`🎬 Preloading ${audioLogs.length} audio chunks and ${videoLogs.length} video frames...`);
+      console.log(`🎬 Preloading ${audioLogs.length} audio chunks and ${videoLogs.length} video frames in parallel...`);
       
       // Initialize audio context for audio processing
       let audioContext = null;
@@ -175,17 +175,8 @@ const InteractionReplay = () => {
         }
       }
 
-      // Preload both audio and video content
-      const audioCache = new Map();
-      const videoCache = new Map();
-      let processedCount = 0;
-
-      // Process audio chunks
-      for (let i = 0; i < audioLogs.length; i++) {
-        const log = audioLogs[i];
-        processedCount++;
-        setReplayStatus(`Preloading audio ${i + 1}/${audioLogs.length} (${processedCount}/${totalMedia} total)...`);
-        
+      // Create parallel download promises for audio
+      const audioPromises = audioLogs.map(async (log, index) => {
         try {
           const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
           const response = await fetch(proxyUrl);
@@ -206,21 +197,20 @@ const InteractionReplay = () => {
               channelData[j] = sample / 32768.0;
             }
             
-            // Cache the audio buffer by interaction ID
-            audioCache.set(log.id, audioBuffer);
-            console.log(`🎬 Cached audio for interaction ${log.id}: ${audioBuffer.duration.toFixed(3)}s`);
+            console.log(`🎬 Downloaded audio ${index + 1}/${audioLogs.length}: ${log.id} (${audioBuffer.duration.toFixed(3)}s)`);
+            return { logId: log.id, audioBuffer, success: true };
+          } else {
+            console.warn(`Failed to download audio ${log.id}: ${response.status}`);
+            return { logId: log.id, success: false, error: `HTTP ${response.status}` };
           }
         } catch (error) {
           console.error(`Failed to preload audio chunk ${log.id}:`, error);
+          return { logId: log.id, success: false, error: error.message };
         }
-      }
+      });
 
-      // Process video frames
-      for (let i = 0; i < videoLogs.length; i++) {
-        const log = videoLogs[i];
-        processedCount++;
-        setReplayStatus(`Preloading video ${i + 1}/${videoLogs.length} (${processedCount}/${totalMedia} total)...`);
-        
+      // Create parallel download promises for video
+      const videoPromises = videoLogs.map(async (log, index) => {
         try {
           const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
           const response = await fetch(proxyUrl);
@@ -229,32 +219,72 @@ const InteractionReplay = () => {
             const blob = await response.blob();
             const imageUrl = URL.createObjectURL(blob);
             
-            // Cache the video frame as a blob URL
-            videoCache.set(log.id, {
-              url: imageUrl,
-              blob: blob,
-              size: blob.size,
-              type: blob.type
-            });
-            console.log(`🎬 Cached video frame for interaction ${log.id}: ${blob.type} (${blob.size} bytes)`);
+            console.log(`🎬 Downloaded video ${index + 1}/${videoLogs.length}: ${log.id} (${blob.type}, ${blob.size} bytes)`);
+            return {
+              logId: log.id,
+              frameData: {
+                url: imageUrl,
+                blob: blob,
+                size: blob.size,
+                type: blob.type
+              },
+              success: true
+            };
+          } else {
+            console.warn(`Failed to download video ${log.id}: ${response.status}`);
+            return { logId: log.id, success: false, error: `HTTP ${response.status}` };
           }
         } catch (error) {
           console.error(`Failed to preload video frame ${log.id}:`, error);
+          return { logId: log.id, success: false, error: error.message };
         }
-      }
+      });
+
+      // Show progress while downloads are happening
+      setReplayStatus(`🚀 Downloading ${totalMedia} media files in parallel...`);
+      
+      // Wait for all downloads to complete (both successes and failures)
+      const [audioResults, videoResults] = await Promise.all([
+        Promise.allSettled(audioPromises),
+        Promise.allSettled(videoPromises)
+      ]);
+
+      // Process results and build caches
+      const audioCache = new Map();
+      const videoCache = new Map();
+      
+      let audioSuccessCount = 0;
+      audioResults.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.success) {
+          audioCache.set(result.value.logId, result.value.audioBuffer);
+          audioSuccessCount++;
+        }
+      });
+
+      let videoSuccessCount = 0;
+      videoResults.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.success) {
+          videoCache.set(result.value.logId, result.value.frameData);
+          videoSuccessCount++;
+        }
+      });
 
       // Update cache states
       setAudioCache(audioCache);
       setVideoCache(videoCache);
       setMediaCacheReady(true);
       
-      const statusText = [
-        audioCache.size > 0 ? `${audioCache.size} audio chunks` : null,
-        videoCache.size > 0 ? `${videoCache.size} video frames` : null
-      ].filter(Boolean).join(' and ');
+      const statusParts = [];
+      if (audioSuccessCount > 0) statusParts.push(`${audioSuccessCount}/${audioLogs.length} audio chunks`);
+      if (videoSuccessCount > 0) statusParts.push(`${videoSuccessCount}/${videoLogs.length} video frames`);
       
-      setReplayStatus(`Media preloaded: ${statusText} ready for instant playback`);
-      console.log(`🎬 Media cache ready: ${audioCache.size} audio chunks, ${videoCache.size} video frames`);
+      const statusText = statusParts.join(' and ');
+      const failedCount = (audioLogs.length - audioSuccessCount) + (videoLogs.length - videoSuccessCount);
+      const failedText = failedCount > 0 ? ` (${failedCount} failed)` : '';
+      
+      setReplayStatus(`⚡ Media preloaded in parallel: ${statusText}${failedText} - ready for instant playback`);
+      console.log(`🎬 Parallel preload complete: ${audioCache.size} audio, ${videoCache.size} video${failedText}`);
+
     } catch (error) {
       console.error('Error preloading media:', error);
       setMediaCacheReady(true);

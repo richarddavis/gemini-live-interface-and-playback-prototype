@@ -286,6 +286,7 @@ const useConversationSegments = (updateState) => {
     const audioChunks = logs.filter(log => log.interaction_type === 'audio_chunk');
     const userAudioCount = audioChunks.filter(log => log.interaction_metadata?.microphone_on === true).length;
     const userAudioChunkCount = audioChunks.filter(log => log.interaction_metadata?.microphone_on === false).length;
+    const videoFrames = logs.filter(log => log.interaction_type === 'video_frame');
     
     // Check API responses for audio content
     const apiResponses = logs.filter(log => log.interaction_type === 'api_response');
@@ -296,7 +297,16 @@ const useConversationSegments = (updateState) => {
               (log.interaction_metadata && log.interaction_metadata.response_type === 'audio'));
     }).length;
     
-    console.log(`🎭 Audio analysis: ${userAudioCount} user audio_chunks, ${userAudioChunkCount} other audio_chunks, ${apiAudioResponseCount} API audio responses`);
+    console.log(`🎭 Content analysis: ${userAudioCount} user audio_chunks, ${userAudioChunkCount} other audio_chunks, ${apiAudioResponseCount} API audio responses, ${videoFrames.length} video frames`);
+    
+    // Show video frame distribution by timestamp
+    if (videoFrames.length > 0) {
+      console.log(`🎭 Video frame timestamps:`, videoFrames.map(f => ({ 
+        id: f.id, 
+        timestamp: f.timestamp, 
+        microphone_on: f.interaction_metadata?.microphone_on 
+      })));
+    }
     
     const segments = [];
     let currentSegment = null;
@@ -324,6 +334,8 @@ const useConversationSegments = (updateState) => {
         console.log(`🎭 Audio chunk ${log.id}: microphone_on=${interaction_metadata?.microphone_on}, isUserAudio=${isUserAudio}`);
       } else if (isApiAudioResponse) {
         console.log(`🎭 API audio response ${log.id}: detected as audio response`);
+      } else if (isVideoFrame) {
+        console.log(`🎭 Video frame ${log.id}: timestamp=${timestamp}, microphone_on=${interaction_metadata?.microphone_on}`);
       }
 
       // Define segment boundaries
@@ -340,6 +352,7 @@ const useConversationSegments = (updateState) => {
         if (currentSegment) {
           currentSegment.endTime = currentSegment.logs[currentSegment.logs.length - 1].timestamp;
           currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
+          console.log(`🎭 Finalized segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.audioChunks.length} audio, ${currentSegment.videoFrames.length} video, ${currentSegment.duration}ms`);
         }
 
         // Determine segment type
@@ -365,31 +378,39 @@ const useConversationSegments = (updateState) => {
           }
         };
         segments.push(currentSegment);
+        console.log(`🎭 Created new segment ${segmentId} (${segmentType}) starting at ${timestamp}`);
       }
 
       // Add log to current segment
       currentSegment.logs.push(log);
       currentSegment.endTime = timestamp;
 
-      // Categorize by type
+      // Categorize by type with detailed logging
       if (interaction_type === 'audio_chunk' || isApiAudioResponse) {
         currentSegment.audioChunks.push(log);
         currentSegment.metadata.chunkCount++;
         if (log.media_data?.data_size_bytes) {
           currentSegment.metadata.totalBytes += log.media_data.data_size_bytes;
         }
+        console.log(`🎭 Added audio to segment ${currentSegment.id}: ${currentSegment.audioChunks.length} chunks`);
       } else if (isVideoFrame) {
         currentSegment.videoFrames.push(log);
+        console.log(`🎭 Added video frame to segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.videoFrames.length} frames, frame timestamp=${timestamp}`);
       }
     });
 
     // Finalize last segment
     if (currentSegment) {
       currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
+      console.log(`🎭 Finalized final segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.audioChunks.length} audio, ${currentSegment.videoFrames.length} video, ${currentSegment.duration}ms`);
     }
 
     console.log('🎭 Created', segments.length, 'conversation segments:', 
       segments.map(s => `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`));
+      
+    // Additional debug: show which segments have video
+    const segmentsWithVideo = segments.filter(s => s.videoFrames.length > 0);
+    console.log(`🎭 Segments with video (${segmentsWithVideo.length}/${segments.length}):`, segmentsWithVideo.map(s => `Segment ${s.id} (${s.type}): ${s.videoFrames.length} frames`));
 
     return segments;
   }, []);
@@ -531,6 +552,7 @@ const InteractionReplay = () => {
   // Refs
   const videoRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
+  const videoPlaybackRef = useRef(null);
 
   // Audio streaming hooks
   const geminiAudioStreaming = useAudioStreaming(
@@ -702,21 +724,35 @@ const InteractionReplay = () => {
           
           // Pre-process segments for even smoother playback
           const processedSegments = new Map();
+          console.log('🎭 Pre-processing segments for smooth playback...');
+          
           for (const segment of segments) {
+            console.log(`🎭 Processing segment ${segment.id} (${segment.type}): ${segment.audioChunks.length} audio, ${segment.videoFrames.length} video frames`);
+          
             if (segment.audioChunks.length > 0) {
               const segmentAudio = await createSegmentAudio(segment, audioCache);
               if (segmentAudio) {
                 processedSegments.set(`${segment.id}_audio`, segmentAudio);
-              }
-            }
-            
+                console.log(`🎭 Created audio segment: ${segment.id}_audio (${segmentAudio.duration.toFixed(2)}s)`);
+              } else {
+                console.warn(`🎭 Failed to create audio segment for ${segment.id}`);
+        }
+      }
+
             if (segment.videoFrames.length > 0) {
+              console.log(`🎭 Creating video segment for ${segment.id} with ${segment.videoFrames.length} frames`);
               const segmentVideo = createSegmentVideo(segment, videoCache);
               if (segmentVideo) {
                 processedSegments.set(`${segment.id}_video`, segmentVideo);
+                console.log(`🎭 Created video segment: ${segment.id}_video (${segmentVideo.frames.length} frames, ${segmentVideo.averageInterval}ms interval)`);
+              } else {
+                console.warn(`🎭 Failed to create video segment for ${segment.id} - no cached frames available`);
               }
             }
           }
+          
+          console.log(`🎭 Segment preprocessing complete: ${processedSegments.size} processed segments`);
+          console.log(`🎭 Processed segment keys:`, Array.from(processedSegments.keys()));
           
           updateState({ processedSegments });
           updateState({ replayStatus: `⚡ Media preloaded: ${statusText}${failedText} + ${segments.length} conversation segments - ready for smooth replay` });
@@ -845,6 +881,22 @@ const InteractionReplay = () => {
     if (playbackTimeoutRef.current) {
       clearTimeout(playbackTimeoutRef.current);
       playbackTimeoutRef.current = null;
+    }
+    
+    // Stop video playback
+    if (videoPlaybackRef.current) {
+      videoPlaybackRef.current.stop = true;
+      videoPlaybackRef.current = null;
+    }
+    
+    // Reset video display
+    if (videoRef.current) {
+      videoRef.current.style.display = 'block';
+      // Remove any frame images
+      const imgElement = videoRef.current.parentElement?.querySelector('img.replay-frame');
+      if (imgElement) {
+        imgElement.remove();
+      }
     }
     
     // Clean up audio streaming state - UPDATED for useAudioStreaming hooks
@@ -1061,62 +1113,62 @@ const InteractionReplay = () => {
         console.log('🎬 Proxy response status:', response.status, response.statusText);
         
         if (response.ok) {
-          const blob = await response.blob();
-          console.log('🎬 Blob received:', blob.type, blob.size, 'bytes');
+        const blob = await response.blob();
+        console.log('🎬 Blob received:', blob.type, blob.size, 'bytes');
+        
+        const imageUrl = URL.createObjectURL(blob);
+        console.log('🎬 Created blob URL:', imageUrl);
+        
+        // Find or create image container
+        if (videoRef.current) {
+          console.log('🎬 Video ref found, updating display');
           
-          const imageUrl = URL.createObjectURL(blob);
-          console.log('🎬 Created blob URL:', imageUrl);
-          
-          // Find or create image container
-          if (videoRef.current) {
-            console.log('🎬 Video ref found, updating display');
-            
-            // Clear any existing video streams
-            if (videoRef.current.srcObject) {
-              const tracks = videoRef.current.srcObject.getTracks();
-              tracks.forEach(track => track.stop());
-              videoRef.current.srcObject = null;
-            }
-            
-            // Hide the video element and show image instead
-            videoRef.current.style.display = 'none';
-            
-            // Find or create image element next to video
-            let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
-            if (!imgElement) {
-              imgElement = document.createElement('img');
-              imgElement.className = 'replay-frame';
-              imgElement.style.width = '320px';
-              imgElement.style.height = '240px';
-              imgElement.style.backgroundColor = '#000';
-              imgElement.style.border = '1px solid #ccc';
-              imgElement.style.objectFit = 'contain';
-              imgElement.style.display = 'block';
-              
-              // Insert after the video element
-              videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-              console.log('🎬 Created new image element');
-            }
-            
-            // Clean up previous image URL
-            if (imgElement.src && imgElement.src.startsWith('blob:')) {
-              URL.revokeObjectURL(imgElement.src);
-            }
-            
-            // Set new image
-            imgElement.src = imageUrl;
-            imgElement.onload = () => {
-              console.log('🎬 Image loaded successfully:', imgElement.naturalWidth, 'x', imgElement.naturalHeight);
-            };
-            imgElement.onerror = (error) => {
-              console.error('🎬 Image failed to load:', error);
-            };
-            
-            console.log('🎬 Video frame displayed as image');
-          } else {
-            console.error('🎬 Video ref not found!');
+          // Clear any existing video streams
+          if (videoRef.current.srcObject) {
+            const tracks = videoRef.current.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+            videoRef.current.srcObject = null;
           }
           
+          // Hide the video element and show image instead
+          videoRef.current.style.display = 'none';
+          
+          // Find or create image element next to video
+          let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
+          if (!imgElement) {
+            imgElement = document.createElement('img');
+            imgElement.className = 'replay-frame';
+            imgElement.style.width = '320px';
+            imgElement.style.height = '240px';
+            imgElement.style.backgroundColor = '#000';
+            imgElement.style.border = '1px solid #ccc';
+            imgElement.style.objectFit = 'contain';
+            imgElement.style.display = 'block';
+            
+            // Insert after the video element
+            videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+            console.log('🎬 Created new image element');
+          }
+          
+          // Clean up previous image URL
+          if (imgElement.src && imgElement.src.startsWith('blob:')) {
+            URL.revokeObjectURL(imgElement.src);
+          }
+          
+          // Set new image
+          imgElement.src = imageUrl;
+          imgElement.onload = () => {
+            console.log('🎬 Image loaded successfully:', imgElement.naturalWidth, 'x', imgElement.naturalHeight);
+          };
+          imgElement.onerror = (error) => {
+            console.error('🎬 Image failed to load:', error);
+          };
+          
+          console.log('🎬 Video frame displayed as image');
+        } else {
+          console.error('🎬 Video ref not found!');
+        }
+        
           updateState({ currentVideoFrame: `Frame ${log.id} loaded at ${new Date().toLocaleTimeString()}` });
         } else if (response.status === 502 || response.status === 400) {
           // Handle expired GCS URLs gracefully
@@ -1238,41 +1290,60 @@ const InteractionReplay = () => {
         const response = await fetch(proxyUrl);
         
         if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          
-          // Initialize audio context if needed
+        const arrayBuffer = await response.arrayBuffer();
+        
+        // Initialize audio context if needed
           const audioContext = await mediaCache.initializeAudioContext();
+        
+        // Resume audio context if suspended (required for user interaction policies)
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        // For PCM data, we need to process it differently than for encoded audio
+        if (response.headers.get('content-type') === 'audio/pcm' || log.media_data.cloud_storage_url.includes('.pcm')) {
+          // Handle raw PCM data with proper sample rate detection
+            let sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.API; // Default
           
-          // Resume audio context if suspended (required for user interaction policies)
-          if (audioContext.state === 'suspended') {
-            await audioContext.resume();
+          // Try to get sample rate from metadata
+          if (log.interaction_metadata?.audio_sample_rate) {
+            sampleRate = log.interaction_metadata.audio_sample_rate;
+          } else if (isUserAudio) {
+              sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.USER; // User audio is typically 16kHz
           }
           
-          // For PCM data, we need to process it differently than for encoded audio
-          if (response.headers.get('content-type') === 'audio/pcm' || log.media_data.cloud_storage_url.includes('.pcm')) {
-            // Handle raw PCM data with proper sample rate detection
-            let sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.API; // Default
-            
-            // Try to get sample rate from metadata
-            if (log.interaction_metadata?.audio_sample_rate) {
-              sampleRate = log.interaction_metadata.audio_sample_rate;
-            } else if (isUserAudio) {
-              sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.USER; // User audio is typically 16kHz
-            }
-            
-            const audioData = new Uint8Array(arrayBuffer);
-            const numSamples = audioData.length / 2; // 16-bit samples
-            
-            const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
-            const channelData = audioBuffer.getChannelData(0);
-            
-            // Convert PCM data to audio buffer
-            const dataView = new DataView(arrayBuffer);
-            for (let i = 0; i < numSamples; i++) {
-              const sample = dataView.getInt16(i * 2, true); // little-endian
-              channelData[i] = sample / 32768.0;
-            }
-            
+          const audioData = new Uint8Array(arrayBuffer);
+          const numSamples = audioData.length / 2; // 16-bit samples
+          
+          const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
+          const channelData = audioBuffer.getChannelData(0);
+          
+          // Convert PCM data to audio buffer
+          const dataView = new DataView(arrayBuffer);
+          for (let i = 0; i < numSamples; i++) {
+            const sample = dataView.getInt16(i * 2, true); // little-endian
+            channelData[i] = sample / 32768.0;
+          }
+          
+          const source = audioContext.createBufferSource();
+          const gainNode = audioContext.createGain();
+          
+          source.buffer = audioBuffer;
+          source.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          // Adjust volume based on audio source
+            gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
+          
+          // Start audio immediately without additional delays
+          source.start(0);
+          
+          console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
+            updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - network` });
+        } else {
+          // Handle encoded audio (MP3, WAV, etc.)
+          try {
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
             const source = audioContext.createBufferSource();
             const gainNode = audioContext.createGain();
             
@@ -1281,34 +1352,15 @@ const InteractionReplay = () => {
             gainNode.connect(audioContext.destination);
             
             // Adjust volume based on audio source
-            gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
+              gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
             
-            // Start audio immediately without additional delays
             source.start(0);
             
-            console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
-            updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - network` });
-          } else {
-            // Handle encoded audio (MP3, WAV, etc.)
-            try {
-              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-              const source = audioContext.createBufferSource();
-              const gainNode = audioContext.createGain();
-              
-              source.buffer = audioBuffer;
-              source.connect(gainNode);
-              gainNode.connect(audioContext.destination);
-              
-              // Adjust volume based on audio source
-              gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
-              
-              source.start(0);
-              
-              console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
+            console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
               updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - encoded` });
-            } catch (decodeError) {
-              console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
-            }
+          } catch (decodeError) {
+            console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
+          }
           }
         } else if (response.status === 502 || response.status === 400) {
           // Handle expired GCS URLs gracefully
@@ -1468,8 +1520,22 @@ const InteractionReplay = () => {
     
     // Display video frames during speech
     const segmentVideo = state.processedSegments.get(`${segment.id}_video`);
+    console.log(`🎤 User speech segment ${segment.id}: looking for video segment "${segment.id}_video"`);
+    console.log(`🎤 Available processed segments:`, Array.from(state.processedSegments.keys()));
+    console.log(`🎤 Video frames in segment:`, segment.videoFrames?.length || 0);
+    console.log(`🎤 Current isPlaying state:`, state.isPlaying);
+    
     if (segmentVideo) {
+      console.log(`🎤 Found video segment for user speech:`, segmentVideo);
+      console.log(`🎤 Video segment has ${segmentVideo.frames?.length || 0} frames with average interval ${segmentVideo.averageInterval}ms`);
       playSegmentVideo(segmentVideo);
+    } else {
+      console.warn(`🎤 No video segment found for user speech segment ${segment.id}`);
+      // Debug: Check if segment has video frames but no processed video
+      if (segment.videoFrames && segment.videoFrames.length > 0) {
+        console.warn(`🎤 ⚠️  Segment ${segment.id} has ${segment.videoFrames.length} video frames but no processed video segment!`);
+        console.warn(`🎤 Video frames:`, segment.videoFrames.map(f => ({ id: f.id, timestamp: f.timestamp })));
+      }
     }
     
     // Play unified audio and wait for completion
@@ -1563,51 +1629,101 @@ const InteractionReplay = () => {
   const playSegmentVideo = (segmentVideo) => {
     const { frames, averageInterval } = segmentVideo;
     let frameIndex = 0;
+    
+    // Create a local playing flag to avoid state closure issues
+    let isPlayingVideo = true;
+    
+    // Stop any previous video playback
+    if (videoPlaybackRef.current) {
+      videoPlaybackRef.current.stop = true;
+    }
+    
+    // Create new playback control object
+    videoPlaybackRef.current = { stop: false };
+    const playbackControl = videoPlaybackRef.current;
 
     const showNextFrame = () => {
-      if (frameIndex < frames.length && state.isPlaying) {
+      // Check both the playback control and current state
+      if (frameIndex < frames.length && !playbackControl.stop && state.isPlaying) {
         const frame = frames[frameIndex];
+        console.log(`📹 Processing frame ${frameIndex + 1}/${frames.length}:`, frame);
+        
         if (frame.frameData && videoRef.current) {
+          console.log(`📹 Frame data available:`, frame.frameData);
+          
           // Update the video frame display
           updateState({ currentVideoFrame: `Segment frame ${frameIndex + 1}/${frames.length} at ${formatTimestamp(frame.timestamp)}` });
           
-          // Display frame using existing video display logic
-          if (videoRef.current) {
-            // Hide the video element and show image instead
-            videoRef.current.style.display = 'none';
-            
-            // Find or create image element next to video
-            let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
-            if (!imgElement) {
-              imgElement = document.createElement('img');
-              imgElement.className = 'replay-frame';
-              imgElement.style.width = '320px';
-              imgElement.style.height = '240px';
-              imgElement.style.backgroundColor = '#000';
-              imgElement.style.border = '1px solid #ccc';
-              imgElement.style.objectFit = 'contain';
-              imgElement.style.display = 'block';
+          try {
+            // Display frame using existing video display logic
+            if (videoRef.current) {
+              console.log(`📹 VideoRef found, setting up video frame display`);
               
-              // Insert after the video element
-              videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+              // Hide the video element and show image instead
+              videoRef.current.style.display = 'none';
+              
+              // Find or create image element next to video
+              let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
+              if (!imgElement) {
+                console.log(`📹 Creating new image element for video frames`);
+                imgElement = document.createElement('img');
+                imgElement.className = 'replay-frame';
+                imgElement.style.width = '320px';
+                imgElement.style.height = '240px';
+                imgElement.style.backgroundColor = '#000';
+                imgElement.style.border = '1px solid #ccc';
+                imgElement.style.objectFit = 'contain';
+                imgElement.style.display = 'block';
+                
+                // Insert after the video element
+                videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+                console.log(`📹 Image element created and inserted`);
+              } else {
+                console.log(`📹 Using existing image element`);
+              }
+              
+              // Set the frame image with error handling
+              imgElement.onload = () => {
+                console.log(`📹 Frame ${frameIndex + 1} loaded successfully: ${imgElement.naturalWidth}x${imgElement.naturalHeight}`);
+              };
+              imgElement.onerror = (error) => {
+                console.error(`📹 Frame ${frameIndex + 1} failed to load:`, error);
+              };
+              
+              imgElement.src = frame.frameData.url;
+              console.log(`📹 Set frame source: ${frame.frameData.url}`);
+              console.log(`📹 Showing segment frame ${frameIndex + 1}/${frames.length}`);
+            } else {
+              console.error(`📹 VideoRef not available!`);
             }
-            
-            // Set the frame image
-            imgElement.src = frame.frameData.url;
-            console.log(`📹 Showing segment frame ${frameIndex + 1}/${frames.length}`);
+          } catch (domError) {
+            console.error(`📹 DOM manipulation error:`, domError);
           }
+        } else {
+          console.warn(`📹 Frame ${frameIndex + 1} missing data:`, { hasFrameData: !!frame.frameData, hasVideoRef: !!videoRef.current });
         }
 
         frameIndex++;
-        if (frameIndex < frames.length) {
-          setTimeout(showNextFrame, Math.max(100, averageInterval / state.playbackSpeed));
+        if (frameIndex < frames.length && !playbackControl.stop) {
+          const delay = Math.max(100, averageInterval / state.playbackSpeed);
+          console.log(`📹 Scheduling next frame in ${delay}ms`);
+          setTimeout(showNextFrame, delay);
+        } else {
+          console.log(`📹 Video segment playback completed (${frames.length} frames)`);
+          videoPlaybackRef.current = null;
         }
+      } else {
+        console.log(`📹 Video playback stopped: frameIndex=${frameIndex}, frames.length=${frames.length}, isPlaying=${state.isPlaying}, stopped=${playbackControl.stop}`);
+        videoPlaybackRef.current = null;
       }
     };
 
     if (frames.length > 0) {
       console.log(`📹 Starting video playback: ${frames.length} frames at ${averageInterval}ms intervals`);
+      console.log(`📹 First frame data:`, frames[0]);
       showNextFrame();
+    } else {
+      console.warn(`📹 No frames available for video playback`);
     }
   };
 

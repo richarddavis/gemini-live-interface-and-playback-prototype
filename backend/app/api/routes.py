@@ -910,6 +910,63 @@ def get_interaction_media(interaction_id):
                         }
                     )
                     return response
+                elif gcs_response.status_code in [400, 403]:
+                    # URL likely expired - try to regenerate it
+                    current_app.logger.warning(f"GCS URL expired for interaction {interaction_id}, attempting regeneration")
+                    
+                    try:
+                        # Extract blob name from the URL
+                        # URL format: https://storage.googleapis.com/bucket/path/file.ext?signature...
+                        url_parts = media_data.cloud_storage_url.split('/')
+                        bucket_name = url_parts[3]  # Should match our bucket
+                        blob_path = '/'.join(url_parts[4:]).split('?')[0]  # Remove query parameters
+                        
+                        # Regenerate the signed URL
+                        new_signed_url = GCSStorageService.regenerate_signed_url(blob_path, expiration_hours=168)
+                        
+                        # Update the database with new URL
+                        media_data.cloud_storage_url = new_signed_url
+                        db.session.commit()
+                        
+                        current_app.logger.info(f"Successfully regenerated URL for interaction {interaction_id}")
+                        
+                        # Try fetching with the new URL
+                        gcs_response = requests.get(new_signed_url, timeout=30)
+                        
+                        if gcs_response.status_code == 200:
+                            # Determine content type
+                            content_type = 'application/octet-stream'
+                            if interaction_log.interaction_type == 'audio_chunk':
+                                content_type = 'audio/pcm'
+                            elif interaction_log.interaction_type == 'video_frame':
+                                content_type = 'image/jpeg'
+                            elif interaction_log.interaction_type == 'api_response':
+                                if blob_path.endswith('.pcm'):
+                                    content_type = 'audio/pcm'
+                                elif blob_path.endswith('.json'):
+                                    content_type = 'application/json'
+                                else:
+                                    if len(gcs_response.content) > 1000 and interaction_log.interaction_metadata and interaction_log.interaction_metadata.api_endpoint == 'gemini_live_api':
+                                        content_type = 'audio/pcm'
+                            
+                            response = Response(
+                                gcs_response.content,
+                                status=200,
+                                headers={
+                                    'Content-Type': content_type,
+                                    'Access-Control-Allow-Origin': '*',
+                                    'Cache-Control': 'public, max-age=3600',
+                                    'X-URL-Regenerated': 'true'  # Indicate this was regenerated
+                                }
+                            )
+                            return response
+                        else:
+                            current_app.logger.error(f"New URL also failed for interaction {interaction_id}: {gcs_response.status_code}")
+                            return jsonify({"error": "Failed to fetch from regenerated cloud storage URL"}), 502
+                            
+                    except Exception as regen_error:
+                        current_app.logger.error(f"URL regeneration failed for interaction {interaction_id}: {str(regen_error)}")
+                        return jsonify({"error": f"URL expired and regeneration failed: {str(regen_error)}"}), 502
                 else:
                     current_app.logger.error(f"GCS fetch failed: {gcs_response.status_code}")
                     return jsonify({"error": "Failed to fetch from cloud storage"}), 502
@@ -945,4 +1002,59 @@ def get_interaction_media(interaction_id):
             
     except Exception as e:
         current_app.logger.error(f"Error retrieving interaction media: {str(e)}")
-        return jsonify({"error": f"Failed to retrieve media: {str(e)}"}), 500 
+        return jsonify({"error": f"Failed to retrieve media: {str(e)}"}), 500
+
+@api.route('/interaction-logs/regenerate-urls/<session_id>', methods=['POST'])
+def regenerate_session_urls(session_id):
+    """Regenerate all expired URLs for a session's media data"""
+    try:
+        # Find all interaction logs for this session that have cloud storage URLs
+        interactions = InteractionLog.query.filter_by(session_id=session_id).all()
+        
+        if not interactions:
+            return jsonify({"error": "Session not found"}), 404
+        
+        regenerated_count = 0
+        failed_count = 0
+        errors = []
+        
+        for interaction in interactions:
+            if (interaction.media_data and 
+                interaction.media_data.storage_type == 'cloud_storage' and 
+                interaction.media_data.cloud_storage_url):
+                
+                try:
+                    # Extract blob name from URL
+                    url_parts = interaction.media_data.cloud_storage_url.split('/')
+                    blob_path = '/'.join(url_parts[4:]).split('?')[0]
+                    
+                    # Regenerate URL with 1 year expiration
+                    new_url = GCSStorageService.regenerate_signed_url(blob_path, expiration_hours=168)
+                    
+                    # Update database
+                    interaction.media_data.cloud_storage_url = new_url
+                    regenerated_count += 1
+                    
+                    current_app.logger.info(f"Regenerated URL for interaction {interaction.id}")
+                    
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = f"Failed to regenerate URL for interaction {interaction.id}: {str(e)}"
+                    errors.append(error_msg)
+                    current_app.logger.error(error_msg)
+        
+        # Commit all changes
+        if regenerated_count > 0:
+            db.session.commit()
+        
+        return jsonify({
+            "message": f"URL regeneration completed",
+            "regenerated": regenerated_count,
+            "failed": failed_count,
+            "errors": errors if failed_count > 0 else None
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error regenerating URLs for session {session_id}: {str(e)}")
+        return jsonify({"error": f"Failed to regenerate URLs: {str(e)}"}), 500 

@@ -22,6 +22,7 @@ const InteractionReplay = () => {
   const [audioCache, setAudioCache] = useState(new Map());
   const [videoCache, setVideoCache] = useState(new Map());
   const [mediaCacheReady, setMediaCacheReady] = useState(false);
+  const [isRegeneratingUrls, setIsRegeneratingUrls] = useState(false);
 
   // Audio streaming state for realistic replay
   const [isStreamingAudio, setIsStreamingAudio] = useState(false);
@@ -199,6 +200,10 @@ const InteractionReplay = () => {
             
             console.log(`🎬 Downloaded audio ${index + 1}/${audioLogs.length}: ${log.id} (${audioBuffer.duration.toFixed(3)}s)`);
             return { logId: log.id, audioBuffer, success: true };
+          } else if (response.status === 502 || response.status === 400) {
+            // Handle expired GCS URLs gracefully
+            console.warn(`🎬 Audio ${log.id} media unavailable (likely expired URL): ${response.status}`);
+            return { logId: log.id, success: false, error: 'expired_url', httpStatus: response.status };
           } else {
             console.warn(`Failed to download audio ${log.id}: ${response.status}`);
             return { logId: log.id, success: false, error: `HTTP ${response.status}` };
@@ -230,6 +235,10 @@ const InteractionReplay = () => {
               },
               success: true
             };
+          } else if (response.status === 502 || response.status === 400) {
+            // Handle expired GCS URLs gracefully
+            console.warn(`🎬 Video ${log.id} media unavailable (likely expired URL): ${response.status}`);
+            return { logId: log.id, success: false, error: 'expired_url', httpStatus: response.status };
           } else {
             console.warn(`Failed to download video ${log.id}: ${response.status}`);
             return { logId: log.id, success: false, error: `HTTP ${response.status}` };
@@ -254,18 +263,24 @@ const InteractionReplay = () => {
       const videoCache = new Map();
       
       let audioSuccessCount = 0;
+      let audioExpiredCount = 0;
       audioResults.forEach((result, index) => {
         if (result.status === 'fulfilled' && result.value.success) {
           audioCache.set(result.value.logId, result.value.audioBuffer);
           audioSuccessCount++;
+        } else if (result.status === 'fulfilled' && result.value.error === 'expired_url') {
+          audioExpiredCount++;
         }
       });
 
       let videoSuccessCount = 0;
+      let videoExpiredCount = 0;
       videoResults.forEach((result, index) => {
         if (result.status === 'fulfilled' && result.value.success) {
           videoCache.set(result.value.logId, result.value.frameData);
           videoSuccessCount++;
+        } else if (result.status === 'fulfilled' && result.value.error === 'expired_url') {
+          videoExpiredCount++;
         }
       });
 
@@ -279,16 +294,86 @@ const InteractionReplay = () => {
       if (videoSuccessCount > 0) statusParts.push(`${videoSuccessCount}/${videoLogs.length} video frames`);
       
       const statusText = statusParts.join(' and ');
-      const failedCount = (audioLogs.length - audioSuccessCount) + (videoLogs.length - videoSuccessCount);
-      const failedText = failedCount > 0 ? ` (${failedCount} failed)` : '';
+      const expiredCount = audioExpiredCount + videoExpiredCount;
+      const otherFailedCount = (audioLogs.length - audioSuccessCount - audioExpiredCount) + 
+                              (videoLogs.length - videoSuccessCount - videoExpiredCount);
       
-      setReplayStatus(`⚡ Media preloaded in parallel: ${statusText}${failedText} - ready for instant playback`);
-      console.log(`🎬 Parallel preload complete: ${audioCache.size} audio, ${videoCache.size} video${failedText}`);
+      let failedText = '';
+      if (expiredCount > 0) {
+        failedText += ` (${expiredCount} expired URLs)`;
+      }
+      if (otherFailedCount > 0) {
+        failedText += ` (${otherFailedCount} other failures)`;
+      }
+      
+      // Set status message based on results
+      if (audioSuccessCount === 0 && videoSuccessCount === 0) {
+        if (expiredCount > 0) {
+          setReplayStatus(`⏳ Media unavailable due to expired URLs - replay will show interaction timing only`);
+        } else {
+          setReplayStatus('❌ Media preloading failed - replay will show interaction timing only');
+        }
+      } else {
+        setReplayStatus(`⚡ Media preloaded: ${statusText}${failedText} - ready for replay`);
+      }
+      
+      console.log(`🎬 Parallel preload complete: ${audioCache.size} audio, ${videoCache.size} video. Expired: ${expiredCount}, Other failures: ${otherFailedCount}`);
 
     } catch (error) {
       console.error('Error preloading media:', error);
       setMediaCacheReady(true);
-      setReplayStatus('Media preloading failed - will use network playback');
+      setReplayStatus('⚠️ Media preloading failed - replay will show interaction timing only');
+    }
+  };
+
+  const regenerateUrls = async () => {
+    if (!selectedSession) {
+      console.error('No session selected for URL regeneration');
+      return;
+    }
+
+    setIsRegeneratingUrls(true);
+    setReplayStatus('🔄 Regenerating expired URLs...');
+
+    try {
+      const response = await fetch(
+        `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/regenerate-urls/${selectedSession}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('🔄 URL regeneration result:', result);
+
+        if (result.regenerated > 0) {
+          setReplayStatus(`✅ Regenerated ${result.regenerated} URLs successfully! Reloading session data...`);
+          
+          // Reload the replay data to get fresh URLs
+          await loadReplayData(selectedSession);
+          
+          setReplayStatus(`✅ URLs regenerated and session reloaded - ready for replay with fresh URLs!`);
+        } else {
+          setReplayStatus('⚠️ No URLs needed regeneration or regeneration failed');
+        }
+
+        if (result.failed > 0) {
+          console.warn('Some URL regenerations failed:', result.errors);
+        }
+      } else {
+        const errorData = await response.json();
+        console.error('URL regeneration failed:', errorData);
+        setReplayStatus(`❌ Failed to regenerate URLs: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error regenerating URLs:', error);
+      setReplayStatus('❌ Error occurred while regenerating URLs');
+    } finally {
+      setIsRegeneratingUrls(false);
     }
   };
 
@@ -572,71 +657,121 @@ const InteractionReplay = () => {
         
         const response = await fetch(proxyUrl);
         console.log('🎬 Proxy response status:', response.status, response.statusText);
-        console.log('🎬 Proxy response headers:', Object.fromEntries(response.headers.entries()));
         
-        if (!response.ok) {
-          console.error('Failed to fetch video frame via proxy:', response.status);
-          setCurrentVideoFrame('Error loading video frame via proxy');
-          return;
-        }
-        
-        const blob = await response.blob();
-        console.log('🎬 Blob received:', blob.type, blob.size, 'bytes');
-        
-        const imageUrl = URL.createObjectURL(blob);
-        console.log('🎬 Created blob URL:', imageUrl);
-        
-        // Find or create image container
-        if (videoRef.current) {
-          console.log('🎬 Video ref found, updating display');
+        if (response.ok) {
+          const blob = await response.blob();
+          console.log('🎬 Blob received:', blob.type, blob.size, 'bytes');
           
-          // Clear any existing video streams
-          if (videoRef.current.srcObject) {
-            const tracks = videoRef.current.srcObject.getTracks();
-            tracks.forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-          }
+          const imageUrl = URL.createObjectURL(blob);
+          console.log('🎬 Created blob URL:', imageUrl);
           
-          // Hide the video element and show image instead
-          videoRef.current.style.display = 'none';
-          
-          // Find or create image element next to video
-          let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
-          if (!imgElement) {
-            imgElement = document.createElement('img');
-            imgElement.className = 'replay-frame';
-            imgElement.style.width = '320px';
-            imgElement.style.height = '240px';
-            imgElement.style.backgroundColor = '#000';
-            imgElement.style.border = '1px solid #ccc';
-            imgElement.style.objectFit = 'contain';
-            imgElement.style.display = 'block';
+          // Find or create image container
+          if (videoRef.current) {
+            console.log('🎬 Video ref found, updating display');
             
-            // Insert after the video element
-            videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-            console.log('🎬 Created new image element');
+            // Clear any existing video streams
+            if (videoRef.current.srcObject) {
+              const tracks = videoRef.current.srcObject.getTracks();
+              tracks.forEach(track => track.stop());
+              videoRef.current.srcObject = null;
+            }
+            
+            // Hide the video element and show image instead
+            videoRef.current.style.display = 'none';
+            
+            // Find or create image element next to video
+            let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
+            if (!imgElement) {
+              imgElement = document.createElement('img');
+              imgElement.className = 'replay-frame';
+              imgElement.style.width = '320px';
+              imgElement.style.height = '240px';
+              imgElement.style.backgroundColor = '#000';
+              imgElement.style.border = '1px solid #ccc';
+              imgElement.style.objectFit = 'contain';
+              imgElement.style.display = 'block';
+              
+              // Insert after the video element
+              videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+              console.log('🎬 Created new image element');
+            }
+            
+            // Clean up previous image URL
+            if (imgElement.src && imgElement.src.startsWith('blob:')) {
+              URL.revokeObjectURL(imgElement.src);
+            }
+            
+            // Set new image
+            imgElement.src = imageUrl;
+            imgElement.onload = () => {
+              console.log('🎬 Image loaded successfully:', imgElement.naturalWidth, 'x', imgElement.naturalHeight);
+            };
+            imgElement.onerror = (error) => {
+              console.error('🎬 Image failed to load:', error);
+            };
+            
+            console.log('🎬 Video frame displayed as image');
+          } else {
+            console.error('🎬 Video ref not found!');
           }
           
-          // Clean up previous image URL
-          if (imgElement.src && imgElement.src.startsWith('blob:')) {
-            URL.revokeObjectURL(imgElement.src);
+          setCurrentVideoFrame(`Frame ${log.id} loaded at ${new Date().toLocaleTimeString()}`);
+        } else if (response.status === 502 || response.status === 400) {
+          // Handle expired GCS URLs gracefully
+          console.warn('🎬 Video frame media unavailable (likely expired URL):', response.status);
+          
+          // Show placeholder for unavailable media
+          if (videoRef.current) {
+            // Hide the video element
+            videoRef.current.style.display = 'none';
+            
+            // Find or create placeholder element
+            let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
+            if (!imgElement) {
+              imgElement = document.createElement('img');
+              imgElement.className = 'replay-frame';
+              imgElement.style.width = '320px';
+              imgElement.style.height = '240px';
+              imgElement.style.backgroundColor = '#333';
+              imgElement.style.border = '1px solid #ccc';
+              imgElement.style.objectFit = 'contain';
+              imgElement.style.display = 'flex';
+              imgElement.style.alignItems = 'center';
+              imgElement.style.justifyContent = 'center';
+              imgElement.style.color = '#fff';
+              imgElement.style.fontSize = '14px';
+              imgElement.style.textAlign = 'center';
+              
+              // Insert after the video element
+              videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+            }
+            
+            // Create a canvas with placeholder text
+            const canvas = document.createElement('canvas');
+            canvas.width = 320;
+            canvas.height = 240;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill background
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 0, 320, 240);
+            
+            // Add text
+            ctx.fillStyle = '#fff';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Video frame unavailable', 160, 110);
+            ctx.fillText('(expired media URL)', 160, 130);
+            
+            // Set canvas as image source
+            imgElement.src = canvas.toDataURL();
           }
           
-          // Set new image
-          imgElement.src = imageUrl;
-          imgElement.onload = () => {
-            console.log('🎬 Image loaded successfully:', imgElement.naturalWidth, 'x', imgElement.naturalHeight);
-          };
-          imgElement.onerror = (error) => {
-            console.error('🎬 Image failed to load:', error);
-          };
-          
-          console.log('🎬 Video frame displayed as image');
+          setCurrentVideoFrame(`Frame ${log.id} - media unavailable (expired URL)`);
         } else {
-          console.error('🎬 Video ref not found!');
+          console.error('Failed to fetch video frame via proxy:', response.status);
+          setCurrentVideoFrame(`Error loading video frame - HTTP ${response.status}`);
         }
-        
-        setCurrentVideoFrame(`Frame ${log.id} loaded at ${new Date().toLocaleTimeString()}`);
       } catch (error) {
         console.error('Error displaying video frame:', error);
         setCurrentVideoFrame('Error loading video frame');
@@ -705,71 +840,48 @@ const InteractionReplay = () => {
         const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
         const response = await fetch(proxyUrl);
         
-        if (!response.ok) {
-          console.error(`Failed to fetch ${audioSource} audio chunk via proxy:`, response.status);
-          return;
-        }
-        
-        const arrayBuffer = await response.arrayBuffer();
-        
-        // Initialize audio context if needed
-        if (!audioContextRef.current) {
-          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000 // Consistent 24kHz for playback
-          });
-        }
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          
+          // Initialize audio context if needed
+          if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
+              sampleRate: 24000 // Consistent 24kHz for playback
+            });
+          }
 
-        const audioContext = audioContextRef.current;
-        
-        // Resume audio context if suspended (required for user interaction policies)
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
-        
-        // For PCM data, we need to process it differently than for encoded audio
-        if (response.headers.get('content-type') === 'audio/pcm' || log.media_data.cloud_storage_url.includes('.pcm')) {
-          // Handle raw PCM data with proper sample rate detection
-          let sampleRate = 24000; // Default
+          const audioContext = audioContextRef.current;
           
-          // Try to get sample rate from metadata
-          if (log.interaction_metadata?.audio_sample_rate) {
-            sampleRate = log.interaction_metadata.audio_sample_rate;
-          } else if (isUserAudio) {
-            sampleRate = 16000; // User audio is typically 16kHz
+          // Resume audio context if suspended (required for user interaction policies)
+          if (audioContext.state === 'suspended') {
+            await audioContext.resume();
           }
           
-          const audioData = new Uint8Array(arrayBuffer);
-          const numSamples = audioData.length / 2; // 16-bit samples
-          
-          const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
-          const channelData = audioBuffer.getChannelData(0);
-          
-          // Convert PCM data to audio buffer
-          const dataView = new DataView(arrayBuffer);
-          for (let i = 0; i < numSamples; i++) {
-            const sample = dataView.getInt16(i * 2, true); // little-endian
-            channelData[i] = sample / 32768.0;
-          }
-          
-          const source = audioContext.createBufferSource();
-          const gainNode = audioContext.createGain();
-          
-          source.buffer = audioBuffer;
-          source.connect(gainNode);
-          gainNode.connect(audioContext.destination);
-          
-          // Adjust volume based on audio source
-          gainNode.gain.value = isUserAudio ? 1.2 : 0.8;
-          
-          // Start audio immediately without additional delays
-          source.start(0);
-          
-          console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
-          setReplayStatus(`🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - network`);
-        } else {
-          // Handle encoded audio (MP3, WAV, etc.)
-          try {
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          // For PCM data, we need to process it differently than for encoded audio
+          if (response.headers.get('content-type') === 'audio/pcm' || log.media_data.cloud_storage_url.includes('.pcm')) {
+            // Handle raw PCM data with proper sample rate detection
+            let sampleRate = 24000; // Default
+            
+            // Try to get sample rate from metadata
+            if (log.interaction_metadata?.audio_sample_rate) {
+              sampleRate = log.interaction_metadata.audio_sample_rate;
+            } else if (isUserAudio) {
+              sampleRate = 16000; // User audio is typically 16kHz
+            }
+            
+            const audioData = new Uint8Array(arrayBuffer);
+            const numSamples = audioData.length / 2; // 16-bit samples
+            
+            const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
+            const channelData = audioBuffer.getChannelData(0);
+            
+            // Convert PCM data to audio buffer
+            const dataView = new DataView(arrayBuffer);
+            for (let i = 0; i < numSamples; i++) {
+              const sample = dataView.getInt16(i * 2, true); // little-endian
+              channelData[i] = sample / 32768.0;
+            }
+            
             const source = audioContext.createBufferSource();
             const gainNode = audioContext.createGain();
             
@@ -780,16 +892,44 @@ const InteractionReplay = () => {
             // Adjust volume based on audio source
             gainNode.gain.value = isUserAudio ? 1.2 : 0.8;
             
+            // Start audio immediately without additional delays
             source.start(0);
             
-            console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
-            setReplayStatus(`🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - encoded`);
-          } catch (decodeError) {
-            console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
+            console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
+            setReplayStatus(`🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - network`);
+          } else {
+            // Handle encoded audio (MP3, WAV, etc.)
+            try {
+              const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+              const source = audioContext.createBufferSource();
+              const gainNode = audioContext.createGain();
+              
+              source.buffer = audioBuffer;
+              source.connect(gainNode);
+              gainNode.connect(audioContext.destination);
+              
+              // Adjust volume based on audio source
+              gainNode.gain.value = isUserAudio ? 1.2 : 0.8;
+              
+              source.start(0);
+              
+              console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
+              setReplayStatus(`🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - encoded`);
+            } catch (decodeError) {
+              console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
+            }
           }
+        } else if (response.status === 502 || response.status === 400) {
+          // Handle expired GCS URLs gracefully
+          console.warn(`🎬 ${audioSource} audio chunk media unavailable (likely expired URL):`, response.status);
+          setReplayStatus(`⏸️ ${audioSource} audio unavailable (expired URL)`);
+        } else {
+          console.error(`Failed to fetch ${audioSource} audio chunk via proxy:`, response.status);
+          setReplayStatus(`❌ Failed to load ${audioSource.toLowerCase()} audio - HTTP ${response.status}`);
         }
       } catch (error) {
         console.error(`Error playing ${audioSource} audio chunk:`, error);
+        setReplayStatus(`❌ Error playing ${audioSource.toLowerCase()} audio`);
       }
     } else if (log.media_data && log.media_data.storage_type === 'hash_only') {
       console.log(`🎬 ${audioSource} audio chunk captured (hash-only mode - no replay data)`);
@@ -848,6 +988,9 @@ const InteractionReplay = () => {
             // Text response
             responseText = `Gemini response: ${await response.text()}`;
           }
+        } else if (response.status === 502 || response.status === 400) {
+          // Handle expired GCS URLs gracefully
+          responseText = `Gemini response stored in cloud (${log.id}) - Media unavailable (expired URL)`;
         } else {
           responseText = `Gemini response stored in cloud (ID: ${log.id}) - Failed to fetch via proxy (${response.status})`;
         }
@@ -945,6 +1088,24 @@ const InteractionReplay = () => {
                     <option value={4}>4x</option>
                   </select>
                 </label>
+                {/* Show regenerate button when URLs are expired */}
+                {(replayStatus.includes('expired URL') || replayStatus.includes('Media unavailable')) && (
+                  <button 
+                    onClick={regenerateUrls} 
+                    disabled={isRegeneratingUrls || isPlaying}
+                    style={{
+                      marginLeft: '10px',
+                      backgroundColor: isRegeneratingUrls ? '#666' : '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 12px',
+                      borderRadius: '4px',
+                      cursor: isRegeneratingUrls ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isRegeneratingUrls ? '🔄 Regenerating...' : '🔄 Fix Expired URLs'}
+                  </button>
+                )}
               </div>
 
               <div className="progress-info">

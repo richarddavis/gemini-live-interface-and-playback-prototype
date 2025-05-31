@@ -8,7 +8,7 @@ class InteractionLogger {
     this.batchTimeout = 5000; // 5 seconds
     this.logQueue = [];
     this.batchTimer = null;
-    this.baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+    this.baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
   }
 
   generateSessionId() {

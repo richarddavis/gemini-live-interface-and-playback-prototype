@@ -34,7 +34,7 @@ Create `.env` file in the root directory:
 ```bash
 # Frontend Environment Variables
 REACT_APP_GOOGLE_AI_STUDIO_API_KEY=your_api_key_here
-REACT_APP_API_URL=http://localhost:5001
+REACT_APP_API_URL=http://localhost:8080
 
 # Backend Environment Variables (for analytics)
 DATABASE_URL=postgresql://user:password@localhost:5432/webapp

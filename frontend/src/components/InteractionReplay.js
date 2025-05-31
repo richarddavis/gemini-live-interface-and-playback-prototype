@@ -277,6 +277,202 @@ const useAudioStreamingConfig = (updateState) => {
   return { createStreamingConfig };
 };
 
+// Custom hook for conversation segment processing
+const useConversationSegments = (updateState) => {
+  const processIntoSegments = useCallback((logs) => {
+    console.log('🎭 Processing', logs.length, 'logs into conversation segments...');
+    
+    // Debug: Check audio chunk distribution
+    const audioChunks = logs.filter(log => log.interaction_type === 'audio_chunk');
+    const userAudioCount = audioChunks.filter(log => log.interaction_metadata?.microphone_on === true).length;
+    const userAudioChunkCount = audioChunks.filter(log => log.interaction_metadata?.microphone_on === false).length;
+    
+    // Check API responses for audio content
+    const apiResponses = logs.filter(log => log.interaction_type === 'api_response');
+    const apiAudioResponseCount = apiResponses.filter(log => {
+      // Check if the api_response contains audio data
+      return log.media_data?.cloud_storage_url && 
+             (log.media_data.cloud_storage_url.includes('.pcm') || 
+              (log.interaction_metadata && log.interaction_metadata.response_type === 'audio'));
+    }).length;
+    
+    console.log(`🎭 Audio analysis: ${userAudioCount} user audio_chunks, ${userAudioChunkCount} other audio_chunks, ${apiAudioResponseCount} API audio responses`);
+    
+    const segments = [];
+    let currentSegment = null;
+    let segmentId = 0;
+
+    // Group logs by conversation segments
+    logs.forEach((log, index) => {
+      const { interaction_type, timestamp, interaction_metadata } = log;
+      const isUserAudio = interaction_type === 'audio_chunk' && interaction_metadata?.microphone_on === true;
+      
+      // NEW: Properly detect API audio responses
+      const isApiAudioResponse = interaction_type === 'api_response' && (
+        log.media_data?.cloud_storage_url?.includes('.pcm') ||
+        interaction_metadata?.response_type === 'audio' ||
+        (log.media_data?.cloud_storage_url && interaction_metadata?.mime_type?.includes('audio'))
+      );
+      
+      const isVideoFrame = interaction_type === 'video_frame';
+      const isTextInput = interaction_type === 'text_input';
+      const isTextApiResponse = interaction_type === 'api_response' && !isApiAudioResponse;
+      const isUserAction = interaction_type === 'user_action';
+
+      // Debug log for audio content
+      if (interaction_type === 'audio_chunk') {
+        console.log(`🎭 Audio chunk ${log.id}: microphone_on=${interaction_metadata?.microphone_on}, isUserAudio=${isUserAudio}`);
+      } else if (isApiAudioResponse) {
+        console.log(`🎭 API audio response ${log.id}: detected as audio response`);
+      }
+
+      // Define segment boundaries
+      const isSegmentStart = (
+        isTextInput || 
+        (isUserAction && interaction_metadata?.action_type === 'audio_stream_start') ||
+        (isUserAudio && (!currentSegment || currentSegment.type !== 'user_speech')) ||
+        (isApiAudioResponse && (!currentSegment || currentSegment.type !== 'api_response'))
+      );
+
+      // Create new segment if needed
+      if (isSegmentStart || !currentSegment) {
+        // Finalize previous segment
+        if (currentSegment) {
+          currentSegment.endTime = currentSegment.logs[currentSegment.logs.length - 1].timestamp;
+          currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
+        }
+
+        // Determine segment type
+        let segmentType = 'unknown';
+        if (isTextInput) segmentType = 'user_text';
+        else if (isUserAudio) segmentType = 'user_speech';
+        else if (isApiAudioResponse || isTextApiResponse) segmentType = 'api_response';
+        else if (isUserAction) segmentType = 'user_action';
+
+        currentSegment = {
+          id: ++segmentId,
+          type: segmentType,
+          startTime: timestamp,
+          endTime: timestamp,
+          duration: 0,
+          logs: [],
+          audioChunks: [], // Will include both audio_chunk and api_response audio
+          videoFrames: [],
+          metadata: {
+            chunkCount: 0,
+            totalBytes: 0,
+            sampleRate: interaction_metadata?.audio_sample_rate || (isUserAudio ? 16000 : 24000)
+          }
+        };
+        segments.push(currentSegment);
+      }
+
+      // Add log to current segment
+      currentSegment.logs.push(log);
+      currentSegment.endTime = timestamp;
+
+      // Categorize by type
+      if (interaction_type === 'audio_chunk' || isApiAudioResponse) {
+        currentSegment.audioChunks.push(log);
+        currentSegment.metadata.chunkCount++;
+        if (log.media_data?.data_size_bytes) {
+          currentSegment.metadata.totalBytes += log.media_data.data_size_bytes;
+        }
+      } else if (isVideoFrame) {
+        currentSegment.videoFrames.push(log);
+      }
+    });
+
+    // Finalize last segment
+    if (currentSegment) {
+      currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
+    }
+
+    console.log('🎭 Created', segments.length, 'conversation segments:', 
+      segments.map(s => `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`));
+
+    return segments;
+  }, []);
+
+  const createSegmentAudio = useCallback(async (segment, audioCache) => {
+    if (segment.audioChunks.length === 0) return null;
+
+    try {
+      console.log(`🎵 Creating unified audio for ${segment.type} segment with ${segment.audioChunks.length} chunks`);
+      
+      // Get all cached audio buffers for this segment
+      const audioBuffers = segment.audioChunks
+        .map(chunk => audioCache.get(chunk.id))
+        .filter(buffer => buffer !== undefined);
+
+      if (audioBuffers.length === 0) {
+        console.warn('🎵 No cached audio buffers available for segment');
+        return null;
+      }
+
+      // Create unified audio buffer by concatenating all chunk buffers
+      const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+      const sampleRate = segment.metadata.sampleRate;
+      
+      // Create new Web Audio API buffer
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+      const unifiedBuffer = audioContext.createBuffer(1, totalSamples, sampleRate);
+      const channelData = unifiedBuffer.getChannelData(0);
+
+      // Concatenate all audio chunks
+      let offset = 0;
+      audioBuffers.forEach(buffer => {
+        const sourceData = buffer.getChannelData(0);
+        channelData.set(sourceData, offset);
+        offset += sourceData.length;
+      });
+
+      console.log(`🎵 Created unified audio: ${unifiedBuffer.duration.toFixed(2)}s, ${totalSamples} samples`);
+      
+      return {
+        audioBuffer: unifiedBuffer,
+        audioContext,
+        duration: unifiedBuffer.duration,
+        type: segment.type
+      };
+
+    } catch (error) {
+      console.error('🚨 Failed to create segment audio:', error);
+      return null;
+    }
+  }, []);
+
+  const createSegmentVideo = useCallback((segment, videoCache) => {
+    if (segment.videoFrames.length === 0) return null;
+
+    // Create video timeline for smooth frame display
+    const frames = segment.videoFrames
+      .map(frame => ({
+        timestamp: frame.timestamp,
+        frameData: videoCache.get(frame.id),
+        relativeTime: new Date(frame.timestamp) - new Date(segment.startTime)
+      }))
+      .filter(frame => frame.frameData !== undefined);
+
+    if (frames.length === 0) return null;
+
+    console.log(`📹 Created video timeline with ${frames.length} frames over ${segment.duration}ms`);
+    
+    return {
+      frames,
+      duration: segment.duration,
+      frameCount: frames.length,
+      averageInterval: segment.duration / frames.length
+    };
+  }, []);
+
+  return {
+    processIntoSegments,
+    createSegmentAudio,
+    createSegmentVideo
+  };
+};
+
 // Utility functions
 const formatTimestamp = (timestamp) => new Date(timestamp).toLocaleTimeString();
 
@@ -330,6 +526,7 @@ const InteractionReplay = () => {
   const { state, updateState, resetPlayback } = useReplayState();
   const mediaCache = useMediaCache(updateState);
   const { createStreamingConfig } = useAudioStreamingConfig(updateState);
+  const { processIntoSegments, createSegmentAudio, createSegmentVideo } = useConversationSegments(updateState);
   
   // Refs
   const videoRef = useRef(null);
@@ -409,9 +606,14 @@ const InteractionReplay = () => {
       
       // Filter different types of media content
       const audioLogs = logs.filter(log => 
-        (log.interaction_type === 'audio_chunk' || log.interaction_type === 'api_response') &&
+        ((log.interaction_type === 'audio_chunk' || log.interaction_type === 'api_response') &&
         log.media_data && 
-        log.media_data.cloud_storage_url
+        log.media_data.cloud_storage_url) &&
+        // For api_response, check if it contains audio
+        (log.interaction_type === 'audio_chunk' || 
+         log.media_data.cloud_storage_url.includes('.pcm') ||
+         log.interaction_metadata?.response_type === 'audio' ||
+         log.interaction_metadata?.mime_type?.includes('audio'))
       );
 
       const videoLogs = logs.filter(log => 
@@ -490,6 +692,39 @@ const InteractionReplay = () => {
       }
       
       console.log(`🎬 Parallel preload complete: ${audioCache.size} audio, ${videoCache.size} video. Expired: ${expiredCount}, Other failures: ${otherFailedCount}`);
+
+      // NEW: Process logs into conversation segments for smoother replay
+      if (audioCache.size > 0 || videoCache.size > 0) {
+        console.log('🎭 Processing conversation segments...');
+        try {
+          const segments = processIntoSegments(logs);
+          updateState({ conversationSegments: segments });
+          
+          // Pre-process segments for even smoother playback
+          const processedSegments = new Map();
+          for (const segment of segments) {
+            if (segment.audioChunks.length > 0) {
+              const segmentAudio = await createSegmentAudio(segment, audioCache);
+              if (segmentAudio) {
+                processedSegments.set(`${segment.id}_audio`, segmentAudio);
+              }
+            }
+            
+            if (segment.videoFrames.length > 0) {
+              const segmentVideo = createSegmentVideo(segment, videoCache);
+              if (segmentVideo) {
+                processedSegments.set(`${segment.id}_video`, segmentVideo);
+              }
+            }
+          }
+          
+          updateState({ processedSegments });
+          updateState({ replayStatus: `⚡ Media preloaded: ${statusText}${failedText} + ${segments.length} conversation segments - ready for smooth replay` });
+        } catch (segmentError) {
+          console.error('🚨 Segment processing failed:', segmentError);
+          updateState({ replayStatus: `⚡ Media preloaded: ${statusText}${failedText} - ready for replay (fallback mode)` });
+        }
+      }
 
     } catch (error) {
       console.error('Error preloading media:', error);
@@ -573,10 +808,29 @@ const InteractionReplay = () => {
     
     console.log('🎬 Starting replay with', state.replayData.logs.length, 'interactions');
     console.log('🎬 Audio cache size:', state.audioCache.size);
-    updateState({ replayStatus: `Starting replay of ${state.replayData.logs.length} interactions...` });
-    updateState({ isPlaying: true });
-    updateState({ currentIndex: 0 });
-    updateState({ shouldStartPlayback: true }); // Trigger useEffect after state updates
+    console.log('🎬 Video cache size:', state.videoCache.size);
+    
+    // Choose replay mode based on available segments
+    if (state.conversationSegments.length > 0 && state.processedSegments.size > 0) {
+      console.log('🎭 Starting segment-based replay with', state.conversationSegments.length, 'segments');
+      updateState({ 
+        replayStatus: `Starting segment-based replay of ${state.conversationSegments.length} conversation segments...`,
+        segmentReplayMode: true,
+        isPlaying: true,
+        currentSegmentIndex: 0 
+      });
+      // Fix: Pass isPlaying=true directly to avoid state timing issue
+      playNextSegment(0, true, state.conversationSegments);
+    } else {
+      console.log('🎬 Falling back to chunk-based replay');
+      updateState({ 
+        replayStatus: `Starting chunk-based replay of ${state.replayData.logs.length} interactions...`,
+        segmentReplayMode: false,
+        isPlaying: true,
+        currentIndex: 0,
+        shouldStartPlayback: true 
+      });
+    }
   };
 
   const stopReplay = () => {
@@ -1159,6 +1413,201 @@ const InteractionReplay = () => {
     updateState({ currentIndex: index });
     if (state.replayData && state.replayData.logs[index]) {
       processInteraction(state.replayData.logs[index]);
+    }
+  };
+
+  const playNextSegment = async (segmentIndex, isPlaying = null, segments = null) => {
+    // Use passed parameters or fall back to state (fix for timing issues)
+    const actualIsPlaying = isPlaying !== null ? isPlaying : state.isPlaying;
+    const actualSegments = segments || state.conversationSegments;
+    
+    console.log(`🎭 playNextSegment called: index=${segmentIndex}, isPlaying=${actualIsPlaying}, segments=${actualSegments.length}`);
+    
+    if (!actualIsPlaying || segmentIndex >= actualSegments.length) {
+      console.log('🎭 Segment replay complete');
+      updateState({ isPlaying: false });
+      return;
+    }
+
+    const segment = actualSegments[segmentIndex];
+    console.log(`🎭 Playing segment ${segmentIndex + 1}/${actualSegments.length}: ${segment.type} (${segment.duration}ms)`);
+
+    updateState({ currentSegmentIndex: segmentIndex });
+
+    try {
+      // Handle different segment types and wait for completion
+      if (segment.type === 'user_speech') {
+        await playUserSpeechSegment(segment);
+      } else if (segment.type === 'api_response') {
+        await playApiResponseSegment(segment);
+      } else if (segment.type === 'user_text') {
+        playTextSegment(segment);
+      } else {
+        playActionSegment(segment);
+      }
+
+      // Add a small delay between segments for natural pacing
+      const delay = Math.max(200, Math.min(1000, segment.duration * 0.1 / state.playbackSpeed));
+      console.log(`🎭 Segment completed, waiting ${delay}ms before next segment`);
+      
+      setTimeout(() => {
+        // FIX: Continue with next segment, passing state explicitly to avoid timing issues
+        playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments);
+      }, delay);
+
+    } catch (error) {
+      console.error('🚨 Segment playback failed:', error);
+      updateState({ replayStatus: `❌ Segment ${segmentIndex + 1} failed: ${error.message}` });
+      // Continue to next segment after brief delay, maintaining state
+      setTimeout(() => playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments), 500);
+    }
+  };
+
+  const playUserSpeechSegment = async (segment) => {
+    updateState({ replayStatus: `🎤 Playing user speech (${(segment.duration / 1000).toFixed(1)}s)` });
+    
+    // Display video frames during speech
+    const segmentVideo = state.processedSegments.get(`${segment.id}_video`);
+    if (segmentVideo) {
+      playSegmentVideo(segmentVideo);
+    }
+    
+    // Play unified audio and wait for completion
+    const segmentAudio = state.processedSegments.get(`${segment.id}_audio`);
+    if (segmentAudio) {
+      const { audioContext, audioBuffer } = segmentAudio;
+      
+      return new Promise((resolve) => {
+        const source = audioContext.createBufferSource();
+        const gainNode = audioContext.createGain();
+        
+        source.buffer = audioBuffer;
+        source.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Boost user audio volume
+        gainNode.gain.value = CONSTANTS.AUDIO.VOLUME.USER;
+        
+        // Wait for audio to complete
+        source.onended = () => {
+          console.log(`🎤 User speech completed: ${audioBuffer.duration.toFixed(2)}s`);
+          resolve();
+        };
+        
+        source.start(0);
+        console.log(`🎤 Playing unified user speech: ${audioBuffer.duration.toFixed(2)}s`);
+      });
+    }
+    
+    // If no audio, just wait a short time
+    return new Promise(resolve => setTimeout(resolve, 100));
+  };
+
+  const playApiResponseSegment = async (segment) => {
+    updateState({ replayStatus: `🤖 Playing API response (${(segment.duration / 1000).toFixed(1)}s)` });
+    
+    // Play unified audio and wait for completion
+    const segmentAudio = state.processedSegments.get(`${segment.id}_audio`);
+    if (segmentAudio) {
+      const { audioContext, audioBuffer } = segmentAudio;
+      
+      return new Promise((resolve) => {
+        const source = audioContext.createBufferSource();
+        const gainNode = audioContext.createGain();
+        
+        source.buffer = audioBuffer;
+        source.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // API audio at normal volume
+        gainNode.gain.value = CONSTANTS.AUDIO.VOLUME.API;
+        
+        // Wait for audio to complete
+        source.onended = () => {
+          console.log(`🤖 API response completed: ${audioBuffer.duration.toFixed(2)}s`);
+          resolve();
+        };
+        
+        source.start(0);
+        console.log(`🤖 Playing unified API response: ${audioBuffer.duration.toFixed(2)}s`);
+      });
+    }
+
+    // Show API response text if available
+    const textLog = segment.logs.find(log => log.interaction_type === 'api_response');
+    if (textLog) {
+      updateState({ currentApiResponse: `API responded with ${segment.audioChunks.length} audio chunks` });
+    }
+    
+    // If no audio, just wait a short time
+    return new Promise(resolve => setTimeout(resolve, 100));
+  };
+
+  const playTextSegment = (segment) => {
+    const textLog = segment.logs[0];
+    updateState({ 
+      replayStatus: `📝 Processing text input...`,
+      currentTextInput: textLog.interaction_metadata?.text || 'Text input detected'
+    });
+  };
+
+  const playActionSegment = (segment) => {
+    const actionLog = segment.logs[0];
+    const actionType = actionLog.interaction_metadata?.action_type || 'action';
+    updateState({ 
+      replayStatus: `⚡ User action: ${actionType}`,
+      currentUserAction: `${actionType}: ${actionLog.interaction_metadata?.action_details || 'User interaction'}`
+    });
+  };
+
+  const playSegmentVideo = (segmentVideo) => {
+    const { frames, averageInterval } = segmentVideo;
+    let frameIndex = 0;
+
+    const showNextFrame = () => {
+      if (frameIndex < frames.length && state.isPlaying) {
+        const frame = frames[frameIndex];
+        if (frame.frameData && videoRef.current) {
+          // Update the video frame display
+          updateState({ currentVideoFrame: `Segment frame ${frameIndex + 1}/${frames.length} at ${formatTimestamp(frame.timestamp)}` });
+          
+          // Display frame using existing video display logic
+          if (videoRef.current) {
+            // Hide the video element and show image instead
+            videoRef.current.style.display = 'none';
+            
+            // Find or create image element next to video
+            let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
+            if (!imgElement) {
+              imgElement = document.createElement('img');
+              imgElement.className = 'replay-frame';
+              imgElement.style.width = '320px';
+              imgElement.style.height = '240px';
+              imgElement.style.backgroundColor = '#000';
+              imgElement.style.border = '1px solid #ccc';
+              imgElement.style.objectFit = 'contain';
+              imgElement.style.display = 'block';
+              
+              // Insert after the video element
+              videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+            }
+            
+            // Set the frame image
+            imgElement.src = frame.frameData.url;
+            console.log(`📹 Showing segment frame ${frameIndex + 1}/${frames.length}`);
+          }
+        }
+
+        frameIndex++;
+        if (frameIndex < frames.length) {
+          setTimeout(showNextFrame, Math.max(100, averageInterval / state.playbackSpeed));
+        }
+      }
+    };
+
+    if (frames.length > 0) {
+      console.log(`📹 Starting video playback: ${frames.length} frames at ${averageInterval}ms intervals`);
+      showNextFrame();
     }
   };
 

@@ -51,8 +51,8 @@ ANTHROPIC_API_KEY=your_anthropic_key
 GOOGLE_API_KEY=your_google_key
 
 # Gemini Live API (for direct connection)
-REACT_APP_GOOGLE_AI_STUDIO_API_KEY=your_gemini_live_key
-REACT_APP_API_URL=http://localhost:5001
+REACT_APP_GOOGLE_AI_STUDIO_API_KEY=your_api_key_here
+REACT_APP_API_URL=http://localhost:8080
 
 # Development
 FLASK_ENV=development
@@ -67,7 +67,7 @@ docker-compose up --build
 
 # Access the application
 # Frontend: http://localhost:3000
-# Backend API: http://localhost:5001
+# Backend API: http://localhost:8080
 ```
 
 ### 3. Manual Setup (Development)

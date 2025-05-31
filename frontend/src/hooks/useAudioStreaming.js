@@ -91,10 +91,17 @@ export const useAudioStreaming = (options = {}) => {
         });
       }
 
-      // Create source and play
+      // Create source and gain node for volume control
       const source = audioContext.createBufferSource();
+      const gainNode = audioContext.createGain();
+      
       source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
+      source.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // Set volume based on audio source (same as fallback player)
+      const isUserAudio = audioSource === 'user_microphone';
+      gainNode.gain.value = isUserAudio ? 1.2 : 0.8; // Boost user audio, lower API audio
       
       source.onended = () => {
         console.log('🎵 Audio playback completed');
@@ -119,7 +126,7 @@ export const useAudioStreaming = (options = {}) => {
         onError(error);
       }
     }
-  }, [sampleRate, onPlaybackStart, onPlaybackEnd, onError]);
+  }, [sampleRate, audioSource, onPlaybackStart, onPlaybackEnd, onError]);
 
   const addAudioChunk = useCallback((arrayBuffer) => {
     // Validate input

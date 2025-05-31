@@ -13,7 +13,7 @@ import sys
 import os
 
 # Test configuration
-API_BASE_URL = "http://localhost:5000/api"
+API_BASE_URL = "http://localhost:8080/api"
 TEST_SESSION_ID = f"integration_test_{int(time.time())}"
 
 class TestGeminiLiveIntegration(unittest.TestCase):

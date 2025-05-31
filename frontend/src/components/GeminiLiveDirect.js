@@ -39,7 +39,7 @@ const GeminiLiveDirect = () => {
   const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
 
   const API_KEY = process.env.REACT_APP_GOOGLE_AI_STUDIO_API_KEY;
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
   const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
 
   // Auto-scroll to bottom when new messages are added
@@ -114,15 +114,20 @@ const GeminiLiveDirect = () => {
       
       wsRef.current.send(JSON.stringify(videoMessage));
       
-      // Log video frame (occasionally to avoid spam)
-      if (Math.random() < 0.05) { // 5% of frames
-        console.log(`📹 Sent video frame: ${canvas.width}x${canvas.height}`);
-        // Log video frame with error handling
+      // Increase logging frequency for better replay quality
+      // In replay mode, log more frames (30% instead of 5%)
+      const logProbability = interactionLogger.replayMode ? 0.3 : 0.05;
+      if (Math.random() < logProbability) {
+        console.log(`📹 Sent video frame: ${canvas.width}x${canvas.height} (replay mode: ${interactionLogger.replayMode})`);
+        // Log video frame with error handling and improved metadata
         try {
           interactionLogger.logVideoFrame(base64Data, {
             video_resolution: { width: canvas.width, height: canvas.height },
             camera_on: isCameraOn,
-            is_connected: isConnected
+            is_connected: isConnected,
+            frame_timestamp: Date.now(),
+            capture_quality: 0.7,
+            replay_mode: interactionLogger.replayMode
           });
         } catch (logError) {
           console.warn('⚠️ Failed to log video frame:', logError);
@@ -140,9 +145,10 @@ const GeminiLiveDirect = () => {
       clearInterval(videoFrameIntervalRef.current);
     }
     
-    // Capture frames every 500ms (2 FPS) for real-time analysis without overwhelming the API
-    videoFrameIntervalRef.current = setInterval(captureAndSendVideoFrame, 500);
-    console.log('📹 Started video frame capture at 2 FPS');
+    // Increase capture rate in replay mode for smoother playback
+    const captureInterval = interactionLogger.replayMode ? 200 : 500; // 5 FPS in replay mode, 2 FPS otherwise
+    videoFrameIntervalRef.current = setInterval(captureAndSendVideoFrame, captureInterval);
+    console.log(`📹 Started video frame capture at ${1000/captureInterval} FPS (replay mode: ${interactionLogger.replayMode})`);
   }, [captureAndSendVideoFrame]);
 
   // Stop video frame capture
@@ -612,6 +618,17 @@ const GeminiLiveDirect = () => {
         if (!isReceivingAudio) {
           setIsReceivingAudio(true);
           addMessage('system', '🎵 Receiving audio stream...');
+          
+          // Log the start of audio streaming
+          try {
+            interactionLogger.logUserAction('audio_stream_start', {
+              audio_source: 'gemini_api',
+              stream_timestamp: Date.now(),
+              mime_type: inlineData.mimeType
+            });
+          } catch (logError) {
+            console.warn('⚠️ Failed to log audio stream start:', logError);
+          }
         }
         
         // Clear existing timeout and set new one
@@ -622,6 +639,18 @@ const GeminiLiveDirect = () => {
         // Wait for stream to complete (500ms of no new chunks)
         audioTimeoutRef.current = setTimeout(() => {
           playBufferedAudio();
+          
+          // Log the end of audio streaming
+          try {
+            interactionLogger.logUserAction('audio_stream_end', {
+              audio_source: 'gemini_api',
+              stream_timestamp: Date.now(),
+              chunks_count: audioBufferRef.current.length,
+              total_duration: audioBufferRef.current.length * 0.1 // Rough estimate
+            });
+          } catch (logError) {
+            console.warn('⚠️ Failed to log audio stream end:', logError);
+          }
         }, 500);
 
       } catch (error) {
@@ -661,7 +690,11 @@ const GeminiLiveDirect = () => {
             interactionLogger.logApiResponse(part.inlineData, {
               response_type: 'audio',
               mime_type: part.inlineData.mimeType,
-              data_size: part.inlineData.data ? part.inlineData.data.length : 0
+              data_size: part.inlineData.data ? part.inlineData.data.length : 0,
+              audio_source: 'gemini_api',
+              microphone_on: false, // This is API audio, not user audio
+              response_timestamp: Date.now(),
+              replay_mode: interactionLogger.replayMode
             });
           } catch (logError) {
             console.warn('⚠️ Failed to log audio response:', logError);
@@ -739,7 +772,8 @@ const GeminiLiveDirect = () => {
         addMessage('system', '🎤 Microphone access granted');
         
         if (isConnected && wsRef.current) {
-          startAudioRecording(stream);
+          // Pass true explicitly since setIsMicOn(true) hasn't updated state yet
+          startAudioRecording(stream, true);
         }
       } else {
         if (mediaStreamRef.current) {
@@ -765,8 +799,11 @@ const GeminiLiveDirect = () => {
   }, [isMicOn, isConnected, addMessage]);
 
   // Start audio recording (proper PCM conversion for Google Live API)
-  const startAudioRecording = useCallback((stream) => {
+  const startAudioRecording = useCallback((stream, microphoneState = null) => {
     try {
+      // Use the passed microphoneState or fall back to the current isMicOn state
+      const actualMicState = microphoneState !== null ? microphoneState : isMicOn;
+      
       // Create separate audio context for recording at 16kHz (Google's input requirement)
       const recordingAudioContext = new (window.AudioContext || window.webkitAudioContext)({
         sampleRate: 16000 // Google's required input sample rate
@@ -811,14 +848,19 @@ const GeminiLiveDirect = () => {
           };
           
           // Log audio chunk with error handling
-          if (Math.random() < 0.1) { // 10% of chunks
-            console.log(`📤 Sending PCM audio chunk: ${pcmData.length} samples, ${uint8Data.length} bytes`);
+          // CRITICAL FIX: Log ALL audio chunks in replay mode for complete audio capture
+          const logProbability = interactionLogger.replayMode ? 1.0 : 0.1; // 100% in replay mode for complete audio, 10% otherwise
+          if (Math.random() < logProbability) {
+            console.log(`📤 Sending PCM audio chunk: ${pcmData.length} samples, ${uint8Data.length} bytes (replay mode: ${interactionLogger.replayMode}), micOn: ${actualMicState}`);
             try {
               interactionLogger.logAudioChunk(base64Audio, {
                 audio_sample_rate: sampleRate,
                 data_size_bytes: uint8Data.length,
-                microphone_on: isMicOn,
-                is_connected: isConnected
+                microphone_on: actualMicState,
+                is_connected: isConnected,
+                audio_source: 'user_microphone',
+                chunk_timestamp: Date.now(),
+                replay_mode: interactionLogger.replayMode
               });
             } catch (logError) {
               console.warn('⚠️ Failed to log audio chunk:', logError);
@@ -839,12 +881,12 @@ const GeminiLiveDirect = () => {
         recordingAudioContext 
       };
       
-      addMessage('system', `🎤 Started recording PCM audio at ${recordingAudioContext.sampleRate}Hz`);
+      addMessage('system', `🎤 Started recording PCM audio at ${recordingAudioContext.sampleRate}Hz (mic state: ${actualMicState})`);
     } catch (error) {
       console.error('Audio recording error:', error);
       addMessage('error', `Audio recording failed: ${error.message}`);
     }
-  }, [isConnected, addMessage]);
+  }, [isConnected, isMicOn, addMessage]);
 
   // Toggle camera
   const toggleCamera = useCallback(async () => {

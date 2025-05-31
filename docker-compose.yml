@@ -11,7 +11,7 @@ services:
     env_file:
       - .env  # Load environment variables from .env file (including REACT_APP_GOOGLE_AI_STUDIO_API_KEY)
     environment:
-      - REACT_APP_API_URL=http://localhost:5001/api
+      - REACT_APP_API_URL=http://localhost:8080/api
     depends_on:
       backend:
         condition: service_started
@@ -21,7 +21,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "5001:5000"
+      - "8080:5000"
     volumes:
       - ./backend:/app
       - ./.secrets/gcp/generative-fashion-355408-new-key.json:/app/gcp-key.json:ro

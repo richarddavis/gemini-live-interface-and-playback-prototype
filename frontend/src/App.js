@@ -8,7 +8,7 @@ import { useChatApi } from './hooks/useChatApi';
 import GeminiLiveDirect from './components/GeminiLiveDirect';
 import InteractionReplay from './components/InteractionReplay';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
 
 function App() {
   // State

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { interactionLogger } from '../services/interactionLogger';
 import './InteractionReplay.css';
 import { useAudioStreaming } from '../hooks/useAudioStreaming';
@@ -19,7 +19,6 @@ const InteractionReplay = () => {
   const [currentApiResponse, setCurrentApiResponse] = useState('');
   const [currentUserAction, setCurrentUserAction] = useState('');
   const [replayStatus, setReplayStatus] = useState('Ready to replay...');
-  const [audioPreloaded, setAudioPreloaded] = useState(false);
   const [audioCache, setAudioCache] = useState(new Map());
   const [videoCache, setVideoCache] = useState(new Map());
   const [mediaCacheReady, setMediaCacheReady] = useState(false);
@@ -30,7 +29,6 @@ const InteractionReplay = () => {
   const videoRef = useRef(null);
   const audioContextRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
-  const audioSourceRef = useRef(null);
 
   // NEW: Audio streaming hooks for different audio sources
   const geminiAudioStreaming = useAudioStreaming({
@@ -121,7 +119,6 @@ const InteractionReplay = () => {
       setReplayData(data);
       setCurrentIndex(0);
       setIsPlaying(false);
-      setAudioPreloaded(false);
       setAudioCache(new Map());
       setVideoCache(new Map());
       setMediaCacheReady(false);
@@ -157,7 +154,6 @@ const InteractionReplay = () => {
       
       if (totalMedia === 0) {
         console.log('🎬 No media content to preload');
-        setAudioPreloaded(true);
         setMediaCacheReady(true);
         setReplayStatus('Ready to replay...');
         return;
@@ -250,7 +246,6 @@ const InteractionReplay = () => {
       // Update cache states
       setAudioCache(audioCache);
       setVideoCache(videoCache);
-      setAudioPreloaded(true);
       setMediaCacheReady(true);
       
       const statusText = [
@@ -262,7 +257,6 @@ const InteractionReplay = () => {
       console.log(`🎬 Media cache ready: ${audioCache.size} audio chunks, ${videoCache.size} video frames`);
     } catch (error) {
       console.error('Error preloading media:', error);
-      setAudioPreloaded(true);
       setMediaCacheReady(true);
       setReplayStatus('Media preloading failed - will use network playback');
     }

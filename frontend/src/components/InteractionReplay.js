@@ -1532,11 +1532,20 @@ const InteractionReplay = () => {
       // Pass the isPlaying parameter to video playback
       playSegmentVideo(segmentVideo, isPlaying);
     } else {
-      console.warn(`🎤 No video segment found for user speech segment ${segment.id}`);
-      // Debug: Check if segment has video frames but no processed video
-      if (segment.videoFrames && segment.videoFrames.length > 0) {
+      // Check if this is expected (short segments often don't have video)
+      const isShortSegment = segment.duration < 500; // Less than 500ms
+      const hasVideoFramesInSegment = segment.videoFrames && segment.videoFrames.length > 0;
+      
+      if (hasVideoFramesInSegment) {
+        // This is unexpected - segment has video frames but no processed video
         console.warn(`🎤 ⚠️  Segment ${segment.id} has ${segment.videoFrames.length} video frames but no processed video segment!`);
         console.warn(`🎤 Video frames:`, segment.videoFrames.map(f => ({ id: f.id, timestamp: f.timestamp })));
+      } else if (isShortSegment) {
+        // This is expected for short segments
+        console.log(`🎤 📝 No video for segment ${segment.id} (${segment.duration}ms) - expected for short speech`);
+      } else {
+        // Longer segment without video - noteworthy but not alarming
+        console.log(`🎤 📹 No video segment found for user speech segment ${segment.id} (${segment.duration}ms)`);
       }
     }
     
@@ -1559,6 +1568,11 @@ const InteractionReplay = () => {
         // Wait for audio to complete
         source.onended = () => {
           console.log(`🎤 User speech completed: ${audioBuffer.duration.toFixed(2)}s`);
+          // Stop any ongoing video playback for this segment when audio ends
+          if (videoPlaybackRef.current) {
+            console.log(`🎤 Stopping video playback as user speech audio completed`);
+            videoPlaybackRef.current.stop = true;
+          }
           resolve();
         };
         

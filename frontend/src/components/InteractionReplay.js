@@ -1489,7 +1489,7 @@ const InteractionReplay = () => {
     try {
       // Handle different segment types and wait for completion
       if (segment.type === 'user_speech') {
-        await playUserSpeechSegment(segment);
+        await playUserSpeechSegment(segment, actualIsPlaying);
       } else if (segment.type === 'api_response') {
         await playApiResponseSegment(segment);
       } else if (segment.type === 'user_text') {
@@ -1515,7 +1515,7 @@ const InteractionReplay = () => {
     }
   };
 
-  const playUserSpeechSegment = async (segment) => {
+  const playUserSpeechSegment = async (segment, isPlaying = true) => {
     updateState({ replayStatus: `🎤 Playing user speech (${(segment.duration / 1000).toFixed(1)}s)` });
     
     // Display video frames during speech
@@ -1524,11 +1524,13 @@ const InteractionReplay = () => {
     console.log(`🎤 Available processed segments:`, Array.from(state.processedSegments.keys()));
     console.log(`🎤 Video frames in segment:`, segment.videoFrames?.length || 0);
     console.log(`🎤 Current isPlaying state:`, state.isPlaying);
+    console.log(`🎤 Passed isPlaying parameter:`, isPlaying);
     
     if (segmentVideo) {
       console.log(`🎤 Found video segment for user speech:`, segmentVideo);
       console.log(`🎤 Video segment has ${segmentVideo.frames?.length || 0} frames with average interval ${segmentVideo.averageInterval}ms`);
-      playSegmentVideo(segmentVideo);
+      // Pass the isPlaying parameter to video playback
+      playSegmentVideo(segmentVideo, isPlaying);
     } else {
       console.warn(`🎤 No video segment found for user speech segment ${segment.id}`);
       // Debug: Check if segment has video frames but no processed video
@@ -1626,7 +1628,7 @@ const InteractionReplay = () => {
     });
   };
 
-  const playSegmentVideo = (segmentVideo) => {
+  const playSegmentVideo = (segmentVideo, isPlaying = true) => {
     const { frames, averageInterval } = segmentVideo;
     let frameIndex = 0;
     
@@ -1644,7 +1646,7 @@ const InteractionReplay = () => {
 
     const showNextFrame = () => {
       // Check both the playback control and current state
-      if (frameIndex < frames.length && !playbackControl.stop && state.isPlaying) {
+      if (frameIndex < frames.length && !playbackControl.stop && isPlaying) {
         const frame = frames[frameIndex];
         console.log(`📹 Processing frame ${frameIndex + 1}/${frames.length}:`, frame);
         
@@ -1713,7 +1715,7 @@ const InteractionReplay = () => {
           videoPlaybackRef.current = null;
         }
       } else {
-        console.log(`📹 Video playback stopped: frameIndex=${frameIndex}, frames.length=${frames.length}, isPlaying=${state.isPlaying}, stopped=${playbackControl.stop}`);
+        console.log(`📹 Video playback stopped: frameIndex=${frameIndex}, frames.length=${frames.length}, isPlaying=${isPlaying}, stopped=${playbackControl.stop}`);
         videoPlaybackRef.current = null;
       }
     };

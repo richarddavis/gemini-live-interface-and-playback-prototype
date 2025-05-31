@@ -144,7 +144,7 @@ const useMediaCache = (updateState) => {
   }, []);
 
   const preloadAudio = useCallback(async (audioLogs) => {
-    await initializeAudioContext();
+    const audioContext = await initializeAudioContext();
     
     const promises = audioLogs.map(async (log, index) => {
       try {
@@ -544,7 +544,7 @@ const calculatePlaybackDelay = (currentLog, nextLog, playbackSpeed, isStreamingA
 };
 
 const InteractionReplay = () => {
-  const { state, updateState } = useReplayState();
+  const { state, updateState, resetPlayback } = useReplayState();
   const mediaCache = useMediaCache(updateState);
   const { createStreamingConfig } = useAudioStreamingConfig(updateState);
   const { processIntoSegments, createSegmentAudio, createSegmentVideo } = useConversationSegments(updateState);
@@ -569,8 +569,26 @@ const InteractionReplay = () => {
     [state.replayStatus]
   );
 
+  const canStartReplay = useMemo(() => 
+    state.replayData?.logs?.length > 0 && state.mediaCacheReady && !state.isPlaying,
+    [state.replayData, state.mediaCacheReady, state.isPlaying]
+  );
+
   // Load all available sessions on component mount
-  const loadSessions = useCallback(async () => {
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  // Handle playback start after state updates
+  useEffect(() => {
+    if (state.shouldStartPlayback && state.isPlaying && state.replayData?.logs?.length > 0) {
+      console.log('🎬 useEffect: Starting playback after state update');
+      state.shouldStartPlayback = false;
+      playNextInteraction(0);
+    }
+  }, [state.shouldStartPlayback, state.isPlaying, state.replayData]);
+
+  const loadSessions = async () => {
     updateState({ loading: true });
     try {
       const sessionsData = await interactionLogger.getAllReplaySessions();
@@ -581,75 +599,7 @@ const InteractionReplay = () => {
       console.error('Error loading sessions:', error);
     }
     updateState({ loading: false });
-  }, [updateState]);
-
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
-
-  // Handle playback start after state updates
-  const processInteraction = useCallback((log) => {
-    console.log('🎬 Replaying:', log.interaction_type, log.timestamp);
-    console.log('🎬 Log data:', log);
-
-    switch (log.interaction_type) {
-      case 'video_frame':
-        displayVideoFrame(log);
-        break;
-      case 'audio_chunk':
-        handleAudioChunkForStreaming(log);
-        break;
-      case 'text_input':
-        displayTextInput(log);
-        break;
-      case 'api_response':
-        handleApiResponseForStreaming(log);
-        break;
-      case 'user_action':
-        handleUserActionForStreaming(log);
-        break;
-      default:
-        console.log('Unknown interaction type:', log.interaction_type);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const playNextInteraction = useCallback((index) => {
-    console.log('🎬 playNextInteraction called with index:', index);
-    console.log('🎬 isPlaying:', state.isPlaying);
-    console.log('🎬 replayData exists:', !!state.replayData);
-    console.log('🎬 index >= replayData.logs.length:', index >= (state.replayData?.logs?.length || 0));
-    
-    if (!state.isPlaying || !state.replayData || index >= state.replayData.logs.length) {
-      console.log('🎬 playNextInteraction: Stopping playback');
-      updateState({ isPlaying: false });
-      return;
-    }
-
-    const currentLog = state.replayData.logs[index];
-    console.log('🎬 Processing interaction:', currentLog);
-    updateState({ currentIndex: index });
-
-    // Process the current interaction
-    processInteraction(currentLog);
-
-    // Improved timing logic with better audio handling
-    let delay = calculatePlaybackDelay(currentLog, state.replayData.logs[index + 1], state.playbackSpeed, state.isStreamingAudio);
-
-    console.log('🎬 Setting timeout for next interaction in', delay, 'ms', `(${currentLog.interaction_type} -> ${index < state.replayData.logs.length - 1 ? state.replayData.logs[index + 1].interaction_type : 'end'})`);
-    playbackTimeoutRef.current = setTimeout(() => {
-      playNextInteraction(index + 1);
-    }, delay);
-  }, [state.isPlaying, state.replayData, state.playbackSpeed, state.isStreamingAudio, updateState, processInteraction]);
-
-  useEffect(() => {
-    if (state.shouldStartPlayback && state.isPlaying && state.replayData?.logs?.length > 0) {
-      console.log('🎬 useEffect: Starting playback after state update');
-      // eslint-disable-next-line no-param-reassign
-      state.shouldStartPlayback = false;
-      playNextInteraction(0);
-    }
-  }, [state.shouldStartPlayback, state.isPlaying, state.replayData, playNextInteraction, state]);
+  };
 
   const loadReplayData = async (sessionId) => {
     updateState({ loading: true });
@@ -955,6 +905,143 @@ const InteractionReplay = () => {
     userAudioStreaming.clearBuffer();
   };
 
+  const playNextInteraction = (index) => {
+    console.log('🎬 playNextInteraction called with index:', index);
+    console.log('🎬 isPlaying:', state.isPlaying);
+    console.log('🎬 replayData exists:', !!state.replayData);
+    console.log('🎬 index >= replayData.logs.length:', index >= (state.replayData?.logs?.length || 0));
+    
+    if (!state.isPlaying || !state.replayData || index >= state.replayData.logs.length) {
+      console.log('🎬 playNextInteraction: Stopping playback');
+      updateState({ isPlaying: false });
+      return;
+    }
+
+    const currentLog = state.replayData.logs[index];
+    console.log('🎬 Processing interaction:', currentLog);
+    updateState({ currentIndex: index });
+
+    // Process the current interaction
+    processInteraction(currentLog);
+
+    // Improved timing logic with better audio handling
+    let delay = calculatePlaybackDelay(currentLog, state.replayData.logs[index + 1], state.playbackSpeed, state.isStreamingAudio);
+
+    console.log('🎬 Setting timeout for next interaction in', delay, 'ms', `(${currentLog.interaction_type} -> ${index < state.replayData.logs.length - 1 ? state.replayData.logs[index + 1].interaction_type : 'end'})`);
+    playbackTimeoutRef.current = setTimeout(() => {
+      playNextInteraction(index + 1);
+    }, delay);
+  };
+
+  const processInteraction = (log) => {
+    console.log('🎬 Replaying:', log.interaction_type, log.timestamp);
+    console.log('🎬 Log data:', log);
+
+    switch (log.interaction_type) {
+      case 'video_frame':
+        displayVideoFrame(log);
+        break;
+      case 'audio_chunk':
+        handleAudioChunkForStreaming(log);
+        break;
+      case 'text_input':
+        displayTextInput(log);
+        break;
+      case 'api_response':
+        handleApiResponseForStreaming(log);
+        break;
+      case 'user_action':
+        handleUserActionForStreaming(log);
+        break;
+      default:
+        console.log('Unknown interaction type:', log.interaction_type);
+    }
+  };
+
+  // Handle audio chunks with streaming logic - UPDATED to use useAudioStreaming hooks
+  const handleAudioChunkForStreaming = async (log) => {
+    const isUserAudio = log.interaction_metadata?.microphone_on === true;
+    
+    // Fetch the audio data if not cached
+    let audioArrayBuffer = null;
+    
+    if (state.audioCache.has(log.id)) {
+      // Convert cached AudioBuffer back to ArrayBuffer for hook
+      const cachedBuffer = state.audioCache.get(log.id);
+      
+      // Get the original PCM data from the AudioBuffer
+      const channelData = cachedBuffer.getChannelData(0);
+      const sampleRate = cachedBuffer.sampleRate;
+      const numSamples = channelData.length;
+      
+      // Convert float32 back to 16-bit PCM
+      const pcmBuffer = new ArrayBuffer(numSamples * 2); // 16-bit = 2 bytes per sample
+      const dataView = new DataView(pcmBuffer);
+      
+      for (let i = 0; i < numSamples; i++) {
+        // Convert from [-1, 1] float to 16-bit signed integer
+        const sample = Math.max(-1, Math.min(1, channelData[i]));
+        const intSample = Math.round(sample * 32767);
+        dataView.setInt16(i * 2, intSample, true); // true = little-endian
+      }
+      
+      audioArrayBuffer = pcmBuffer;
+      console.log(`🎬 Using cached audio for ${log.id}: ${numSamples} samples, ${pcmBuffer.byteLength} bytes`);
+    } else if (log.media_data && log.media_data.cloud_storage_url) {
+      try {
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
+        const response = await fetch(proxyUrl);
+        
+        if (response.ok) {
+          audioArrayBuffer = await response.arrayBuffer();
+          console.log(`🎵 Fetched audio for ${log.id}: ${audioArrayBuffer.byteLength} bytes`);
+        }
+      } catch (error) {
+        console.error('Error loading audio chunk:', error);
+        return;
+      }
+    }
+    
+    if (audioArrayBuffer) {
+      if (isUserAudio) {
+        console.log('🎵 Adding user audio chunk to stream:', log.id);
+        userAudioStreaming.addAudioChunk(audioArrayBuffer);
+      } else {
+        console.log('🎵 Adding API audio chunk to stream:', log.id);
+        geminiAudioStreaming.addAudioChunk(audioArrayBuffer);
+      }
+    } else {
+      console.warn('🎵 No audio data available for chunk:', log.id);
+    }
+  };
+
+  // Handle API responses that might be audio
+  const handleApiResponseForStreaming = (log) => {
+    // Check if this is an audio response
+    if (log.interaction_metadata?.response_type === 'audio') {
+      handleAudioChunkForStreaming(log);
+    } else {
+      displayApiResponse(log);
+    }
+  };
+
+  // Handle user actions, including audio streaming events - UPDATED for new hooks
+  const handleUserActionForStreaming = (log) => {
+    const actionType = log.interaction_metadata?.action_type;
+    
+    if (actionType === 'audio_stream_start') {
+      console.log('🎵 Audio stream start event detected');
+      updateState({ replayStatus: '🎵 Gemini audio stream starting...' });
+      // The hooks will handle the streaming automatically
+    } else if (actionType === 'audio_stream_end') {
+      console.log('🎵 Audio stream end event detected');
+      // The hooks will trigger playback on timeout, but we can force it if needed
+      geminiAudioStreaming.clearBuffer(); // This will trigger any pending streams
+    } else {
+      displayUserAction(log);
+    }
+  };
+
   const displayVideoFrame = async (log) => {
     // First, check if we have this video frame cached
     if (state.videoCache.has(log.id)) {
@@ -1216,19 +1303,19 @@ const InteractionReplay = () => {
         // For PCM data, we need to process it differently than for encoded audio
         if (response.headers.get('content-type') === 'audio/pcm' || log.media_data.cloud_storage_url.includes('.pcm')) {
           // Handle raw PCM data with proper sample rate detection
-          let expectedSampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.API; // Default
+            let sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.API; // Default
           
           // Try to get sample rate from metadata
           if (log.interaction_metadata?.audio_sample_rate) {
-            expectedSampleRate = log.interaction_metadata.audio_sample_rate;
+            sampleRate = log.interaction_metadata.audio_sample_rate;
           } else if (isUserAudio) {
-            expectedSampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.USER; // User audio is typically 16kHz
+              sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.USER; // User audio is typically 16kHz
           }
           
           const audioData = new Uint8Array(arrayBuffer);
           const numSamples = audioData.length / 2; // 16-bit samples
           
-          const audioBuffer = audioContext.createBuffer(1, numSamples, expectedSampleRate);
+          const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
           const channelData = audioBuffer.getChannelData(0);
           
           // Convert PCM data to audio buffer
@@ -1251,7 +1338,7 @@ const InteractionReplay = () => {
           // Start audio immediately without additional delays
           source.start(0);
           
-          console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', expectedSampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
+          console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
             updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - network` });
         } else {
           // Handle encoded audio (MP3, WAV, etc.)
@@ -1559,6 +1646,9 @@ const InteractionReplay = () => {
     const { frames, averageInterval } = segmentVideo;
     let frameIndex = 0;
     
+    // Create a local playing flag to avoid state closure issues
+    let isPlayingVideo = true;
+    
     // Stop any previous video playback
     if (videoPlaybackRef.current) {
       videoPlaybackRef.current.stop = true;
@@ -1650,89 +1740,6 @@ const InteractionReplay = () => {
       showNextFrame();
     } else {
       console.warn(`📹 No frames available for video playback`);
-    }
-  };
-
-  // Handle audio chunks with streaming logic - UPDATED to use useAudioStreaming hooks
-  const handleAudioChunkForStreaming = async (log) => {
-    const isUserAudio = log.interaction_metadata?.microphone_on === true;
-    
-    // Fetch the audio data if not cached
-    let audioArrayBuffer = null;
-    
-    if (state.audioCache.has(log.id)) {
-      // Convert cached AudioBuffer back to ArrayBuffer for hook
-      const cachedBuffer = state.audioCache.get(log.id);
-      
-      // Get the original PCM data from the AudioBuffer
-      const channelData = cachedBuffer.getChannelData(0);
-      const numSamples = channelData.length;
-      
-      // Convert float32 back to 16-bit PCM
-      const pcmBuffer = new ArrayBuffer(numSamples * 2); // 16-bit = 2 bytes per sample
-      const dataView = new DataView(pcmBuffer);
-      
-      for (let i = 0; i < numSamples; i++) {
-        // Convert from [-1, 1] float to 16-bit signed integer
-        const sample = Math.max(-1, Math.min(1, channelData[i]));
-        const intSample = Math.round(sample * 32767);
-        dataView.setInt16(i * 2, intSample, true); // true = little-endian
-      }
-      
-      audioArrayBuffer = pcmBuffer;
-      console.log(`🎬 Using cached audio for ${log.id}: ${numSamples} samples, ${pcmBuffer.byteLength} bytes`);
-    } else if (log.media_data && log.media_data.cloud_storage_url) {
-      try {
-        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
-        const response = await fetch(proxyUrl);
-        
-        if (response.ok) {
-          audioArrayBuffer = await response.arrayBuffer();
-          console.log(`🎵 Fetched audio for ${log.id}: ${audioArrayBuffer.byteLength} bytes`);
-        }
-      } catch (error) {
-        console.error('Error loading audio chunk:', error);
-        return;
-      }
-    }
-    
-    if (audioArrayBuffer) {
-      if (isUserAudio) {
-        console.log('🎵 Adding user audio chunk to stream:', log.id);
-        userAudioStreaming.addAudioChunk(audioArrayBuffer);
-      } else {
-        console.log('🎵 Adding API audio chunk to stream:', log.id);
-        geminiAudioStreaming.addAudioChunk(audioArrayBuffer);
-      }
-    } else {
-      console.warn('🎵 No audio data available for chunk:', log.id);
-    }
-  };
-
-  // Handle API responses that might be audio
-  const handleApiResponseForStreaming = (log) => {
-    // Check if this is an audio response
-    if (log.interaction_metadata?.response_type === 'audio') {
-      handleAudioChunkForStreaming(log);
-    } else {
-      displayApiResponse(log);
-    }
-  };
-
-  // Handle user actions, including audio streaming events - UPDATED for new hooks
-  const handleUserActionForStreaming = (log) => {
-    const actionType = log.interaction_metadata?.action_type;
-    
-    if (actionType === 'audio_stream_start') {
-      console.log('🎵 Audio stream start event detected');
-      updateState({ replayStatus: '🎵 Gemini audio stream starting...' });
-      // The hooks will handle the streaming automatically
-    } else if (actionType === 'audio_stream_end') {
-      console.log('🎵 Audio stream end event detected');
-      // The hooks will trigger playback on timeout, but we can force it if needed
-      geminiAudioStreaming.clearBuffer(); // This will trigger any pending streams
-    } else {
-      displayUserAction(log);
     }
   };
 

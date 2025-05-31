@@ -1002,7 +1002,7 @@ def get_interaction_media(interaction_id):
             
     except Exception as e:
         current_app.logger.error(f"Error retrieving interaction media: {str(e)}")
-        return jsonify({"error": f"Failed to retrieve media: {str(e)}"}), 500
+        return jsonify({"error": f"Failed to retrieve media: {str(e)}"}), 500 
 
 @api.route('/interaction-logs/regenerate-urls/<session_id>', methods=['POST'])
 def regenerate_session_urls(session_id):

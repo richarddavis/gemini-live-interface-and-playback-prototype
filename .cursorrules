@@ -1,0 +1,30 @@
+# Gemini Live API WebApp Project
+
+## Project Overview
+Full-stack webapp for Gemini Live API realtime audio/video communication featuring:
+- React frontend with direct WebSocket connection to Gemini Live API
+- Flask backend for interaction logging and static file serving  
+- PostgreSQL database for interaction storage
+- Google Cloud Storage for media file storage (audio/video)
+- Real-time communication via WebSocket for live AI interactions
+
+## Current Project Status
+- Audio playback: Works with segment-based replay
+- Video playback: Works with proper state management
+- Interaction replay: Operational
+
+## File Structure
+- frontend/src/components/ - React components
+- frontend/src/hooks/ - Custom hooks including useInteractionReplay
+- frontend/src/services/ - API and WebSocket services
+- backend/app/api/ - Flask API endpoints
+- backend/app/services/ - Backend business logic
+- backend/static/uploads/ - Static file storage
+
+## Infrastructure
+- Docker containerization (docker-compose.yml)
+- Environment-based configuration (.env)
+- Google Cloud Platform integration
+
+## Project-Specific Guidelines
+- Do not guess API endpoints or model names for Gemini Live API - search for current documentation

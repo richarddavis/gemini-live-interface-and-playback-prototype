@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import './GeminiLiveDirect.css';
 import { interactionLogger } from '../services/interactionLogger';
 
@@ -10,7 +10,7 @@ import { interactionLogger } from '../services/interactionLogger';
  * Architecture: Frontend ↔ WebSocket ↔ Google Gemini Live API
  * Backend is used only for analytics/logging.
  */
-const GeminiLiveDirect = ({ onExitLiveMode, isModal = false, chatSessionId = null }) => {
+const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSessionId = null }, ref) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
@@ -236,6 +236,8 @@ const GeminiLiveDirect = ({ onExitLiveMode, isModal = false, chatSessionId = nul
 
   // Updated disconnect with session completion logic
   const disconnect = useCallback(async () => {
+    console.log('🎭 disconnect() called - checking session completion...');
+    
     stopVideoFrameCapture(); // Stop sending video frames
     
     let sessionData = null;
@@ -1011,6 +1013,10 @@ const GeminiLiveDirect = ({ onExitLiveMode, isModal = false, chatSessionId = nul
     }
   }, [isCameraOn, addMessage, stopVideoFrameCapture]);
 
+  useImperativeHandle(ref, () => ({
+    triggerDisconnect: disconnect
+  }));
+
   return (
     <div className="gemini-live-container">
       <div className="header">
@@ -1156,6 +1162,8 @@ const GeminiLiveDirect = ({ onExitLiveMode, isModal = false, chatSessionId = nul
       </div>
     </div>
   );
-};
+});
+
+GeminiLiveDirect.displayName = 'GeminiLiveDirect';
 
 export default GeminiLiveDirect; 

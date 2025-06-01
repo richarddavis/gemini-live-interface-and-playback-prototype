@@ -32,6 +32,7 @@ function App() {
   const [playbackSessionData, setPlaybackSessionData] = useState(null);
   
   const messageInputRef = useRef(null);
+  const liveSessionRef = useRef(null);
   
   // API hook
   const { 
@@ -316,8 +317,22 @@ function App() {
     }
   };
 
-  const handleCloseLiveModal = () => {
-    setIsLiveModalOpen(false);
+  const handleCloseLiveModal = async () => {
+    // If there's an active live session, trigger proper disconnect to collect session data
+    if (liveSessionRef.current && liveSessionRef.current.triggerDisconnect) {
+      console.log('🎭 Modal closed via X/ESC - triggering session completion...');
+      try {
+        await liveSessionRef.current.triggerDisconnect();
+      } catch (error) {
+        console.warn('⚠️ Error during modal close session completion:', error);
+        // Still close the modal even if session completion fails
+        setIsLiveModalOpen(false);
+      }
+    } else {
+      // No active session or component not ready, just close modal
+      console.log('🎭 Modal closed - no active session to complete');
+      setIsLiveModalOpen(false);
+    }
   };
 
   const handleClosePlaybackModal = () => {
@@ -461,6 +476,7 @@ function App() {
             <GeminiLiveDirect 
               onExitLiveMode={handleToggleLiveMode} 
               chatSessionId={activeChatSessionId}
+              ref={liveSessionRef}
             />
           </div>
         ) : isReplayMode ? (
@@ -512,6 +528,7 @@ function App() {
           onExitLiveMode={handleLiveSessionComplete}
           isModal={true}
           chatSessionId={activeChatSessionId}
+          ref={liveSessionRef}
         />
       </Modal>
 

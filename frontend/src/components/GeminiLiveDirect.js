@@ -242,8 +242,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
     
     let sessionData = null;
     
-    // If this is a modal, collect session analytics before disconnecting
-    if (isModal && sessionStartTime) {
+    // Create session data if we have a session with activity (for both modal and mobile)
+    if (sessionStartTime && (isConnected || messages.length > 0)) {
       try {
         // Calculate session duration
         const duration = Math.floor((Date.now() - sessionStartTime) / 1000);
@@ -261,10 +261,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
           timestamp: new Date().toISOString(),
           voice_used: selectedVoice,
           response_mode: responseMode,
-          analytics: analytics
+          analytics: analytics,
+          platform: isModal ? 'desktop' : 'mobile'
         };
         
-        console.log('🎭 Session completed with data:', sessionData);
+        console.log(`🎭 ${isModal ? 'Modal' : 'Mobile'} session completed with data:`, sessionData);
       } catch (error) {
         console.warn('⚠️ Error collecting session analytics:', error);
         // Still create basic session data
@@ -276,8 +277,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
           has_video: isCameraOn,
           timestamp: new Date().toISOString(),
           voice_used: selectedVoice,
-          response_mode: responseMode
+          response_mode: responseMode,
+          platform: isModal ? 'desktop' : 'mobile'
         };
+        
+        console.log(`🎭 ${isModal ? 'Modal' : 'Mobile'} session completed with basic data:`, sessionData);
       }
     }
     
@@ -311,12 +315,15 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
     setupCompleteRef.current = false;
     logAnalytics('session_end');
     
-    // Pass session data to parent if this is a modal
-    if (isModal && onExitLiveMode && sessionData) {
-      onExitLiveMode(sessionData);
-    } else if (onExitLiveMode) {
-      // Regular exit for non-modal usage
-      onExitLiveMode();
+    // Pass session data to parent for both modal and mobile sessions
+    if (onExitLiveMode) {
+      if (sessionData) {
+        console.log(`🎭 Calling onExitLiveMode with session data for ${isModal ? 'modal' : 'mobile'} session`);
+        onExitLiveMode(sessionData);
+      } else {
+        console.log(`🎭 Calling onExitLiveMode without session data (casual exit)`);
+        onExitLiveMode();
+      }
     }
   }, [logAnalytics, stopVideoFrameCapture, isModal, sessionStartTime, messages, isCameraOn, selectedVoice, responseMode, onExitLiveMode]);
 

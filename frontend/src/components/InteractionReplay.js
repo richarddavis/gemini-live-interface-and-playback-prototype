@@ -1276,12 +1276,14 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       if (!imgElement) {
         imgElement = document.createElement('img');
         imgElement.className = 'replay-frame';
+        // Original fixed sizing for the image frame
         imgElement.style.width = '320px';
         imgElement.style.height = '240px';
         imgElement.style.backgroundColor = '#000';
         imgElement.style.border = '1px solid #ccc';
         imgElement.style.objectFit = 'contain';
         imgElement.style.display = 'block';
+        imgElement.style.borderRadius = '8px'; // Keep matching border radius
         
         // Insert after the video element
         videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
@@ -1305,8 +1307,6 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       };
       
       console.log(`🎬 ${isSegmentFrame ? 'Segment v' : 'V'}ideo frame displayed as image`);
-    } else {
-      console.error(`🎬 Video ref not found for ${isSegmentFrame ? 'segment ' : ''}frame!`);
     }
     updateState({ currentVideoFrame: `${isSegmentFrame ? `Segment Frame ${frameIndex + 1}/${totalFrames}` : `Frame ${logId}`} loaded at ${new Date().toLocaleTimeString()}` });
   }, [updateState]);
@@ -1318,6 +1318,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       if (!imgElement) {
         imgElement = document.createElement('img');
         imgElement.className = 'replay-frame';
+        // Original fixed sizing for the placeholder image
         imgElement.style.width = '320px';
         imgElement.style.height = '240px';
         imgElement.style.backgroundColor = '#333';
@@ -1329,12 +1330,14 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         imgElement.style.color = '#fff';
         imgElement.style.fontSize = '14px';
         imgElement.style.textAlign = 'center';
+        imgElement.style.borderRadius = '8px'; // Keep matching border radius
+
         videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
       }
       
       const canvas = document.createElement('canvas');
-      canvas.width = CONSTANTS.VIDEO.DIMENSIONS.WIDTH;
-      canvas.height = CONSTANTS.VIDEO.DIMENSIONS.HEIGHT;
+      canvas.width = 320; // Reverted to original canvas size
+      canvas.height = 240; // Reverted to original canvas size
       const ctx = canvas.getContext('2d');
       
       ctx.fillStyle = '#333';
@@ -1604,6 +1607,43 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     updateState({ currentIndex: index });
     if (state.replayData && state.replayData.logs[index]) {
       processInteraction(state.replayData.logs[index]);
+    }
+  };
+
+  const jumpToSegment = (segmentIndex) => {
+    if (!state.conversationSegments || segmentIndex >= state.conversationSegments.length) return;
+    
+    console.log(`🎬 Jumping to segment ${segmentIndex + 1}/${state.conversationSegments.length}`);
+    
+    // Stop current playback
+    stopReplay();
+    
+    // Update current segment index
+    updateState({ currentSegmentIndex: segmentIndex });
+    
+    // If using segment-based playback, start from this segment
+    if (state.conversationSegments && state.processedSegments) {
+      console.log('🎬 🎭 Starting segment-based playback from segment', segmentIndex);
+      updateState({ 
+        isPlaying: true,
+        replayStatus: `Starting from segment ${segmentIndex + 1}...`
+      });
+      
+      // Use a small delay to ensure state updates are processed
+      setTimeout(() => {
+        playNextSegment(segmentIndex, true, state.conversationSegments);
+      }, 100);
+    } else {
+      // Fallback to individual interaction playback
+      const segment = state.conversationSegments[segmentIndex];
+      if (segment && segment.logs && segment.logs.length > 0) {
+        // Find the index of the first log in this segment
+        const firstLogId = segment.logs[0].id;
+        const logIndex = state.replayData.logs.findIndex(log => log.id === firstLogId);
+        if (logIndex !== -1) {
+          jumpToInteraction(logIndex);
+        }
+      }
     }
   };
 
@@ -1907,170 +1947,178 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
 
   return (
     <div className="interaction-replay">
-      <div className="replay-header">
-        <div className="header-left">
-          {onExitReplayMode && (
-            <button onClick={onExitReplayMode} className="exit-replay-btn" title="Exit Replay Mode">
-              ← Back to Chat
-            </button>
-          )}
-          <h2>🎬 Interaction Replay</h2>
-        </div>
-      </div>
-
       <div className="replay-content">
-        {/* Session Selection */}
-        <div className="session-selector">
-          <h3>Select Session to Replay</h3>
-          <div className="replay-mode-notice">
-            <strong>📝 Note:</strong> For full replay with actual content, use "Live Mode" to record a new session. 
-            Old sessions only have hash data for privacy.
-          </div>
-          {state.loading && <p>Loading sessions...</p>}
-          {state.sessions.length === 0 && !state.loading && (
-            <p>No replay sessions found. Enable replay mode during interactions to record full data.</p>
-          )}
-          <div className="sessions-list">
-            {state.sessions.map((session) => (
-              <div
-                key={session.id}
-                className={`session-item ${state.selectedSession === session.session_id ? 'selected' : ''}`}
-                onClick={() => handleSessionSelect(session.session_id)}
-              >
-                <div className="session-info">
-                  <strong>Session {session.session_id}</strong>
-                  <br />
-                  <small>
-                    {formatTimestamp(session.started_at)} - {session.duration_seconds}s
-                    <br />
-                    {session.video_frames_sent} video frames, {session.audio_chunks_sent} audio chunks
-                  </small>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Replay Controls */}
-        <div className="replay-main-content">
-          {state.replayData && (
-            <div className="replay-controls">
-              <div className="playback-controls">
-                <button onClick={startReplay} disabled={state.isPlaying || !state.mediaCacheReady}>
-                  {!state.mediaCacheReady ? '⏳ Loading...' : '▶️ Play'}
-                </button>
-                <button onClick={stopReplay} disabled={!state.isPlaying}>
-                  ⏹️ Stop
-                </button>
-                <label>
-                  Speed:
-                  <select value={state.playbackSpeed} onChange={(e) => updateState({ playbackSpeed: Number(e.target.value) })}>
-                    <option value={0.5}>0.5x</option>
-                    <option value={1}>1x</option>
-                    <option value={2}>2x</option>
-                    <option value={4}>4x</option>
-                  </select>
-                </label>
-                {/* Show regenerate button when URLs are expired */}
-                {hasExpiredUrls && (
-                  <button 
-                    onClick={regenerateUrls} 
-                    disabled={state.isRegeneratingUrls || state.isPlaying}
-                    style={{
-                      marginLeft: '10px',
-                      backgroundColor: state.isRegeneratingUrls ? '#666' : '#007bff',
-                      color: 'white',
-                      border: 'none',
-                      padding: '8px 12px',
-                      borderRadius: '4px',
-                      cursor: state.isRegeneratingUrls ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    {state.isRegeneratingUrls ? '🔄 Regenerating...' : '🔄 Fix Expired URLs'}
-                  </button>
-                )}
-              </div>
-
-              <div className="progress-info">
-                <p>
-                  Interaction {state.currentIndex + 1} of {state.replayData.logs.length}
-                  {state.replayData.logs[state.currentIndex] && (
-                    <span> - {state.replayData.logs[state.currentIndex].interaction_type} at {formatTimestamp(state.replayData.logs[state.currentIndex].timestamp)}</span>
-                  )}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Replay Display */}
-          {state.replayData && (
-            <div className="replay-display">
-              <div className="replay-display-content">
-                <div className="video-replay">
-                  <h4>Video Replay</h4>
+        {/* Replay Display */}
+        {state.replayData && (
+          <div className="replay-display">
+            <div className="replay-display-content">
+              <div className="video-player-container">
+                <div className="video-player-wrapper">
                   <video
                     ref={videoRef}
                     className="replay-video"
                     autoPlay
                     muted
-                    style={{
-                      width: '320px',
-                      height: '240px',
-                      backgroundColor: '#000',
-                      border: '1px solid #ccc'
-                    }}
                   />
+                  {/* Integrated Video Controls Overlay */}
+                  <div className="video-controls-overlay">
+                    <div className="video-controls">
+                      <div className="control-buttons">
+                        {!isModal && (
+                          <button 
+                            onClick={() => loadSessions()} 
+                            disabled={state.loading}
+                            className="control-btn refresh-btn"
+                            title="Refresh Sessions"
+                          >
+                            🔄
+                          </button>
+                        )}
+                        
+                        <button 
+                          onClick={startReplay} 
+                          disabled={!canStartReplay}
+                          className="control-btn play-btn"
+                          title="Play"
+                        >
+                          ▶
+                        </button>
+                        
+                        <button 
+                          onClick={stopReplay} 
+                          disabled={!state.isPlaying}
+                          className="control-btn stop-btn"
+                          title="Stop"
+                        >
+                          ⏹
+                        </button>
+                        
+                        <select 
+                          value={state.playbackSpeed} 
+                          onChange={(e) => updateState({ playbackSpeed: parseFloat(e.target.value) })}
+                          className="speed-select"
+                          title="Playback Speed"
+                        >
+                          <option value={0.5}>0.5x</option>
+                          <option value={1}>1x</option>
+                          <option value={1.5}>1.5x</option>
+                          <option value={2}>2x</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Status and Progress Info */}
+                <div className="player-status">
+                  <div className="status-text">
+                    <strong>Status:</strong> {state.replayStatus}
+                  </div>
+                  
+                  {hasExpiredUrls && (
+                    <button 
+                      onClick={regenerateUrls} 
+                      disabled={state.isRegeneratingUrls}
+                      className="regenerate-urls-btn"
+                    >
+                      {state.isRegeneratingUrls ? '🔄 Regenerating...' : '🔄 Fix Expired URLs'}
+                    </button>
+                  )}
+
+                  {state.replayData && (
+                    <div className="progress-info">
+                      <p>
+                        Interaction {state.currentIndex + 1} of {state.replayData.logs.length}
+                        {state.replayData.logs[state.currentIndex] && (
+                          <span> - {state.replayData.logs[state.currentIndex].interaction_type} at {formatTimestamp(state.replayData.logs[state.currentIndex].timestamp)}</span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                  
                   {state.currentVideoFrame && (
                     <div className="current-frame-info">
                       <small>Current frame: {state.currentVideoFrame}</small>
                     </div>
                   )}
                 </div>
+              </div>
 
-                <div className="replay-content-display">
-                  <h4>Current Content</h4>
-                  <div className="replay-status">
-                    <strong>Status:</strong> <span className={state.isPlaying ? 'status-playing' : 'status-stopped'}>{state.replayStatus}</span>
-                  </div>
-                  <div className="content-sections">
-                    {state.currentUserAction && (
-                      <div className="content-item user-action">
-                        <strong>User Action:</strong> {state.currentUserAction}
-                      </div>
-                    )}
-                    {state.currentTextInput && (
-                      <div className="content-item text-input">
-                        <strong>User Text:</strong> {state.currentTextInput}
-                      </div>
-                    )}
-                    {state.currentApiResponse && (
-                      <div className="content-item api-response">
-                        <strong>Gemini Response:</strong> {state.currentApiResponse}
-                      </div>
-                    )}
-                    {/* Audio status indicator */}
-                    {(state.replayStatus.includes('🔊') || state.isStreamingAudio) && (
-                      <div className={`content-item audio-indicator ${state.replayStatus.includes('user') ? 'user-audio' : 'api-audio'} ${state.isStreamingAudio ? 'streaming' : ''}`}>
-                        <strong>🎵 Audio Status:</strong> {state.replayStatus}
-                        {state.isStreamingAudio && (
-                          <div style={{ fontSize: '12px', marginTop: '5px', opacity: 0.8 }}>
-                            Streaming...
+              <div className="conversation-timeline">
+                <h4>📝 Conversation Timeline</h4>
+                <div className="timeline-container">
+                  {state.conversationSegments && state.conversationSegments.length > 0 ? (
+                    state.conversationSegments.map((segment, index) => {
+                      const isCurrentSegment = state.currentSegmentIndex === index;
+                      const durationSec = (segment.duration / 1000).toFixed(1);
+                      const startTime = new Date(segment.startTime).toLocaleTimeString();
+                      
+                      // Determine segment display info
+                      let segmentIcon, segmentLabel, segmentContent;
+                      
+                      switch (segment.type) {
+                        case 'user_speech':
+                          segmentIcon = '🎤';
+                          segmentLabel = 'You spoke';
+                          segmentContent = `Voice message (${durationSec}s, ${segment.audioChunks.length} chunks)`;
+                          if (segment.videoFrames.length > 0) {
+                            segmentContent += ` + ${segment.videoFrames.length} video frames`;
+                          }
+                          break;
+                        case 'api_response':
+                          segmentIcon = '🤖';
+                          segmentLabel = 'Gemini responded';
+                          segmentContent = `Voice response (${durationSec}s, ${segment.audioChunks.length} chunks)`;
+                          if (segment.mergedSegmentIds && segment.mergedSegmentIds.length > 0) {
+                            segmentContent += ` [merged response]`;
+                          }
+                          break;
+                        case 'user_text':
+                          segmentIcon = '💬';
+                          segmentLabel = 'You typed';
+                          const textLog = segment.logs.find(log => log.interaction_type === 'text_input');
+                          segmentContent = textLog?.interaction_metadata?.text || 'Text message';
+                          break;
+                        case 'user_action':
+                          segmentIcon = '⚡';
+                          segmentLabel = 'Action';
+                          const actionLog = segment.logs.find(log => log.interaction_type === 'user_action');
+                          segmentContent = actionLog?.interaction_metadata?.action_type || 'User action';
+                          break;
+                        default:
+                          segmentIcon = '❓';
+                          segmentLabel = 'Unknown';
+                          segmentContent = `${segment.type} (${durationSec}s)`;
+                      }
+
+                      return (
+                        <div
+                          key={segment.id}
+                          className={`conversation-turn ${isCurrentSegment ? 'current-turn' : ''} ${segment.type}`}
+                          onClick={() => jumpToSegment(index)}
+                        >
+                          <div className="turn-icon">{segmentIcon}</div>
+                          <div className="turn-content">
+                            <div className="turn-header">
+                              <strong>{segmentLabel}</strong>
+                              <span className="turn-time">{startTime}</span>
+                            </div>
+                            <div className="turn-description">
+                              {segmentContent}
+                            </div>
+                            {isCurrentSegment && (
+                              <div className="current-status">
+                                <div className="status-indicator">▶ Playing</div>
+                                <div className="status-text">{state.replayStatus}</div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    )}
-                    {!state.currentUserAction && !state.currentTextInput && !state.currentApiResponse && !state.isPlaying && (
-                      <div className="content-item placeholder">
-                        <em>Select a session and click Play to see replay content...</em>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="interaction-timeline">
-                  <h4>Interaction Timeline</h4>
-                  <div className="timeline-container">
-                    {state.replayData.logs.map((log, index) => (
+                        </div>
+                      );
+                    })
+                  ) : (
+                    // Fallback to interaction-level timeline if no conversation segments
+                    state.replayData.logs.map((log, index) => (
                       <div
                         key={index}
                         className={`timeline-item ${index === state.currentIndex ? 'current' : ''}`}
@@ -2090,13 +2138,13 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                           )}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

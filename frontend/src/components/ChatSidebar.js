@@ -7,7 +7,13 @@ function ChatSidebar({
   onCreateNewChat, 
   onDeleteSession,
   isMobileSidebarOpen,
-  onOverlayClick
+  onOverlayClick,
+  apiKey, 
+  onApiKeyChange, 
+  provider, 
+  onProviderChange,
+  isOpen,
+  onClose
 }) {
   
   // Handle session selection - use mobile-aware handler if on mobile
@@ -20,6 +26,20 @@ function ChatSidebar({
         if (onOverlayClick) onOverlayClick();
       }, 100);
     }
+  };
+
+  // Save API key to sessionStorage when it changes
+  const handleApiKeyChange = (e) => {
+    const value = e.target.value;
+    onApiKeyChange(e);
+    sessionStorage.setItem('chatApiKey', value);
+  };
+  
+  // Save provider to sessionStorage when it changes
+  const handleProviderChange = (e) => {
+    const value = e.target.value;
+    onProviderChange(e);
+    sessionStorage.setItem('chatProvider', value);
   };
 
   return (
@@ -70,7 +90,38 @@ function ChatSidebar({
             No chats yet. Create your first chat!
           </div>
         )}
+
+        {/* API Controls at bottom of sidebar */}
+        <div className="sidebar-api-controls">
+          <div className="sidebar-control-group">
+            <label htmlFor="sidebar-provider-select">Provider</label>
+            <select 
+              id="sidebar-provider-select"
+              value={provider} 
+              onChange={handleProviderChange}
+              className="sidebar-select"
+            >
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </div>
+
+          <div className="sidebar-control-group">
+            <label htmlFor="sidebar-api-key-input">API Key</label>
+            <input
+              id="sidebar-api-key-input"
+              type="password"
+              placeholder="Enter API key"
+              value={apiKey}
+              onChange={handleApiKeyChange}
+              className="sidebar-input"
+            />
+          </div>
+        </div>
       </aside>
+
+      {isOpen && <div className="sidebar-overlay" onClick={onClose}></div>}
     </>
   );
 }

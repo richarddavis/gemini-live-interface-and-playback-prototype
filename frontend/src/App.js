@@ -343,17 +343,16 @@ function App() {
         onMobileSidebarToggle={handleMobileSidebarToggle}
         onOverlayClick={handleOverlayClick}
         onSelectSessionMobile={handleSelectSessionMobile}
+        apiKey={apiKey}
+        onApiKeyChange={handleApiKeyChange}
+        provider={provider}
+        onProviderChange={handleProviderChange}
+        isOpen={isMobileSidebarOpen}
+        onClose={handleOverlayClick}
       />
       
       <div className="App-main-content">
         <ChatHeader 
-          apiKey={apiKey}
-          onApiKeyChange={handleApiKeyChange}
-          provider={provider}
-          onProviderChange={handleProviderChange}
-          activeChatSessionId={activeChatSessionId}
-          isLiveMode={isLiveMode}
-          onToggleLiveMode={handleToggleLiveMode}
           isReplayMode={isReplayMode}
           onToggleReplayMode={handleToggleReplayMode}
           onMobileSidebarToggle={handleMobileSidebarToggle}
@@ -386,6 +385,9 @@ function App() {
                   isDisabled={isChatDisabled}
                   isLoading={isApiLoading || isUploadingMedia}
                   provider={provider}
+                  onToggleLiveMode={handleToggleLiveMode}
+                  isLiveMode={isLiveMode}
+                  apiKey={apiKey}
                 />
               </main>
             ) : (

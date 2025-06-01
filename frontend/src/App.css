@@ -75,6 +75,8 @@ body {
   .sidebar-input {
     padding: 6px 8px;
     font-size: 12px;
+    height: 32px;
+    box-sizing: border-box;
   }
 }
 
@@ -199,6 +201,50 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden; /* Important for chat-container to scroll correctly */
+  position: relative;
+}
+
+/* Mobile hamburger menu button */
+.mobile-hamburger-button {
+  display: none;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 1001;
+  background: transparent;
+  color: rgba(44, 62, 80, 0.8);
+  border: none;
+  border-radius: 0;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: none;
+  transition: all 0.2s ease;
+  padding: 4px;
+}
+
+@media (max-width: 768px) {
+  .mobile-hamburger-button {
+    display: flex;
+  }
+  
+  /* Hide hamburger when sidebar is open */
+  .mobile-hamburger-button.sidebar-open {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-8px);
+  }
+}
+
+.mobile-hamburger-button:hover {
+  color: rgba(44, 62, 80, 1);
+  transform: scale(1.1);
+}
+
+.mobile-hamburger-button:active {
+  transform: scale(0.95);
 }
 
 /* Enhanced API controls */
@@ -866,7 +912,7 @@ body {
   box-sizing: border-box;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .gemini-input-form {
     flex-direction: column;
     align-items: stretch;
@@ -890,13 +936,13 @@ body {
   flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .input-left-controls {
     margin-right: 8px;
   }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1001px) {
   .input-left-controls {
     margin-right: 12px;
   }
@@ -916,7 +962,7 @@ body {
   min-width: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .gemini-text-input {
     font-size: 16px;
     padding: 8px 0;
@@ -933,14 +979,14 @@ body {
   flex-shrink: 0;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1001px) {
   .input-right-controls {
     margin-left: 12px;
     gap: 4px;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .input-right-controls {
     margin-left: 0;
     gap: 8px;
@@ -967,7 +1013,7 @@ body {
   flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .action-button {
     padding: 10px 16px;
     font-size: 14px;
@@ -1019,7 +1065,7 @@ body {
   color: #202124;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .action-button:hover:not(:disabled) {
     background: #e8f0fe;
     border-color: #4285f4;
@@ -1052,7 +1098,7 @@ body {
   flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .mic-send-button {
     width: 36px;
     height: 36px;
@@ -1305,7 +1351,7 @@ body {
   }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1001px) {
   .mobile-text-section {
     flex: 1;
     gap: 12px;
@@ -1320,7 +1366,7 @@ body {
   gap: 8px;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1001px) {
   .mobile-text-section {
     flex: 1;
     gap: 12px;
@@ -1343,7 +1389,7 @@ body {
   flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1000px) {
   .add-button {
     width: 32px;
     height: 32px;

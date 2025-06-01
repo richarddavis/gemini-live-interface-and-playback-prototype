@@ -732,7 +732,11 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
   // Refs
   const videoRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
+  const segmentTimeoutRef = useRef(null); // Add ref to track segment timeouts
   const videoPlaybackRef = useRef(null);
+  const activeAudioSourcesRef = useRef([]); // Track active Web Audio sources
+  const isPlayingRef = useRef(false); // Track playing state to avoid closure issues
+  const activeBlobUrlsRef = useRef(new Set()); // Track active blob URLs to prevent premature revocation
 
   // Audio streaming hooks
   const geminiAudioStreaming = useAudioStreaming(
@@ -774,6 +778,59 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       playNextInteraction(0);
     }
   }, [state.shouldStartPlayback, state.isPlaying, state.replayData]);
+
+  // Cleanup blob URLs on component unmount
+  useEffect(() => {
+    return () => {
+      console.log('🎬 Component unmounting, cleaning up blob URLs');
+      activeBlobUrlsRef.current.forEach(url => {
+        console.log(`🎬 Revoking blob URL on unmount: ${url.substring(0, 50)}...`);
+        URL.revokeObjectURL(url);
+      });
+      activeBlobUrlsRef.current.clear();
+    };
+  }, []);
+
+  // Auto-stop playback when component is about to be unmounted (e.g., modal closed)
+  useEffect(() => {
+    return () => {
+      console.log('🚪 Component unmounting - auto-stopping playback');
+      if (state.isPlaying) {
+        // Can't use state here due to closure, so we'll clean up refs directly
+        isPlayingRef.current = false;
+        
+        // Clear timeouts
+        if (playbackTimeoutRef.current) {
+          clearTimeout(playbackTimeoutRef.current);
+          playbackTimeoutRef.current = null;
+        }
+        if (segmentTimeoutRef.current) {
+          clearTimeout(segmentTimeoutRef.current);
+          segmentTimeoutRef.current = null;
+        }
+        
+        // Stop video playback
+        if (videoPlaybackRef.current) {
+          videoPlaybackRef.current.stop = true;
+          videoPlaybackRef.current = null;
+        }
+        
+        // Stop active audio sources
+        activeAudioSourcesRef.current.forEach((source) => {
+          try {
+            source.stop();
+          } catch (error) {
+            // Audio source may already be stopped, ignore error
+          }
+        });
+        activeAudioSourcesRef.current = [];
+        
+        // Clear audio streaming
+        geminiAudioStreaming.clearBuffer();
+        userAudioStreaming.clearBuffer();
+      }
+    };
+  }, [state.isPlaying]);
 
   const loadSessions = async () => {
     updateState({ loading: true });
@@ -1056,6 +1113,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         currentIndex: 0,
         currentSegmentIndex: 0
       });
+      isPlayingRef.current = true; // Update ref to prevent closure issues
       playNextSegment(0, true, state.conversationSegments);
     } else {
       // Fallback to individual interaction playback if segments unavailable
@@ -1065,6 +1123,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         isPlaying: true,
         currentIndex: 0
       });
+      isPlayingRef.current = true; // Update ref to prevent closure issues
       
       // Sort logs by timestamp to ensure correct order
       const sortedLogs = [...state.replayData.logs].sort((a, b) => 
@@ -1075,6 +1134,13 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
   };
 
   const stopReplay = () => {
+    console.log('\n🛑 ===== STOP REPLAY CALLED =====');
+    console.log(`🛑 Current state - isPlaying: ${state.isPlaying}`);
+    console.log(`🛑 segmentTimeoutRef.current:`, segmentTimeoutRef.current);
+    console.log(`🛑 playbackTimeoutRef.current:`, playbackTimeoutRef.current);
+    console.log(`🛑 activeAudioSourcesRef.current:`, activeAudioSourcesRef.current.length, 'sources');
+    console.log(`🛑 videoPlaybackRef.current:`, videoPlaybackRef.current);
+    
     updateState({ isPlaying: false });
     updateState({ currentIndex: 0 });
     updateState({ currentVideoFrame: null });
@@ -1083,36 +1149,87 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     updateState({ currentUserAction: '' });
     updateState({ replayStatus: 'Replay stopped' });
     
+    // Update ref to prevent state closure issues
+    isPlayingRef.current = false;
+    
     // Stop raw playback if active
     if (state.rawPlaybackControl?.stop) {
+      console.log(`🛑 Stopping rawPlaybackControl`);
       state.rawPlaybackControl.stop();
     }
     
     if (playbackTimeoutRef.current) {
+      console.log(`🛑 Clearing playbackTimeoutRef timeout`);
       clearTimeout(playbackTimeoutRef.current);
       playbackTimeoutRef.current = null;
+    } else {
+      console.log(`🛑 playbackTimeoutRef was null`);
+    }
+    
+    // Clear segment playback timeouts
+    if (segmentTimeoutRef.current) {
+      console.log(`🛑 Clearing segmentTimeoutRef timeout`);
+      clearTimeout(segmentTimeoutRef.current);
+      segmentTimeoutRef.current = null;
+    } else {
+      console.log(`🛑 segmentTimeoutRef was null`);
     }
     
     // Stop video playback
     if (videoPlaybackRef.current) {
+      console.log(`🛑 Stopping video playback`);
       videoPlaybackRef.current.stop = true;
       videoPlaybackRef.current = null;
+    } else {
+      console.log(`🛑 videoPlaybackRef was null`);
     }
     
     // Reset video display
     if (videoRef.current) {
+      console.log(`🛑 Resetting video display`);
       videoRef.current.style.display = 'block';
       // Remove any frame images
       const imgElement = videoRef.current.parentElement?.querySelector('img.replay-frame');
       if (imgElement) {
         imgElement.remove();
       }
+    } else {
+      console.log(`🛑 videoRef was null`);
     }
     
     // Clean up audio streaming state - UPDATED for useAudioStreaming hooks
     updateState({ isStreamingAudio: false });
     geminiAudioStreaming.clearBuffer();
     userAudioStreaming.clearBuffer();
+    
+    // Stop any active Web Audio sources
+    console.log(`🛑 Stopping ${activeAudioSourcesRef.current.length} active Web Audio sources`);
+    activeAudioSourcesRef.current.forEach((source, index) => {
+      try {
+        console.log(`🛑 Stopping audio source ${index + 1}/${activeAudioSourcesRef.current.length}`);
+        source.stop();
+      } catch (error) {
+        // Audio source may already be stopped, ignore error
+        console.log('🛑 Audio source already stopped:', error.message);
+      }
+    });
+    activeAudioSourcesRef.current = [];
+    
+    // Clean up any blob URLs that are no longer needed
+    console.log(`🛑 Cleaning up ${activeBlobUrlsRef.current.size} tracked blob URLs`);
+    activeBlobUrlsRef.current.forEach(url => {
+      // Only revoke if not in current video cache
+      const isUrlInCache = Array.from(state.videoCache.values()).some(frameData => 
+        frameData.url === url
+      );
+      if (!isUrlInCache) {
+        console.log(`🛑 Revoking blob URL: ${url.substring(0, 50)}...`);
+        URL.revokeObjectURL(url);
+      }
+    });
+    activeBlobUrlsRef.current.clear();
+    
+    console.log('🛑 ===== STOP REPLAY COMPLETE =====\n');
   };
 
   const playNextInteraction = (index) => {
@@ -1292,12 +1409,28 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         console.log(`📹 Using existing image element`);
       }
       
-      // Clean up previous image URL
+      // Smart blob URL cleanup - only revoke if not in cache
       if (imgElement.src && imgElement.src.startsWith('blob:')) {
-        URL.revokeObjectURL(imgElement.src);
+        // Check if this blob URL is still being used in video cache
+        const isUrlInCache = Array.from(state.videoCache.values()).some(frameData => 
+          frameData.url === imgElement.src
+        );
+        
+        if (!isUrlInCache && !activeBlobUrlsRef.current.has(imgElement.src)) {
+          console.log(`🎬 Revoking unused blob URL: ${imgElement.src}`);
+          URL.revokeObjectURL(imgElement.src);
+          activeBlobUrlsRef.current.delete(imgElement.src);
+        } else {
+          console.log(`🎬 Keeping blob URL in use: ${imgElement.src.substring(0, 50)}...`);
+        }
       }
       
-      // Set new image
+      // Track this new blob URL
+      if (imageUrl.startsWith('blob:')) {
+        activeBlobUrlsRef.current.add(imageUrl);
+        console.log(`🎬 Tracking new blob URL: ${imageUrl.substring(0, 50)}...`);
+      }
+      
       imgElement.src = imageUrl;
       imgElement.onload = () => {
         console.log(`🎬 ${isSegmentFrame ? `Segment frame ${frameIndex + 1}/${totalFrames}` : 'Cached video frame'} displayed successfully: ${imgElement.naturalWidth}x${imgElement.naturalHeight}`);
@@ -1363,16 +1496,73 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     updateState({ replayStatus: `${statusText} - ${errorMessage}` });
   }, [updateState]);
 
+  const regenerateVideoBlobUrl = useCallback(async (logId, frameData) => {
+    try {
+      console.log(`🎬 Regenerating blob URL for frame ${logId}`);
+      
+      // Revoke the old URL
+      if (frameData.url && frameData.url.startsWith('blob:')) {
+        URL.revokeObjectURL(frameData.url);
+        activeBlobUrlsRef.current.delete(frameData.url);
+      }
+      
+      // Create new blob URL from stored blob
+      if (frameData.blob) {
+        const newUrl = URL.createObjectURL(frameData.blob);
+        frameData.url = newUrl;
+        activeBlobUrlsRef.current.add(newUrl);
+        
+        // Update the cache with new URL
+        updateState(prevState => {
+          const newVideoCache = new Map(prevState.videoCache);
+          newVideoCache.set(logId, { ...frameData, url: newUrl });
+          return { videoCache: newVideoCache };
+        });
+        
+        console.log(`🎬 Regenerated blob URL for frame ${logId}: ${newUrl.substring(0, 50)}...`);
+        return newUrl;
+      } else {
+        console.warn(`🎬 Cannot regenerate blob URL for frame ${logId} - no blob data`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`🎬 Failed to regenerate blob URL for frame ${logId}:`, error);
+      return null;
+    }
+  }, [updateState]);
+
   const displayVideoFrame = async (log) => {
     // First, check if we have this video frame cached
     if (state.videoCache.has(log.id)) {
       try {
         console.log('🎬 Displaying cached video frame for interaction:', log.id);
         const cachedFrame = state.videoCache.get(log.id);
-        displayFrameAsImage(cachedFrame.url, log.id);
-        return;
+        
+        // Check if blob URL is still valid by trying to load it
+        if (cachedFrame.url && cachedFrame.url.startsWith('blob:')) {
+          // Test if the blob URL is still valid with a simple fetch
+          try {
+            const response = await fetch(cachedFrame.url, { method: 'HEAD' });
+            if (response.ok) {
+              displayFrameAsImage(cachedFrame.url, log.id);
+              return;
+            }
+          } catch (blobError) {
+            console.warn(`🎬 Cached blob URL invalid for frame ${log.id}, regenerating...`);
+            const newUrl = await regenerateVideoBlobUrl(log.id, cachedFrame);
+            if (newUrl) {
+              displayFrameAsImage(newUrl, log.id);
+              return;
+            }
+            // If regeneration failed, fall through to network fetch
+          }
+        } else {
+          displayFrameAsImage(cachedFrame.url, log.id);
+          return;
+        }
       } catch (error) {
         console.error('Error displaying cached video frame:', error);
+        // Fall through to network fetch if cached display fails
       }
     }
 
@@ -1652,10 +1842,15 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     const actualIsPlaying = isPlaying !== null ? isPlaying : state.isPlaying;
     const actualSegments = segments || state.conversationSegments;
     
-    console.log(`🎭 playNextSegment called: index=${segmentIndex}, isPlaying=${actualIsPlaying}, segments=${actualSegments.length}`);
+    console.log(`\n🎭 ===== PLAY NEXT SEGMENT ${segmentIndex} =====`);
+    console.log(`🎭 isPlaying parameter: ${isPlaying}`);
+    console.log(`🎭 actualIsPlaying: ${actualIsPlaying}`);
+    console.log(`🎭 state.isPlaying: ${state.isPlaying}`);
+    console.log(`🎭 segments.length: ${actualSegments?.length || 0}`);
+    console.log(`🎭 segmentTimeoutRef.current:`, segmentTimeoutRef.current);
     
     if (!actualIsPlaying || segmentIndex >= actualSegments.length) {
-      console.log('🎭 Segment replay complete');
+      console.log(`🎭 ⏹ Segment replay stopping - isPlaying: ${actualIsPlaying}, segmentIndex: ${segmentIndex}/${actualSegments.length}`);
       updateState({ isPlaying: false });
       return;
     }
@@ -1679,19 +1874,43 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
 
       // Add a small delay between segments for natural pacing
       const delay = Math.max(200, Math.min(1000, segment.duration * 0.1 / state.playbackSpeed));
-      console.log(`🎭 Segment completed, waiting ${delay}ms before next segment`);
+      console.log(`🎭 Segment ${segmentIndex} completed, scheduling next in ${delay}ms`);
       
-      setTimeout(() => {
-        // FIX: Continue with next segment, passing state explicitly to avoid timing issues
-        playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments);
+      segmentTimeoutRef.current = setTimeout(() => {
+        console.log(`🎭 ⏰ Timeout callback executing for segment ${segmentIndex + 1}`);
+        console.log(`🎭 ⏰ Current state.isPlaying: ${state.isPlaying}`);
+        console.log(`🎭 ⏰ isPlayingRef.current: ${isPlayingRef.current}`);
+        console.log(`🎭 ⏰ actualIsPlaying: ${actualIsPlaying}`);
+        console.log(`🎭 ⏰ segmentTimeoutRef.current:`, segmentTimeoutRef.current);
+        
+        // CRITICAL FIX: Use ref instead of state to avoid closure issues
+        if (isPlayingRef.current) {
+          console.log(`🎭 ⏰ Proceeding to next segment`);
+          playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments);
+        } else {
+          console.log(`🎭 ⏰ Skipping next segment - isPlayingRef.current is false`);
+        }
       }, delay);
+      
+      console.log(`🎭 Scheduled timeout ID:`, segmentTimeoutRef.current);
 
     } catch (error) {
       console.error('🚨 Segment playback failed:', error);
       updateState({ replayStatus: `❌ Segment ${segmentIndex + 1} failed: ${error.message}` });
       // Continue to next segment after brief delay, maintaining state
-      setTimeout(() => playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments), 500);
+      segmentTimeoutRef.current = setTimeout(() => {
+        console.log(`🎭 ⏰ Error recovery timeout executing for segment ${segmentIndex + 1}`);
+        console.log(`🎭 ⏰ Current state.isPlaying: ${state.isPlaying}`);
+        console.log(`🎭 ⏰ isPlayingRef.current: ${isPlayingRef.current}`);
+        if (isPlayingRef.current) {
+          playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments);
+        } else {
+          console.log(`🎭 ⏰ Skipping error recovery - isPlayingRef.current is false`);
+        }
+      }, 500);
     }
+    
+    console.log(`🎭 ===== SEGMENT ${segmentIndex} SCHEDULED =====\n`);
   };
 
   const playUserSpeechSegment = async (segment, isPlaying = true) => {
@@ -1744,9 +1963,14 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         // Boost user audio volume
         gainNode.gain.value = CONSTANTS.AUDIO.VOLUME.USER;
         
+        // Track this audio source so it can be stopped if needed
+        activeAudioSourcesRef.current.push(source);
+        
         // Wait for audio to complete
         source.onended = () => {
           console.log(`🎤 User speech completed: ${audioBuffer.duration.toFixed(2)}s`);
+          // Remove from active sources list
+          activeAudioSourcesRef.current = activeAudioSourcesRef.current.filter(s => s !== source);
           // Stop any ongoing video playback for this segment when audio ends
           if (videoPlaybackRef.current) {
             console.log(`🎤 Stopping video playback as user speech audio completed`);
@@ -1783,9 +2007,14 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         // API audio at normal volume
         gainNode.gain.value = CONSTANTS.AUDIO.VOLUME.API;
         
+        // Track this audio source so it can be stopped if needed
+        activeAudioSourcesRef.current.push(source);
+        
         // Wait for audio to complete
         source.onended = () => {
           console.log(`🤖 API response completed: ${audioBuffer.duration.toFixed(2)}s`);
+          // Remove from active sources list
+          activeAudioSourcesRef.current = activeAudioSourcesRef.current.filter(s => s !== source);
           resolve();
         };
         

@@ -762,7 +762,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       loadReplayData(sessionData.session_id);
     } else if (!isModal) {
       // Load all available sessions for browse mode
-      loadSessions();
+    loadSessions();
     }
   }, [isModal, sessionData]);
 
@@ -1991,7 +1991,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                           title="Stop"
                         >
                           ⏹
-                        </button>
+                </button>
                         
                         <select 
                           value={state.playbackSpeed} 
@@ -1999,11 +1999,11 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                           className="speed-select"
                           title="Playback Speed"
                         >
-                          <option value={0.5}>0.5x</option>
-                          <option value={1}>1x</option>
+                    <option value={0.5}>0.5x</option>
+                    <option value={1}>1x</option>
                           <option value={1.5}>1.5x</option>
-                          <option value={2}>2x</option>
-                        </select>
+                    <option value={2}>2x</option>
+                  </select>
                       </div>
                     </div>
                   </div>
@@ -2015,34 +2015,34 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                     <strong>Status:</strong> {state.replayStatus}
                   </div>
                   
-                  {hasExpiredUrls && (
-                    <button 
-                      onClick={regenerateUrls} 
+                {hasExpiredUrls && (
+                  <button 
+                    onClick={regenerateUrls} 
                       disabled={state.isRegeneratingUrls}
                       className="regenerate-urls-btn"
-                    >
-                      {state.isRegeneratingUrls ? '🔄 Regenerating...' : '🔄 Fix Expired URLs'}
-                    </button>
-                  )}
+                  >
+                    {state.isRegeneratingUrls ? '🔄 Regenerating...' : '🔄 Fix Expired URLs'}
+                  </button>
+                )}
 
                   {state.replayData && (
-                    <div className="progress-info">
-                      <p>
-                        Interaction {state.currentIndex + 1} of {state.replayData.logs.length}
-                        {state.replayData.logs[state.currentIndex] && (
-                          <span> - {state.replayData.logs[state.currentIndex].interaction_type} at {formatTimestamp(state.replayData.logs[state.currentIndex].timestamp)}</span>
-                        )}
-                      </p>
-                    </div>
+              <div className="progress-info">
+                <p>
+                  Interaction {state.currentIndex + 1} of {state.replayData.logs.length}
+                  {state.replayData.logs[state.currentIndex] && (
+                    <span> - {state.replayData.logs[state.currentIndex].interaction_type} at {formatTimestamp(state.replayData.logs[state.currentIndex].timestamp)}</span>
                   )}
-                  
+                </p>
+            </div>
+          )}
+
                   {state.currentVideoFrame && (
                     <div className="current-frame-info">
                       <small>Current frame: {state.currentVideoFrame}</small>
                     </div>
                   )}
                 </div>
-              </div>
+                </div>
 
               <div className="conversation-timeline">
                 <h4>📝 Conversation Timeline</h4>
@@ -2102,18 +2102,18 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                             <div className="turn-header">
                               <strong>{segmentLabel}</strong>
                               <span className="turn-time">{startTime}</span>
-                            </div>
+                  </div>
                             <div className="turn-description">
                               {segmentContent}
-                            </div>
+                      </div>
                             {isCurrentSegment && (
                               <div className="current-status">
                                 <div className="status-indicator">▶ Playing</div>
                                 <div className="status-text">{state.replayStatus}</div>
-                              </div>
-                            )}
+                      </div>
+                    )}
+                      </div>
                           </div>
-                        </div>
                       );
                     })
                   ) : (
@@ -2140,11 +2140,11 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                       </div>
                     ))
                   )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
       </div>
     </div>
   );

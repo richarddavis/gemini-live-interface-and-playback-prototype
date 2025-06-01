@@ -96,9 +96,9 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
             <div key={msg.id} className={`message-item ${msg.sender} ${msg.type === 'live_session_placeholder' ? 'placeholder' : ''}`}>
               {renderMessageContent(msg)}
               {msg.type !== 'live_session_placeholder' && (
-                <span className="message-timestamp">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+              <span className="message-timestamp">
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
               )}
             </div>
           ))}

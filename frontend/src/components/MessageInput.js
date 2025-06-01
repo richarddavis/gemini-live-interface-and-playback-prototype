@@ -290,16 +290,16 @@ const MessageInput = React.forwardRef(({
             </div>
 
             {/* Center - Text input */}
-            <input
-              ref={ref}
-              type="text"
-              value={currentMessage}
-              onChange={(e) => setCurrentMessage(e.target.value)}
+        <input
+          ref={ref}
+          type="text"
+          value={currentMessage}
+          onChange={(e) => setCurrentMessage(e.target.value)}
               placeholder={isDisabled ? "Enter API key to chat..." : `Ask ${provider === 'openai' ? 'ChatGPT' : provider === 'gemini' ? 'Gemini' : provider === 'anthropic' ? 'Claude' : 'AI'}`}
-              disabled={isDisabled || isLoading}
+          disabled={isDisabled || isLoading}
               className="gemini-text-input"
-            />
-
+        />
+        
             {/* Microphone/Send button */}
             <button 
               type="submit" 
@@ -321,30 +321,30 @@ const MessageInput = React.forwardRef(({
               )}
             </button>
           </div>
-
+            
           {/* Action buttons - Desktop horizontal, Mobile below */}
           <div className="input-right-controls">
             {!isCapturing && (
               <>
-                <button 
-                  type="button"
+            <button 
+              type="button"
                   className="action-button"
-                  disabled={isDisabled || isLoading}
-                  onClick={() => handleCameraCapture('image')}
-                  title="Take photo"
-                >
+              disabled={isDisabled || isLoading}
+              onClick={() => handleCameraCapture('image')}
+              title="Take photo"
+            >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M23 19A2 2 0 0 1 21 21H3A2 2 0 0 1 1 19V8A2 2 0 0 1 3 6H7L9 4H15L17 6H21A2 2 0 0 1 23 8V19Z" stroke="currentColor" strokeWidth="2"/>
                     <circle cx="12" cy="13" r="4" stroke="currentColor" strokeWidth="2"/>
                   </svg>
                   <span>Camera</span>
-                </button>
-                
-                <button 
-                  type="button"
+            </button>
+            
+            <button 
+              type="button"
                   className="action-button"
                   disabled={isDisabled || isLoading || (provider !== 'gemini')}
-                  onClick={() => handleCameraCapture('video')}
+              onClick={() => handleCameraCapture('video')}
                   title="Record video"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -368,21 +368,21 @@ const MessageInput = React.forwardRef(({
                       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
                     </svg>
                     <span>{isLiveMode ? 'Stop Live' : 'Start Live'}</span>
-                  </button>
+            </button>
                 )}
               </>
             )}
           </div>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            accept="image/*,video/*"
-            style={{ display: 'none' }}
-            disabled={isDisabled || isLoading}
-          />
-        </form>
+        
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          accept="image/*,video/*"
+          style={{ display: 'none' }}
+          disabled={isDisabled || isLoading}
+        />
+      </form>
       </div>
     </div>
   );

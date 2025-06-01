@@ -1041,7 +1041,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
               ← Back to Chat
             </button>
           )}
-          <h2>🎭 Gemini Live Direct</h2>
+        <h2>🎭 Gemini Live Direct</h2>
         </div>
         <div className="connection-status">
           {isConnecting && <span className="status connecting">Connecting...</span>}

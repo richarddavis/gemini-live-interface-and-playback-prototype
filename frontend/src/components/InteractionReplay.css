@@ -40,11 +40,11 @@
 /* Mobile responsiveness */
 @media (max-width: 1000px) {
   .replay-display-content {
-    display: flex;
+  display: flex;
     flex-direction: column;
     gap: 16px;
-  }
-  
+}
+
   .interaction-replay {
     padding: 12px;
     height: 100vh; /* Use full viewport height on mobile */
@@ -59,11 +59,11 @@
   .replay-display {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-  }
-  
+}
+
   .conversation-timeline {
     margin-bottom: 16px;
-  }
+}
 }
 
 /* Timeline - removed, replaced by conversation-timeline */
@@ -138,7 +138,7 @@
   0% { opacity: 0.6; }
   50% { opacity: 1; }
   100% { opacity: 0.6; }
-}
+} 
 
 /* Video Player Container with Overlay Controls */
 .video-player-container {

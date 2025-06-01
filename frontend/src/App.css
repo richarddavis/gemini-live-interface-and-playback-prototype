@@ -227,7 +227,7 @@ body {
 
 @media (max-width: 768px) {
   .mobile-hamburger-button {
-    display: flex;
+  display: flex;
   }
   
   /* Hide hamburger when sidebar is open */
@@ -289,7 +289,7 @@ body {
 
 @media (max-width: 768px) {
   .api-control-group {
-    width: 100%;
+  width: 100%;
     min-width: auto;
   }
 }
@@ -309,7 +309,7 @@ body {
 
 @media (max-width: 480px) {
   .api-button-group {
-    flex-direction: column;
+  flex-direction: column;
     gap: 8px;
   }
 }
@@ -486,7 +486,7 @@ body {
   .message-item {
     max-width: 85%;
     padding: 14px 16px;
-  }
+}
 }
 
 @media (max-width: 480px) {
@@ -507,7 +507,7 @@ body {
   .message-content p {
     font-size: 1em;
     line-height: 1.5;
-  }
+}
 }
 
 .message-timestamp {
@@ -718,7 +718,7 @@ body {
   .media-preview {
     width: 100%;
     margin-bottom: 15px;
-  }
+}
 }
 
 .media-preview img, 
@@ -818,7 +818,7 @@ body {
 @media (min-width: 769px) {
   .mobile-only {
     display: none !important;
-  }
+}
 }
 
 /* IMPROVED TOUCH TARGETS */
@@ -1020,7 +1020,7 @@ body {
     gap: 6px;
     border-radius: 20px;
     flex: 1;
-    justify-content: center;
+  justify-content: center;
     min-height: 44px;
     border: 1px solid #dadce0;
     background: #f8f9fa;
@@ -1051,8 +1051,8 @@ body {
 @media (max-width: 360px) {
   .action-button span {
     display: none;
-  }
-  
+}
+
   .action-button {
     padding: 8px;
     min-width: 40px;
@@ -1268,7 +1268,7 @@ body {
   padding-top: 15px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
-  flex-direction: column;
+    flex-direction: column;
   gap: 12px;
   background-color: #2c3e50; /* Ensure background matches */
 }
@@ -1361,7 +1361,7 @@ body {
 /* Mobile: Text input section */
 .mobile-text-section {
   display: flex;
-  align-items: center;
+    align-items: center;
   width: 100%;
   gap: 8px;
 }
@@ -1412,5 +1412,5 @@ body {
 
 .gemini-text-input:disabled {
   color: #9aa0a6;
-}
+  }
 

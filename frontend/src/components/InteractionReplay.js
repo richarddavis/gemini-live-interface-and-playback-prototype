@@ -723,7 +723,7 @@ const calculatePlaybackDelay = (currentLog, nextLog, playbackSpeed, isStreamingA
   return Math.max(CONSTANTS.TIMING.MIN_DELAY, Math.min(CONSTANTS.TIMING.MAX_DELAY, timeDiff / playbackSpeed));
 };
 
-const InteractionReplay = () => {
+const InteractionReplay = ({ onExitReplayMode }) => {
   const { state, updateState, resetPlayback } = useReplayState();
   const mediaCache = useMediaCache(updateState);
   const { createStreamingConfig } = useAudioStreamingConfig(updateState);
@@ -1893,7 +1893,14 @@ const InteractionReplay = () => {
   return (
     <div className="interaction-replay">
       <div className="replay-header">
-        <h2>🎬 Interaction Replay</h2>
+        <div className="header-left">
+          {onExitReplayMode && (
+            <button onClick={onExitReplayMode} className="exit-replay-btn" title="Exit Replay Mode">
+              ← Back to Chat
+            </button>
+          )}
+          <h2>🎬 Interaction Replay</h2>
+        </div>
       </div>
 
       <div className="replay-content">

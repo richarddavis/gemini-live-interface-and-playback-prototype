@@ -10,7 +10,7 @@ import { interactionLogger } from '../services/interactionLogger';
  * Architecture: Frontend ↔ WebSocket ↔ Google Gemini Live API
  * Backend is used only for analytics/logging.
  */
-const GeminiLiveDirect = () => {
+const GeminiLiveDirect = ({ onExitLiveMode }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
@@ -974,7 +974,14 @@ const GeminiLiveDirect = () => {
   return (
     <div className="gemini-live-container">
       <div className="header">
-        <h2>🎭 Gemini Live Direct</h2>
+        <div className="header-left">
+          {onExitLiveMode && (
+            <button onClick={onExitLiveMode} className="exit-live-btn" title="Exit Live Mode">
+              ← Back to Chat
+            </button>
+          )}
+          <h2>🎭 Gemini Live Direct</h2>
+        </div>
         <div className="connection-status">
           {isConnecting && <span className="status connecting">Connecting...</span>}
           {isConnected && <span className="status connected">Connected</span>}

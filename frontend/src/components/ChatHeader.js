@@ -9,7 +9,10 @@ function ChatHeader({
   isLiveMode,
   onToggleLiveMode,
   isReplayMode,
-  onToggleReplayMode
+  onToggleReplayMode,
+  onMobileSidebarToggle,
+  onHeaderCollapseToggle,
+  isHeaderCollapsed
 }) {
   const initialLoadDone = useRef(false);
 
@@ -33,53 +36,93 @@ function ChatHeader({
 
   // Save API key to sessionStorage when it changes
   const handleApiKeyChange = (e) => {
-    const newApiKey = e.target.value;
-    sessionStorage.setItem('chatApiKey', newApiKey);
+    const value = e.target.value;
     onApiKeyChange(e);
+    sessionStorage.setItem('chatApiKey', value);
   };
   
   // Save provider to sessionStorage when it changes
   const handleProviderChange = (e) => {
-    const newProvider = e.target.value;
-    sessionStorage.setItem('chatProvider', newProvider);
+    const value = e.target.value;
     onProviderChange(e);
+    sessionStorage.setItem('chatProvider', value);
   };
 
   // Disable the live button if not in live mode AND (provider is not gemini OR no API key)
   const isLiveButtonDisabled = !isLiveMode && (provider !== 'gemini' || !apiKey);
 
   return (
-    <header className="App-header">
-      <h1>Chat App</h1>
-      <div className="api-controls">
-        <input
-          type="password"
-          className="api-key-input"
-          placeholder="Enter OpenAI or Gemini API Key"
-          value={apiKey}
-          onChange={handleApiKeyChange}
-          autoComplete="off"
-        />
-        <select
-          className="provider-select"
-          value={provider}
-          onChange={handleProviderChange}
+    <div className={`chat-header ${isHeaderCollapsed ? 'collapsed' : ''}`}>
+      <div className="header-top-row">
+        <button 
+          className="mobile-menu-button"
+          onClick={onMobileSidebarToggle}
+          aria-label="Open sidebar"
         >
-          <option value="openai">OpenAI (GPT-4o)</option>
-          <option value="gemini">Gemini</option>
-        </select>
-        <button onClick={onToggleLiveMode} disabled={isLiveButtonDisabled}>
-          {isLiveMode ? 'Switch to Chat' : 'Switch to Live'}
+          ☰
         </button>
-        <button onClick={onToggleReplayMode} className="replay-button">
-          {isReplayMode ? 'Exit Replay' : '🎬 View Replays'}
-        </button>
-        <div className="api-key-info">
-          <small>Your API key is stored in your browser and sent directly to the AI provider.</small>
+        
+        <h1 className="header-title">
+          {activeChatSessionId ? `Chat ${activeChatSessionId}` : 'Gemini Live Chat'}
+        </h1>
+        
+        <div className="mode-indicators">
+          {isLiveMode && <span className="live-indicator">Live</span>}
+          {isReplayMode && <span className="replay-indicator">Replay</span>}
         </div>
+        
+        <button 
+          className="header-collapse-toggle"
+          onClick={onHeaderCollapseToggle}
+          aria-label={isHeaderCollapsed ? "Expand header" : "Collapse header"}
+        >
+          {isHeaderCollapsed ? '▼' : '▲'}
+        </button>
       </div>
-      {activeChatSessionId && <p>Session ID: {activeChatSessionId}</p>}
-    </header>
+      
+      {!isHeaderCollapsed && (
+        <div className="header-secondary-controls">
+          <div className="api-controls">
+            <label htmlFor="provider-select">Provider:</label>
+            <select 
+              id="provider-select"
+              value={provider} 
+              onChange={handleProviderChange}
+              className="provider-select"
+            >
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="gemini">Gemini</option>
+            </select>
+
+            <label htmlFor="api-key-input">API Key:</label>
+            <input
+              id="api-key-input"
+              type="password"
+              placeholder="Enter API key"
+              value={apiKey}
+              onChange={handleApiKeyChange}
+              className="api-key-input"
+            />
+
+            <button 
+              onClick={onToggleLiveMode}
+              className={isLiveMode ? 'active' : ''}
+              disabled={!apiKey}
+            >
+              {isLiveMode ? 'Stop Live' : 'Start Live'}
+            </button>
+
+            <button 
+              onClick={onToggleReplayMode}
+              className={isReplayMode ? 'active' : ''}
+            >
+              {isReplayMode ? 'Stop Replay' : 'Start Replay'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

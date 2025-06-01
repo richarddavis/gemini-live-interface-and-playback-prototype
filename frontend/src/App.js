@@ -22,6 +22,8 @@ function App() {
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isReplayMode, setIsReplayMode] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const messageInputRef = useRef(null);
   
   // API hook
@@ -295,6 +297,39 @@ function App() {
 
   const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingMedia;
 
+  // Handle mobile sidebar toggle
+  const handleMobileSidebarToggle = () => {
+    setIsMobileSidebarOpen(!isMobileSidebarOpen);
+  };
+
+  const handleHeaderCollapseToggle = () => {
+    setIsHeaderCollapsed(!isHeaderCollapsed);
+  };
+
+  // Close mobile sidebar when clicking overlay
+  const handleOverlayClick = () => {
+    setIsMobileSidebarOpen(false);
+  };
+
+  // Close mobile sidebar when selecting a session (mobile UX)
+  const handleSelectSessionMobile = (sessionId) => {
+    setCurrentBotResponse(null);
+    setActiveChatSessionId(sessionId);
+    setIsMobileSidebarOpen(false); // Close sidebar on mobile after selection
+  };
+
+  // Close mobile sidebar when window resizes to desktop
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <div className="App-container">
       {console.log('Rendering App. isLiveMode:', isLiveMode)}
@@ -304,6 +339,10 @@ function App() {
         onSelectSession={handleSelectSession}
         onCreateNewChat={() => handleCreateNewChat(true)}
         onDeleteSession={handleDeleteSession}
+        isMobileSidebarOpen={isMobileSidebarOpen}
+        onMobileSidebarToggle={handleMobileSidebarToggle}
+        onOverlayClick={handleOverlayClick}
+        onSelectSessionMobile={handleSelectSessionMobile}
       />
       
       <div className="App-main-content">
@@ -317,15 +356,18 @@ function App() {
           onToggleLiveMode={handleToggleLiveMode}
           isReplayMode={isReplayMode}
           onToggleReplayMode={handleToggleReplayMode}
+          onMobileSidebarToggle={handleMobileSidebarToggle}
+          onHeaderCollapseToggle={handleHeaderCollapseToggle}
+          isHeaderCollapsed={isHeaderCollapsed}
         />
         
         {isLiveMode ? (
           <div className="live-mode-container">
-            <GeminiLiveDirect />
+            <GeminiLiveDirect onExitLiveMode={handleToggleLiveMode} />
           </div>
         ) : isReplayMode ? (
           <div className="replay-mode-container">
-            <InteractionReplay />
+            <InteractionReplay onExitReplayMode={handleToggleReplayMode} />
           </div>
         ) : (
           <>

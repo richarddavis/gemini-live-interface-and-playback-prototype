@@ -143,6 +143,28 @@ const useMediaCache = (updateState) => {
     return type === 'audio' ? response.arrayBuffer() : response.blob();
   }, []);
 
+  const processMediaPreloadResults = useCallback((results, cacheMap, type) => {
+    let successCount = 0;
+    let expiredCount = 0;
+    
+    results.forEach(result => {
+      if (result.status === 'fulfilled') {
+        if (result.value.success) {
+          if (type === 'audio') {
+            cacheMap.set(result.value.logId, result.value.audioBuffer);
+          } else if (type === 'video') {
+            cacheMap.set(result.value.logId, result.value.frameData);
+          }
+          successCount++;
+        } else if (result.value.error === 'expired_url') {
+          expiredCount++;
+        }
+      }
+    });
+    
+    return { successCount, expiredCount };
+  }, []);
+
   const preloadAudio = useCallback(async (audioLogs) => {
     const audioContext = await initializeAudioContext();
     
@@ -168,22 +190,10 @@ const useMediaCache = (updateState) => {
 
     const results = await Promise.allSettled(promises);
     const audioCache = new Map();
-    let successCount = 0;
-    let expiredCount = 0;
-
-    results.forEach(result => {
-      if (result.status === 'fulfilled') {
-        if (result.value.success) {
-          audioCache.set(result.value.logId, result.value.audioBuffer);
-          successCount++;
-        } else if (result.value.error === 'expired_url') {
-          expiredCount++;
-        }
-      }
-    });
+    const { successCount, expiredCount } = processMediaPreloadResults(results, audioCache, 'audio');
 
     return { audioCache, successCount, expiredCount, total: audioLogs.length };
-  }, [downloadMediaFile, createAudioBuffer, initializeAudioContext]);
+  }, [downloadMediaFile, createAudioBuffer, initializeAudioContext, processMediaPreloadResults]);
 
   const preloadVideo = useCallback(async (videoLogs) => {
     const promises = videoLogs.map(async (log, index) => {
@@ -210,22 +220,10 @@ const useMediaCache = (updateState) => {
 
     const results = await Promise.allSettled(promises);
     const videoCache = new Map();
-    let successCount = 0;
-    let expiredCount = 0;
-
-    results.forEach(result => {
-      if (result.status === 'fulfilled') {
-        if (result.value.success) {
-          videoCache.set(result.value.logId, result.value.frameData);
-          successCount++;
-        } else if (result.value.error === 'expired_url') {
-          expiredCount++;
-        }
-      }
-    });
+    const { successCount, expiredCount } = processMediaPreloadResults(results, videoCache, 'video');
 
     return { videoCache, successCount, expiredCount, total: videoLogs.length };
-  }, [downloadMediaFile]);
+  }, [downloadMediaFile, processMediaPreloadResults]);
 
   return {
     audioContextRef,
@@ -532,6 +530,38 @@ const useConversationSegments = (updateState) => {
     return mergedSegments;
   }, []);
 
+  const concatenateAudioBuffers = useCallback(async (audioBuffers, sampleRate, segmentType = 'unknown') => {
+    if (audioBuffers.length === 0) return null;
+
+    const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+    const unifiedBuffer = audioContext.createBuffer(1, totalSamples, sampleRate);
+    const channelData = unifiedBuffer.getChannelData(0);
+
+    let offset = 0;
+    audioBuffers.forEach((buffer, index) => {
+      const sourceData = buffer.getChannelData(0);
+      console.log(`🎵 Concatenating chunk ${index + 1}/${audioBuffers.length} for ${segmentType} segment: ${sourceData.length} samples at offset ${offset}`);
+      
+      // Safety check for buffer overflow
+      if (offset + sourceData.length > totalSamples) {
+        console.error(`🎵 ❌ Buffer overflow detected for ${segmentType} segment! offset: ${offset}, chunk size: ${sourceData.length}, total: ${totalSamples}`);
+        const availableSpace = totalSamples - offset;
+        const truncatedData = sourceData.slice(0, availableSpace);
+        channelData.set(truncatedData, offset);
+        console.warn(`🎵 ⚠️  Truncated chunk to fit for ${segmentType} segment: ${truncatedData.length} samples`);
+        return;
+      }
+      
+      channelData.set(sourceData, offset);
+      offset += sourceData.length;
+    });
+
+    console.log(`🎵 Created unified audio for ${segmentType} segment: ${unifiedBuffer.duration.toFixed(2)}s, ${totalSamples} samples (${audioBuffers.length} chunks merged)`);
+    
+    return { audioBuffer: unifiedBuffer, audioContext, duration: unifiedBuffer.duration, chunkCount: audioBuffers.length };
+  }, []);
+
   const createSegmentAudio = useCallback(async (segment, audioCache) => {
     if (segment.audioChunks.length === 0) return null;
 
@@ -551,76 +581,45 @@ const useConversationSegments = (updateState) => {
 
       console.log(`🎵 Found ${audioBuffers.length}/${segment.audioChunks.length} cached audio buffers`);
 
-      // Calculate total duration and samples
-      const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+      // Calculate total duration and samples (for safety checks)
       const totalDuration = audioBuffers.reduce((sum, buffer) => sum + buffer.duration, 0);
       const sampleRate = segment.metadata.sampleRate;
       
-      console.log(`🎵 Total samples: ${totalSamples}, Total duration: ${totalDuration.toFixed(3)}s, Sample rate: ${sampleRate}Hz`);
+      console.log(`🎵 Total duration: ${totalDuration.toFixed(3)}s, Sample rate: ${sampleRate}Hz`);
       
       // SAFETY CHECK: Prevent massive audio buffers that can cause corruption
       const MAX_BUFFER_DURATION = 30; // 30 seconds max
       const MAX_CHUNK_COUNT = 150; // Increased from 50 to handle longer Gemini responses
       
+      let buffersToConcatenate = audioBuffers;
+      let truncated = false;
+
       if (totalDuration > MAX_BUFFER_DURATION) {
-        console.warn(`🎵 ⚠️  Segment audio too long (${totalDuration.toFixed(2)}s > ${MAX_BUFFER_DURATION}s) - using first ${MAX_BUFFER_DURATION}s only`);
-        // Truncate to prevent corruption
+        console.warn(`🎵 ⚠️  Segment audio too long (${totalDuration.toFixed(2)}s > ${MAX_BUFFER_DURATION}s) - truncating`);
         let accumulatedDuration = 0;
-        const truncatedBuffers = [];
-        
+        buffersToConcatenate = [];
         for (const buffer of audioBuffers) {
           if (accumulatedDuration + buffer.duration <= MAX_BUFFER_DURATION) {
-            truncatedBuffers.push(buffer);
+            buffersToConcatenate.push(buffer);
             accumulatedDuration += buffer.duration;
           } else {
             console.warn(`🎵 ⚠️  Truncating merged segment at ${accumulatedDuration.toFixed(2)}s`);
             break;
           }
         }
-        
-        return await createTruncatedSegmentAudio(truncatedBuffers, sampleRate, segment.type);
-      }
-      
-      if (audioBuffers.length > MAX_CHUNK_COUNT) {
-        console.warn(`🎵 ⚠️  Too many chunks (${audioBuffers.length} > ${MAX_CHUNK_COUNT}) - using first ${MAX_CHUNK_COUNT} chunks only`);
-        const truncatedBuffers = audioBuffers.slice(0, MAX_CHUNK_COUNT);
-        return await createTruncatedSegmentAudio(truncatedBuffers, sampleRate, segment.type);
+        truncated = true;
+      } else if (audioBuffers.length > MAX_CHUNK_COUNT) {
+        console.warn(`🎵 ⚠️  Too many chunks (${audioBuffers.length} > ${MAX_CHUNK_COUNT}) - truncating`);
+        buffersToConcatenate = audioBuffers.slice(0, MAX_CHUNK_COUNT);
+        truncated = true;
       }
 
-      // Create new Web Audio API buffer
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
-      const unifiedBuffer = audioContext.createBuffer(1, totalSamples, sampleRate);
-      const channelData = unifiedBuffer.getChannelData(0);
-
-      // Concatenate all audio chunks with detailed logging
-      let offset = 0;
-      audioBuffers.forEach((buffer, index) => {
-        const sourceData = buffer.getChannelData(0);
-        console.log(`🎵 Concatenating chunk ${index + 1}/${audioBuffers.length}: ${sourceData.length} samples at offset ${offset}`);
-        
-        // Safety check for buffer overflow
-        if (offset + sourceData.length > totalSamples) {
-          console.error(`🎵 ❌ Buffer overflow detected! offset: ${offset}, chunk size: ${sourceData.length}, total: ${totalSamples}`);
-          const availableSpace = totalSamples - offset;
-          const truncatedData = sourceData.slice(0, availableSpace);
-          channelData.set(truncatedData, offset);
-          console.warn(`🎵 ⚠️  Truncated chunk to fit: ${truncatedData.length} samples`);
-          return;
-        }
-        
-        channelData.set(sourceData, offset);
-        offset += sourceData.length;
-      });
-
-      console.log(`🎵 Created unified audio: ${unifiedBuffer.duration.toFixed(2)}s, ${totalSamples} samples (${audioBuffers.length} chunks merged)`);
-      
-      return {
-        audioBuffer: unifiedBuffer,
-        audioContext,
-        duration: unifiedBuffer.duration,
-        type: segment.type,
-        chunkCount: audioBuffers.length
-      };
+      const result = await concatenateAudioBuffers(buffersToConcatenate, sampleRate, segment.type);
+      if (result) {
+        return { ...result, type: segment.type, truncated };
+      } else {
+        return null;
+      }
 
     } catch (error) {
       console.error('🚨 Failed to create segment audio:', error);
@@ -632,32 +631,16 @@ const useConversationSegments = (updateState) => {
       });
       return null;
     }
-  }, []);
+  }, [concatenateAudioBuffers]);
 
   // Helper function for creating truncated segment audio
   const createTruncatedSegmentAudio = async (audioBuffers, sampleRate, segmentType) => {
-    const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
-    const unifiedBuffer = audioContext.createBuffer(1, totalSamples, sampleRate);
-    const channelData = unifiedBuffer.getChannelData(0);
-
-    let offset = 0;
-    audioBuffers.forEach((buffer, index) => {
-      const sourceData = buffer.getChannelData(0);
-      channelData.set(sourceData, offset);
-      offset += sourceData.length;
-    });
-
-    console.log(`🎵 Created truncated unified audio: ${unifiedBuffer.duration.toFixed(2)}s, ${totalSamples} samples (${audioBuffers.length} chunks, truncated for safety)`);
-    
-    return {
-      audioBuffer: unifiedBuffer,
-      audioContext,
-      duration: unifiedBuffer.duration,
-      type: segmentType,
-      chunkCount: audioBuffers.length,
-      truncated: true
-    };
+    const result = await concatenateAudioBuffers(audioBuffers, sampleRate, segmentType);
+    if (result) {
+      return { ...result, type: segmentType, truncated: true };
+    } else {
+      return null;
+    }
   };
 
   const createSegmentVideo = useCallback((segment, videoCache) => {
@@ -819,6 +802,43 @@ const InteractionReplay = () => {
     updateState({ loading: false });
   };
 
+  const createMediaPreloadStatus = useCallback((audioResults, videoResults) => {
+    const audioSuccessCount = audioResults.successCount;
+    const audioLogsLength = audioResults.total;
+    const audioExpiredCount = audioResults.expiredCount;
+
+    const videoSuccessCount = videoResults.successCount;
+    const videoLogsLength = videoResults.total;
+    const videoExpiredCount = videoResults.expiredCount;
+
+    const statusParts = [];
+    if (audioSuccessCount > 0) statusParts.push(`${audioSuccessCount}/${audioLogsLength} audio chunks`);
+    if (videoSuccessCount > 0) statusParts.push(`${videoSuccessCount}/${videoLogsLength} video frames`);
+    
+    const statusText = statusParts.join(' and ');
+    const expiredCount = audioExpiredCount + videoExpiredCount;
+    const otherFailedCount = (audioLogsLength - audioSuccessCount - audioExpiredCount) +
+                            (videoLogsLength - videoSuccessCount - videoExpiredCount);
+    
+    let failedText = '';
+    if (expiredCount > 0) {
+      failedText += ` (${expiredCount} expired URLs)`;
+    }
+    if (otherFailedCount > 0) {
+      failedText += ` (${otherFailedCount} other failures)`;
+    }
+    
+    if (audioSuccessCount === 0 && videoSuccessCount === 0) {
+      if (expiredCount > 0) {
+        return `⏳ Media unavailable due to expired URLs - replay will show interaction timing only`;
+      } else {
+        return '❌ Media preloading failed - replay will show interaction timing only';
+      }
+    } else {
+      return `⚡ Media preloaded: ${statusText}${failedText} - ready for replay`;
+    }
+  }, []);
+
   const preloadMediaContent = async (logs) => {
     try {
       updateState({ replayStatus: 'Analyzing media content...' });
@@ -872,45 +892,14 @@ const InteractionReplay = () => {
       const audioCache = audioResults.audioCache;
       const videoCache = videoResults.videoCache;
       
-      const audioSuccessCount = audioResults.successCount;
-      const audioExpiredCount = audioResults.expiredCount;
-      const videoSuccessCount = videoResults.successCount;
-      const videoExpiredCount = videoResults.expiredCount;
-
       // Update cache states
       updateState({ audioCache });
       updateState({ videoCache });
       updateState({ mediaCacheReady: true });
       
-      const statusParts = [];
-      if (audioSuccessCount > 0) statusParts.push(`${audioSuccessCount}/${audioLogs.length} audio chunks`);
-      if (videoSuccessCount > 0) statusParts.push(`${videoSuccessCount}/${videoLogs.length} video frames`);
+      updateState({ replayStatus: createMediaPreloadStatus(audioResults, videoResults) });
       
-      const statusText = statusParts.join(' and ');
-      const expiredCount = audioExpiredCount + videoExpiredCount;
-      const otherFailedCount = (audioLogs.length - audioSuccessCount - audioExpiredCount) + 
-                              (videoLogs.length - videoSuccessCount - videoExpiredCount);
-      
-      let failedText = '';
-      if (expiredCount > 0) {
-        failedText += ` (${expiredCount} expired URLs)`;
-      }
-      if (otherFailedCount > 0) {
-        failedText += ` (${otherFailedCount} other failures)`;
-      }
-      
-      // Set status message based on results
-      if (audioSuccessCount === 0 && videoSuccessCount === 0) {
-        if (expiredCount > 0) {
-          updateState({ replayStatus: `⏳ Media unavailable due to expired URLs - replay will show interaction timing only` });
-        } else {
-          updateState({ replayStatus: '❌ Media preloading failed - replay will show interaction timing only' });
-        }
-      } else {
-        updateState({ replayStatus: `⚡ Media preloaded: ${statusText}${failedText} - ready for replay` });
-      }
-      
-      console.log(`🎬 Parallel preload complete: ${audioCache.size} audio, ${videoCache.size} video. Expired: ${expiredCount}, Other failures: ${otherFailedCount}`);
+      console.log(`🎬 Parallel preload complete: ${audioCache.size} audio, ${videoCache.size} video.`);
 
       // NEW: Process logs into conversation segments for smoother replay
       if (audioCache.size > 0 || videoCache.size > 0) {
@@ -952,10 +941,10 @@ const InteractionReplay = () => {
           console.log(`🎭 Processed segment keys:`, Array.from(processedSegments.keys()));
           
           updateState({ processedSegments });
-          updateState({ replayStatus: `⚡ Media preloaded: ${statusText}${failedText} + ${segments.length} conversation segments - ready for smooth replay` });
+          updateState({ replayStatus: `${createMediaPreloadStatus(audioResults, videoResults)} + ${segments.length} conversation segments - ready for smooth replay` });
         } catch (segmentError) {
           console.error('🚨 Segment processing failed:', segmentError);
-          updateState({ replayStatus: `⚡ Media preloaded: ${statusText}${failedText} - ready for replay (fallback mode)` });
+          updateState({ replayStatus: `${createMediaPreloadStatus(audioResults, videoResults)} - ready for replay (fallback mode)` });
         }
       }
 
@@ -1164,6 +1153,43 @@ const InteractionReplay = () => {
     }
   };
 
+  const getAudioData = useCallback(async (log) => {
+    if (state.audioCache.has(log.id)) {
+      // Convert cached AudioBuffer back to ArrayBuffer for hook
+      const cachedBuffer = state.audioCache.get(log.id);
+      const channelData = cachedBuffer.getChannelData(0);
+      const numSamples = channelData.length;
+      const pcmBuffer = new ArrayBuffer(numSamples * 2);
+      const dataView = new DataView(pcmBuffer);
+      
+      for (let i = 0; i < numSamples; i++) {
+        const sample = Math.max(-1, Math.min(1, channelData[i]));
+        const intSample = Math.round(sample * 32767);
+        dataView.setInt16(i * 2, intSample, true);
+      }
+      console.log(`🎬 Using cached audio for ${log.id}: ${numSamples} samples, ${pcmBuffer.byteLength} bytes`);
+      return pcmBuffer;
+    } else if (log.media_data && log.media_data.cloud_storage_url) {
+      try {
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
+        const response = await fetch(proxyUrl);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          console.log(`🎵 Fetched audio for ${log.id}: ${arrayBuffer.byteLength} bytes`);
+          return arrayBuffer;
+        } else if (CONSTANTS.MEDIA.EXPIRED_STATUSES.includes(response.status)) {
+          throw new Error(`expired_url:${response.status}`);
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (error) {
+        console.error('Error loading audio chunk from network:', error);
+        throw error;
+      }
+    }
+    return null;
+  }, [state.audioCache]);
+
   // Handle audio chunks with streaming logic - UPDATED to use useAudioStreaming hooks
   const handleAudioChunkForStreaming = async (log) => {
     const isUserAudio = log.interaction_metadata?.microphone_on === true;
@@ -1171,41 +1197,11 @@ const InteractionReplay = () => {
     // Fetch the audio data if not cached
     let audioArrayBuffer = null;
     
-    if (state.audioCache.has(log.id)) {
-      // Convert cached AudioBuffer back to ArrayBuffer for hook
-      const cachedBuffer = state.audioCache.get(log.id);
-      
-      // Get the original PCM data from the AudioBuffer
-      const channelData = cachedBuffer.getChannelData(0);
-      const sampleRate = cachedBuffer.sampleRate;
-      const numSamples = channelData.length;
-      
-      // Convert float32 back to 16-bit PCM
-      const pcmBuffer = new ArrayBuffer(numSamples * 2); // 16-bit = 2 bytes per sample
-      const dataView = new DataView(pcmBuffer);
-      
-      for (let i = 0; i < numSamples; i++) {
-        // Convert from [-1, 1] float to 16-bit signed integer
-        const sample = Math.max(-1, Math.min(1, channelData[i]));
-        const intSample = Math.round(sample * 32767);
-        dataView.setInt16(i * 2, intSample, true); // true = little-endian
-      }
-      
-      audioArrayBuffer = pcmBuffer;
-      console.log(`🎬 Using cached audio for ${log.id}: ${numSamples} samples, ${pcmBuffer.byteLength} bytes`);
-    } else if (log.media_data && log.media_data.cloud_storage_url) {
-      try {
-        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
-        const response = await fetch(proxyUrl);
-        
-        if (response.ok) {
-          audioArrayBuffer = await response.arrayBuffer();
-          console.log(`🎵 Fetched audio for ${log.id}: ${audioArrayBuffer.byteLength} bytes`);
-        }
-      } catch (error) {
-        console.error('Error loading audio chunk:', error);
-        return;
-      }
+    try {
+      audioArrayBuffer = await getAudioData(log);
+    } catch (error) {
+      console.warn(`🎵 Audio chunk ${log.id} failed to load:`, error.message);
+      return; // Skip if audio data cannot be loaded
     }
     
     if (audioArrayBuffer) {
@@ -1248,58 +1244,114 @@ const InteractionReplay = () => {
     }
   };
 
+  const displayFrameAsImage = useCallback((imageUrl, logId, isSegmentFrame = false, frameIndex = 0, totalFrames = 0) => {
+    if (videoRef.current) {
+      // Clear any existing video streams
+      if (videoRef.current.srcObject) {
+        const tracks = videoRef.current.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+      }
+      
+      // Hide the video element and show image instead
+      videoRef.current.style.display = 'none';
+      
+      // Find or create image element next to video
+      let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
+      if (!imgElement) {
+        imgElement = document.createElement('img');
+        imgElement.className = 'replay-frame';
+        imgElement.style.width = '320px';
+        imgElement.style.height = '240px';
+        imgElement.style.backgroundColor = '#000';
+        imgElement.style.border = '1px solid #ccc';
+        imgElement.style.objectFit = 'contain';
+        imgElement.style.display = 'block';
+        
+        // Insert after the video element
+        videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+        console.log(`🎬 Created new image element for ${isSegmentFrame ? 'segment ' : ''}frame`);
+      } else {
+        console.log(`📹 Using existing image element`);
+      }
+      
+      // Clean up previous image URL
+      if (imgElement.src && imgElement.src.startsWith('blob:')) {
+        URL.revokeObjectURL(imgElement.src);
+      }
+      
+      // Set new image
+      imgElement.src = imageUrl;
+      imgElement.onload = () => {
+        console.log(`🎬 ${isSegmentFrame ? `Segment frame ${frameIndex + 1}/${totalFrames}` : 'Cached video frame'} displayed successfully: ${imgElement.naturalWidth}x${imgElement.naturalHeight}`);
+      };
+      imgElement.onerror = (error) => {
+        console.error(`🎬 ${isSegmentFrame ? `Segment frame ${frameIndex + 1}/${totalFrames}` : 'Image'} failed to load:`, error);
+      };
+      
+      console.log(`🎬 ${isSegmentFrame ? 'Segment v' : 'V'}ideo frame displayed as image`);
+    } else {
+      console.error(`🎬 Video ref not found for ${isSegmentFrame ? 'segment ' : ''}frame!`);
+    }
+    updateState({ currentVideoFrame: `${isSegmentFrame ? `Segment Frame ${frameIndex + 1}/${totalFrames}` : `Frame ${logId}`} loaded at ${new Date().toLocaleTimeString()}` });
+  }, [updateState]);
+
+  const displayPlaceholderImage = useCallback((type, logId, status = null) => {
+    if (videoRef.current) {
+      videoRef.current.style.display = 'none';
+      let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
+      if (!imgElement) {
+        imgElement = document.createElement('img');
+        imgElement.className = 'replay-frame';
+        imgElement.style.width = '320px';
+        imgElement.style.height = '240px';
+        imgElement.style.backgroundColor = '#333';
+        imgElement.style.border = '1px solid #ccc';
+        imgElement.style.objectFit = 'contain';
+        imgElement.style.display = 'flex';
+        imgElement.style.alignItems = 'center';
+        imgElement.style.justifyContent = 'center';
+        imgElement.style.color = '#fff';
+        imgElement.style.fontSize = '14px';
+        imgElement.style.textAlign = 'center';
+        videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
+      }
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = CONSTANTS.VIDEO.DIMENSIONS.WIDTH;
+      canvas.height = CONSTANTS.VIDEO.DIMENSIONS.HEIGHT;
+      const ctx = canvas.getContext('2d');
+      
+      ctx.fillStyle = '#333';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      ctx.fillStyle = '#fff';
+      ctx.font = '14px Arial';
+      ctx.textAlign = 'center';
+      
+      const textLine1 = CONSTANTS.MEDIA.PLACEHOLDER_TEXT[type].split('\n')[0];
+      const textLine2 = CONSTANTS.MEDIA.PLACEHOLDER_TEXT[type].split('\n')[1];
+
+      ctx.fillText(textLine1, canvas.width / 2, canvas.height / 2 - 10);
+      ctx.fillText(textLine2, canvas.width / 2, canvas.height / 2 + 10);
+      
+      imgElement.src = canvas.toDataURL();
+    }
+    updateState({ currentVideoFrame: `Frame ${logId} - media unavailable (expired URL)` });
+  }, [updateState]);
+
+  const updateReplayStatusForMediaError = useCallback((type, logId, errorMessage) => {
+    const statusText = CONSTANTS.MEDIA.PLACEHOLDER_TEXT[type];
+    updateState({ replayStatus: `${statusText} - ${errorMessage}` });
+  }, [updateState]);
+
   const displayVideoFrame = async (log) => {
     // First, check if we have this video frame cached
     if (state.videoCache.has(log.id)) {
       try {
         console.log('🎬 Displaying cached video frame for interaction:', log.id);
-        
         const cachedFrame = state.videoCache.get(log.id);
-        const imageUrl = cachedFrame.url;
-        
-        // Find or create image container
-        if (videoRef.current) {
-          console.log('🎬 Video ref found, updating display with cached frame');
-          
-          // Clear any existing video streams
-          if (videoRef.current.srcObject) {
-            const tracks = videoRef.current.srcObject.getTracks();
-            tracks.forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-          }
-          
-          // Hide the video element and show image instead
-          videoRef.current.style.display = 'none';
-          
-          // Find or create image element next to video
-          let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
-          if (!imgElement) {
-            imgElement = document.createElement('img');
-            imgElement.className = 'replay-frame';
-            imgElement.style.width = '320px';
-            imgElement.style.height = '240px';
-            imgElement.style.backgroundColor = '#000';
-            imgElement.style.border = '1px solid #ccc';
-            imgElement.style.objectFit = 'contain';
-            imgElement.style.display = 'block';
-            
-            // Insert after the video element
-            videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-            console.log('🎬 Created new image element for cached frame');
-          }
-          
-          // Set cached image
-          imgElement.src = imageUrl;
-          imgElement.onload = () => {
-            console.log('🎬 Cached video frame displayed successfully:', imgElement.naturalWidth, 'x', imgElement.naturalHeight);
-          };
-          
-          console.log('🎬 Cached video frame displayed instantly');
-        } else {
-          console.error('🎬 Video ref not found for cached frame!');
-        }
-        
-        updateState({ currentVideoFrame: `Frame ${log.id} (cached) loaded at ${new Date().toLocaleTimeString()}` });
+        displayFrameAsImage(cachedFrame.url, log.id);
         return;
       } catch (error) {
         console.error('Error displaying cached video frame:', error);
@@ -1319,129 +1371,33 @@ const InteractionReplay = () => {
         console.log('🎬 Proxy response status:', response.status, response.statusText);
         
         if (response.ok) {
-        const blob = await response.blob();
-        console.log('🎬 Blob received:', blob.type, blob.size, 'bytes');
-        
-        const imageUrl = URL.createObjectURL(blob);
-        console.log('🎬 Created blob URL:', imageUrl);
-        
-        // Find or create image container
-        if (videoRef.current) {
-          console.log('🎬 Video ref found, updating display');
+          const blob = await response.blob();
+          console.log('🎬 Blob received:', blob.type, blob.size, 'bytes');
           
-          // Clear any existing video streams
-          if (videoRef.current.srcObject) {
-            const tracks = videoRef.current.srcObject.getTracks();
-            tracks.forEach(track => track.stop());
-            videoRef.current.srcObject = null;
-          }
-          
-          // Hide the video element and show image instead
-          videoRef.current.style.display = 'none';
-          
-          // Find or create image element next to video
-          let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
-          if (!imgElement) {
-            imgElement = document.createElement('img');
-            imgElement.className = 'replay-frame';
-            imgElement.style.width = '320px';
-            imgElement.style.height = '240px';
-            imgElement.style.backgroundColor = '#000';
-            imgElement.style.border = '1px solid #ccc';
-            imgElement.style.objectFit = 'contain';
-            imgElement.style.display = 'block';
-            
-            // Insert after the video element
-            videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-            console.log('🎬 Created new image element');
-          } else {
-            console.log(`📹 Using existing image element`);
-          }
-          
-          // Clean up previous image URL
-          if (imgElement.src && imgElement.src.startsWith('blob:')) {
-            URL.revokeObjectURL(imgElement.src);
-          }
-          
-          // Set new image
-          imgElement.src = imageUrl;
-          imgElement.onload = () => {
-            console.log('🎬 Image loaded successfully:', imgElement.naturalWidth, 'x', imgElement.naturalHeight);
-          };
-          imgElement.onerror = (error) => {
-            console.error('🎬 Image failed to load:', error);
-          };
-          
-          console.log('🎬 Video frame displayed as image');
-        } else {
-          console.error('🎬 Video ref not found!');
-        }
-        
-          updateState({ currentVideoFrame: `Frame ${log.id} loaded at ${new Date().toLocaleTimeString()}` });
+          const imageUrl = URL.createObjectURL(blob);
+          console.log('🎬 Created blob URL:', imageUrl);
+          displayFrameAsImage(imageUrl, log.id);
         } else if (response.status === 502 || response.status === 400) {
           // Handle expired GCS URLs gracefully
           console.warn('🎬 Video frame media unavailable (likely expired URL):', response.status);
-          
-          // Show placeholder for unavailable media
-          if (videoRef.current) {
-            // Hide the video element
-            videoRef.current.style.display = 'none';
-            
-            // Find or create placeholder element
-            let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
-            if (!imgElement) {
-              imgElement = document.createElement('img');
-              imgElement.className = 'replay-frame';
-              imgElement.style.width = '320px';
-              imgElement.style.height = '240px';
-              imgElement.style.backgroundColor = '#333';
-              imgElement.style.border = '1px solid #ccc';
-              imgElement.style.objectFit = 'contain';
-              imgElement.style.display = 'flex';
-              imgElement.style.alignItems = 'center';
-              imgElement.style.justifyContent = 'center';
-              imgElement.style.color = '#fff';
-              imgElement.style.fontSize = '14px';
-              imgElement.style.textAlign = 'center';
-              
-              // Insert after the video element
-              videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-            }
-            
-            // Create a canvas with placeholder text
-            const canvas = document.createElement('canvas');
-            canvas.width = 320;
-            canvas.height = 240;
-            const ctx = canvas.getContext('2d');
-            
-            // Fill background
-            ctx.fillStyle = '#333';
-            ctx.fillRect(0, 0, 320, 240);
-            
-            // Add text
-            ctx.fillStyle = '#fff';
-            ctx.font = '14px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Video frame unavailable', 160, 110);
-            ctx.fillText('(expired media URL)', 160, 130);
-            
-            // Set canvas as image source
-            imgElement.src = canvas.toDataURL();
-          }
-          
-          updateState({ currentVideoFrame: `Frame ${log.id} - media unavailable (expired URL)` });
+          displayPlaceholderImage('VIDEO', log.id, response.status);
+          updateReplayStatusForMediaError('VIDEO', log.id, `expired URL (HTTP ${response.status})`);
         } else {
           console.error('Failed to fetch video frame via proxy:', response.status);
           updateState({ currentVideoFrame: `Error loading video frame - HTTP ${response.status}` });
+          updateReplayStatusForMediaError('VIDEO', log.id, `HTTP ${response.status}`);
         }
       } catch (error) {
         console.error('Error displaying video frame:', error);
         updateState({ currentVideoFrame: 'Error loading video frame' });
+        updateReplayStatusForMediaError('VIDEO', log.id, error.message);
       }
     } else if (log.media_data && log.media_data.storage_type === 'hash_only') {
       updateState({ currentVideoFrame: 'Video frame captured (hash-only mode - no replay data)' });
+      updateReplayStatusForMediaError('VIDEO', log.id, 'hash-only mode');
     } else {
       updateState({ currentVideoFrame: 'No video frame data available' });
+      updateReplayStatusForMediaError('VIDEO', log.id, 'no data');
     }
   };
 
@@ -1451,21 +1407,56 @@ const InteractionReplay = () => {
     const audioSource = isUserAudio ? 'User' : 'API';
     
     // First, check if we have this audio chunk cached
-    if (state.audioCache.has(log.id)) {
-      try {
-        console.log(`🎬 Playing cached ${audioSource} audio chunk for interaction:`, log.id);
-        
-        // Initialize audio context if needed with appropriate sample rate
-        const audioContext = await mediaCache.initializeAudioContext();
+    let audioArrayBuffer = null;
+    try {
+      audioArrayBuffer = await getAudioData(log);
+    } catch (error) {
+      console.warn(`🎬 ${audioSource} audio chunk media unavailable (likely expired URL or other error):`, error.message);
+      updateReplayStatusForMediaError('AUDIO', log.id, `unavailable (${error.message.startsWith('expired_url') ? 'expired URL' : 'error'})`);
+      return;
+    }
+    
+    if (!audioArrayBuffer) {
+      console.log(`🎬 No ${audioSource} audio chunk data available`);
+      updateReplayStatusForMediaError('AUDIO', log.id, 'no data');
+      return;
+    }
 
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
+    try {
+      // Initialize audio context if needed with appropriate sample rate
+      const audioContext = await mediaCache.initializeAudioContext();
+
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
+      // For PCM data, we need to process it differently than for encoded audio
+      // Assume PCM if it's from a cached buffer or if the URL implies .pcm
+      const isPCM = log.media_data?.cloud_storage_url?.includes('.pcm') || state.audioCache.has(log.id);
+
+      if (isPCM) {
+        // Handle raw PCM data with proper sample rate detection
+        let sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.API; // Default
+        
+        // Try to get sample rate from metadata
+        if (log.interaction_metadata?.audio_sample_rate) {
+          sampleRate = log.interaction_metadata.audio_sample_rate;
+        } else if (isUserAudio) {
+            sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.USER; // User audio is typically 16kHz
         }
-
-        // Get the cached audio buffer
-        const audioBuffer = state.audioCache.get(log.id);
         
-        // Create and play audio source with appropriate gain for user vs API audio
+        const numSamples = audioArrayBuffer.byteLength / 2; // 16-bit samples
+        
+        const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
+        const channelData = audioBuffer.getChannelData(0);
+        
+        // Convert PCM data to audio buffer
+        const dataView = new DataView(audioArrayBuffer);
+        for (let i = 0; i < numSamples; i++) {
+          const sample = dataView.getInt16(i * 2, true); // little-endian
+          channelData[i] = sample / 32768.0;
+        }
+        
         const source = audioContext.createBufferSource();
         const gainNode = audioContext.createGain();
         
@@ -1473,66 +1464,18 @@ const InteractionReplay = () => {
         source.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
-        // Adjust volume based on audio source (user audio is often quieter)
+        // Adjust volume based on audio source
         gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
         
+        // Start audio immediately without additional delays
         source.start(0);
         
-        console.log(`🎬 Playing cached ${audioSource} PCM audio chunk: ${audioBuffer.duration.toFixed(3)}s (instant playback)`);
-        
-        // Visual feedback for audio type
+        console.log(`🎬 Playing ${audioSource} PCM audio chunk:`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
         updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s)` });
-        return;
-      } catch (error) {
-        console.error(`Error playing cached ${audioSource} audio chunk:`, error);
-      }
-    }
-
-    // Fallback to network fetch if not cached
-    if (log.media_data && log.media_data.cloud_storage_url) {
-      try {
-        console.log(`🎬 Loading ${audioSource} audio chunk via backend proxy for interaction:`, log.id, '(not cached)');
-        
-        // Use backend proxy endpoint instead of direct GCS URL
-        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
-        const response = await fetch(proxyUrl);
-        
-        if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        
-        // Initialize audio context if needed
-          const audioContext = await mediaCache.initializeAudioContext();
-        
-        // Resume audio context if suspended (required for user interaction policies)
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
-        
-        // For PCM data, we need to process it differently than for encoded audio
-        if (response.headers.get('content-type') === 'audio/pcm' || log.media_data.cloud_storage_url.includes('.pcm')) {
-          // Handle raw PCM data with proper sample rate detection
-            let sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.API; // Default
-          
-          // Try to get sample rate from metadata
-          if (log.interaction_metadata?.audio_sample_rate) {
-            sampleRate = log.interaction_metadata.audio_sample_rate;
-          } else if (isUserAudio) {
-              sampleRate = CONSTANTS.AUDIO.SAMPLE_RATES.USER; // User audio is typically 16kHz
-          }
-          
-          const audioData = new Uint8Array(arrayBuffer);
-          const numSamples = audioData.length / 2; // 16-bit samples
-          
-          const audioBuffer = audioContext.createBuffer(1, numSamples, sampleRate);
-          const channelData = audioBuffer.getChannelData(0);
-          
-          // Convert PCM data to audio buffer
-          const dataView = new DataView(arrayBuffer);
-          for (let i = 0; i < numSamples; i++) {
-            const sample = dataView.getInt16(i * 2, true); // little-endian
-            channelData[i] = sample / 32768.0;
-          }
-          
+      } else {
+        // Handle encoded audio (MP3, WAV, etc.)
+        try {
+          const audioBuffer = await audioContext.decodeAudioData(audioArrayBuffer);
           const source = audioContext.createBufferSource();
           const gainNode = audioContext.createGain();
           
@@ -1541,53 +1484,22 @@ const InteractionReplay = () => {
           gainNode.connect(audioContext.destination);
           
           // Adjust volume based on audio source
-            gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
+          gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
           
-          // Start audio immediately without additional delays
           source.start(0);
           
-          console.log(`🎬 Playing ${audioSource} PCM audio chunk (network):`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
-            updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - network` });
-        } else {
-          // Handle encoded audio (MP3, WAV, etc.)
-          try {
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            const source = audioContext.createBufferSource();
-            const gainNode = audioContext.createGain();
-            
-            source.buffer = audioBuffer;
-            source.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            // Adjust volume based on audio source
-              gainNode.gain.value = isUserAudio ? CONSTANTS.AUDIO.VOLUME.USER : CONSTANTS.AUDIO.VOLUME.API;
-            
-            source.start(0);
-            
-            console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
-              updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - encoded` });
-          } catch (decodeError) {
-            console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
-          }
-          }
-        } else if (response.status === 502 || response.status === 400) {
-          // Handle expired GCS URLs gracefully
-          console.warn(`🎬 ${audioSource} audio chunk media unavailable (likely expired URL):`, response.status);
-          updateState({ replayStatus: `⏸️ ${audioSource} audio unavailable (expired URL)` });
-        } else {
-          console.error(`Failed to fetch ${audioSource} audio chunk via proxy:`, response.status);
-          updateState({ replayStatus: `❌ Failed to load ${audioSource.toLowerCase()} audio - HTTP ${response.status}` });
+          console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
+          updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - encoded` });
+        } catch (decodeError) {
+          console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
+          updateState({ replayStatus: `❌ Failed to decode ${audioSource.toLowerCase()} audio` });
+          updateReplayStatusForMediaError('AUDIO', log.id, `decode error`);
         }
-      } catch (error) {
-        console.error(`Error playing ${audioSource} audio chunk:`, error);
-        updateState({ replayStatus: `❌ Error playing ${audioSource.toLowerCase()} audio` });
       }
-    } else if (log.media_data && log.media_data.storage_type === 'hash_only') {
-      console.log(`🎬 ${audioSource} audio chunk captured (hash-only mode - no replay data)`);
-      updateState({ replayStatus: `${audioSource} audio detected (hash-only mode)` });
-    } else {
-      console.log(`🎬 No ${audioSource} audio chunk data available`);
-      updateState({ replayStatus: `No ${audioSource.toLowerCase()} audio available` });
+    } catch (error) {
+      console.error(`Error playing ${audioSource} audio chunk:`, error);
+      updateState({ replayStatus: `❌ Error playing ${audioSource.toLowerCase()} audio` });
+      updateReplayStatusForMediaError('AUDIO', log.id, `playback error`);
     }
   };
 
@@ -1642,15 +1554,19 @@ const InteractionReplay = () => {
         } else if (response.status === 502 || response.status === 400) {
           // Handle expired GCS URLs gracefully
           responseText = `Gemini response stored in cloud (${log.id}) - Media unavailable (expired URL)`;
+          updateReplayStatusForMediaError('AUDIO', log.id, `expired URL (HTTP ${response.status})`);
         } else {
           responseText = `Gemini response stored in cloud (ID: ${log.id}) - Failed to fetch via proxy (${response.status})`;
+          updateReplayStatusForMediaError('AUDIO', log.id, `fetch error (HTTP ${response.status})`);
         }
       } catch (error) {
         console.error('Error fetching API response via proxy:', error);
         responseText = `Gemini response stored in cloud (ID: ${log.id}) - Error fetching via proxy`;
+        updateReplayStatusForMediaError('AUDIO', log.id, `fetch error`);
       }
     } else if (log.media_data && log.media_data.storage_type === 'hash_only') {
       responseText = `Gemini response detected (${log.id}) - Data stored as hash only. Enable replay mode for full content.`;
+      updateReplayStatusForMediaError('AUDIO', log.id, 'hash-only mode');
     } else if (log.interaction_metadata?.response_text) {
       responseText = log.interaction_metadata.response_text;
     }
@@ -1874,55 +1790,7 @@ const InteractionReplay = () => {
         
         if (frame.frameData && videoRef.current) {
           console.log(`📹 Frame data available:`, frame.frameData);
-          
-          // Update the video frame display
-          updateState({ currentVideoFrame: `Segment frame ${frameIndex + 1}/${frames.length} at ${formatTimestamp(frame.timestamp)}` });
-          
-          try {
-            // Display frame using existing video display logic
-            if (videoRef.current) {
-              console.log(`📹 VideoRef found, setting up video frame display`);
-              
-              // Hide the video element and show image instead
-              videoRef.current.style.display = 'none';
-              
-              // Find or create image element next to video
-              let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
-              if (!imgElement) {
-                console.log(`📹 Creating new image element for video frames`);
-                imgElement = document.createElement('img');
-                imgElement.className = 'replay-frame';
-                imgElement.style.width = '320px';
-                imgElement.style.height = '240px';
-                imgElement.style.backgroundColor = '#000';
-                imgElement.style.border = '1px solid #ccc';
-                imgElement.style.objectFit = 'contain';
-                imgElement.style.display = 'block';
-                
-                // Insert after the video element
-                videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-                console.log(`📹 Image element created and inserted`);
-              } else {
-                console.log(`📹 Using existing image element`);
-              }
-              
-              // Set the frame image with error handling
-              imgElement.onload = () => {
-                console.log(`📹 Frame ${frameIndex + 1} loaded successfully: ${imgElement.naturalWidth}x${imgElement.naturalHeight}`);
-              };
-              imgElement.onerror = (error) => {
-                console.error(`📹 Frame ${frameIndex + 1} failed to load:`, error);
-              };
-              
-              imgElement.src = frame.frameData.url;
-              console.log(`📹 Set frame source: ${frame.frameData.url}`);
-              console.log(`📹 Showing segment frame ${frameIndex + 1}/${frames.length}`);
-            } else {
-              console.error(`📹 VideoRef not available!`);
-            }
-          } catch (domError) {
-            console.error(`📹 DOM manipulation error:`, domError);
-          }
+          displayFrameAsImage(frame.frameData.url, null, true, frameIndex, frames.length);
         } else {
           console.warn(`📹 Frame ${frameIndex + 1} missing data:`, { hasFrameData: !!frame.frameData, hasVideoRef: !!videoRef.current });
         }

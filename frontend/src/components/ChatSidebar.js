@@ -58,9 +58,9 @@ function ChatSidebar({
           className="new-chat-button" 
           onClick={onCreateNewChat}
         >
-          + New Chat
-        </button>
-        
+        + New Chat
+      </button>
+      
         <ul className="chat-session-list">
           {chatSessions.map(session => (
             <li 
@@ -118,7 +118,7 @@ function ChatSidebar({
               className="sidebar-input"
             />
           </div>
-        </div>
+    </div>
       </aside>
 
       {isOpen && <div className="sidebar-overlay" onClick={onClose}></div>}

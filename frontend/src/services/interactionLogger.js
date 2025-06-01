@@ -38,6 +38,16 @@ class InteractionLogger {
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  // 🚨 NEW: Start a fresh session with new session ID 🚨
+  startNewSession(chatSessionId = null) {
+    // Generate a new session ID for this session
+    this.sessionId = this.generateSessionId();
+    console.log(`🆕 Generated new session ID: ${this.sessionId}`);
+    
+    // Start the session
+    return this.startSession(chatSessionId);
+  }
+
   setChatSessionId(chatSessionId) {
     this.chatSessionId = chatSessionId;
   }
@@ -458,16 +468,24 @@ class InteractionLogger {
   // Replay-specific methods
   async getReplayData(sessionId = null) {
     const targetSessionId = sessionId || this.sessionId;
+    console.log(`🎭 getReplayData called with sessionId: ${sessionId}, targetSessionId: ${targetSessionId}`);
     try {
       const response = await fetch(`${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=1000`);
       if (response.ok) {
         const data = await response.json();
+        console.log(`🎭 getReplayData response for session ${targetSessionId}:`, {
+          logsCount: data.logs?.length || 0,
+          firstLogSession: data.logs?.[0]?.session_id,
+          allSessionIds: [...new Set(data.logs?.map(log => log.session_id) || [])]
+        });
         // Sort by timestamp for chronological replay
         data.logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         return data;
+      } else {
+        console.error(`🎭 getReplayData failed for session ${targetSessionId}:`, response.status, response.statusText);
       }
     } catch (error) {
-      console.warn('Error fetching replay data:', error);
+      console.warn(`🎭 Error fetching replay data for session ${targetSessionId}:`, error);
     }
     return null;
   }

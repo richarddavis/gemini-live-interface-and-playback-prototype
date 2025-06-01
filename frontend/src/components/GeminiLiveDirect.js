@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import './GeminiLiveDirect.css';
 import { interactionLogger } from '../services/interactionLogger';
 
@@ -10,7 +10,7 @@ import { interactionLogger } from '../services/interactionLogger';
  * Architecture: Frontend ↔ WebSocket ↔ Google Gemini Live API
  * Backend is used only for analytics/logging.
  */
-const GeminiLiveDirect = ({ onExitLiveMode }) => {
+const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSessionId = null }, ref) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
@@ -19,6 +19,7 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
   const [responseMode, setResponseMode] = useState('TEXT'); // 'TEXT' or 'AUDIO'
   const [messages, setMessages] = useState([]);
   const [textInput, setTextInput] = useState('');
+  const [sessionStartTime, setSessionStartTime] = useState(null);
   
   // Audio buffering state
   const [isReceivingAudio, setIsReceivingAudio] = useState(false);
@@ -61,7 +62,7 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
       console.log('🎬 InteractionLogger instance:', interactionLogger);
       
       // Start interaction session when component mounts
-      interactionLogger.startSession();
+      interactionLogger.startNewSession(chatSessionId);
     } catch (error) {
       console.warn('⚠️ Failed to initialize interaction logging:', error);
     }
@@ -78,7 +79,7 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
         console.warn('⚠️ Failed to cleanup interaction logging:', error);
       }
     };
-  }, []);
+  }, [chatSessionId]);
 
   // Capture and send video frame to Gemini Live API
   const captureAndSendVideoFrame = useCallback(() => {
@@ -233,20 +234,101 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
     }
   }, [selectedVoice, responseMode]);
 
-  // Connect to Google Live API
-  const connectToGemini = useCallback(() => {
-    if (!API_KEY) {
-      addMessage('error', 'Google AI Studio API key not found. Please check your environment configuration.');
-      // Log error with error handling
+  // Updated disconnect with session completion logic
+  const disconnect = useCallback(async () => {
+    console.log('🎭 disconnect() called - checking session completion...');
+    
+    stopVideoFrameCapture(); // Stop sending video frames
+    
+    let sessionData = null;
+    
+    // If this is a modal, collect session analytics before disconnecting
+    if (isModal && sessionStartTime) {
       try {
-        interactionLogger.logError(new Error('API key not found'), { context: 'connection_attempt' });
-      } catch (logError) {
-        console.warn('⚠️ Failed to log error:', logError);
+        // Calculate session duration
+        const duration = Math.floor((Date.now() - sessionStartTime) / 1000);
+        
+        // Get analytics data
+        const analytics = await interactionLogger.getSessionAnalytics();
+        
+        // Prepare session data for the placeholder
+        sessionData = {
+          session_id: interactionLogger.getSessionId(),
+          duration: duration,
+          exchanges_count: messages.filter(msg => msg.type === 'gemini' || msg.type === 'user').length,
+          has_audio: messages.some(msg => msg.type === 'audio_received'),
+          has_video: isCameraOn,
+          timestamp: new Date().toISOString(),
+          voice_used: selectedVoice,
+          response_mode: responseMode,
+          analytics: analytics
+        };
+        
+        console.log('🎭 Session completed with data:', sessionData);
+      } catch (error) {
+        console.warn('⚠️ Error collecting session analytics:', error);
+        // Still create basic session data
+        sessionData = {
+          session_id: interactionLogger.getSessionId(),
+          duration: sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : 0,
+          exchanges_count: messages.filter(msg => msg.type === 'gemini' || msg.type === 'user').length,
+          has_audio: messages.some(msg => msg.type === 'audio_received'),
+          has_video: isCameraOn,
+          timestamp: new Date().toISOString(),
+          voice_used: selectedVoice,
+          response_mode: responseMode
+        };
       }
+    }
+    
+    // Perform normal disconnect logic
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    // Clean up audio buffering
+    if (audioTimeoutRef.current) {
+      clearTimeout(audioTimeoutRef.current);
+      audioTimeoutRef.current = null;
+    }
+    audioBufferRef.current = [];
+    setIsReceivingAudio(false);
+    
+    setIsConnected(false);
+    setIsMicOn(false);
+    setIsCameraOn(false);
+    setupCompleteRef.current = false;
+    logAnalytics('session_end');
+    
+    // Pass session data to parent if this is a modal
+    if (isModal && onExitLiveMode && sessionData) {
+      onExitLiveMode(sessionData);
+    } else if (onExitLiveMode) {
+      // Regular exit for non-modal usage
+      onExitLiveMode();
+    }
+  }, [logAnalytics, stopVideoFrameCapture, isModal, sessionStartTime, messages, isCameraOn, selectedVoice, responseMode, onExitLiveMode]);
+
+  // Update connectToGemini to track session start time
+  const connectToGemini = useCallback(async () => {
+    if (!API_KEY) {
+      addMessage('error', 'Google AI Studio API key is required. Please set REACT_APP_GOOGLE_AI_STUDIO_API_KEY.');
       return;
     }
 
     setIsConnecting(true);
+    setSessionStartTime(Date.now()); // Track when session starts
     setupCompleteRef.current = false;
     
     // Log connection attempt with error handling
@@ -931,56 +1013,35 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
     }
   }, [isCameraOn, addMessage, stopVideoFrameCapture]);
 
-  // Disconnect
-  const disconnect = useCallback(() => {
-    stopVideoFrameCapture(); // Stop sending video frames
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (cameraStreamRef.current) {
-      cameraStreamRef.current.getTracks().forEach(track => track.stop());
-      cameraStreamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    
-    // Clean up audio buffering
-    if (audioTimeoutRef.current) {
-      clearTimeout(audioTimeoutRef.current);
-      audioTimeoutRef.current = null;
-    }
-    audioBufferRef.current = [];
-    setIsReceivingAudio(false);
-    
-    setIsConnected(false);
-    setIsMicOn(false);
-    setIsCameraOn(false);
-    setupCompleteRef.current = false;
-    logAnalytics('session_end');
-  }, [logAnalytics, stopVideoFrameCapture]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
+  // Handle exit - distinguish between casual exit and session completion
+  const handleExit = useCallback(() => {
+    if (!isConnected && messages.length === 0) {
+      // Casual exit - no session to save, just go back
+      console.log('🚪 Casual exit - no session data to save');
+      if (onExitLiveMode) {
+        onExitLiveMode(); // Call without session data for simple exit
+      }
+    } else {
+      // There might be session data to save - trigger disconnect
+      console.log('🚪 Exit with potential session data - triggering disconnect');
       disconnect();
-    };
-  }, [disconnect]);
+    }
+  }, [isConnected, messages.length, onExitLiveMode, disconnect]);
+
+  useImperativeHandle(ref, () => ({
+    triggerDisconnect: disconnect
+  }));
 
   return (
     <div className="gemini-live-container">
       <div className="header">
         <div className="header-left">
           {onExitLiveMode && (
-            <button onClick={onExitLiveMode} className="exit-live-btn" title="Exit Live Mode">
+            <button onClick={handleExit} className="exit-live-btn" title="Exit Live Mode">
               ← Back to Chat
             </button>
           )}
-          <h2>🎭 Gemini Live Direct</h2>
+        <h2>🎭 Gemini Live Direct</h2>
         </div>
         <div className="connection-status">
           {isConnecting && <span className="status connecting">Connecting...</span>}
@@ -1116,6 +1177,8 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
       </div>
     </div>
   );
-};
+});
+
+GeminiLiveDirect.displayName = 'GeminiLiveDirect';
 
 export default GeminiLiveDirect; 

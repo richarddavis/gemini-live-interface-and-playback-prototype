@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import './App.css';
-import ChatHeader from './components/ChatHeader';
 import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
+import Modal from './components/Modal';
 import { useChatApi } from './hooks/useChatApi';
 import GeminiLiveDirect from './components/GeminiLiveDirect';
 import InteractionReplay from './components/InteractionReplay';
@@ -23,8 +23,14 @@ function App() {
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isReplayMode, setIsReplayMode] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  
+  // New modal states
+  const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
+  const [isPlaybackModalOpen, setIsPlaybackModalOpen] = useState(false);
+  const [playbackSessionData, setPlaybackSessionData] = useState(null);
+  
   const messageInputRef = useRef(null);
+  const liveSessionRef = useRef(null);
   
   // API hook
   const { 
@@ -281,18 +287,158 @@ function App() {
   };
 
   const handleToggleLiveMode = () => {
-    // Live mode uses backend service account authentication, no API key needed
-    console.log('Toggling live mode. Current:', isLiveMode);
-    setIsLiveMode(prevMode => !prevMode);
-    setIsReplayMode(false); // Disable replay mode when entering live mode
-    console.log('Live mode will be:', !isLiveMode);
+    // For mobile, keep the old behavior (separate page)
+    if (window.innerWidth <= 768) {
+      console.log('Mobile: Toggling live mode. Current:', isLiveMode);
+      if (isLiveMode) {
+        // Exiting live mode - trigger session completion
+        handleMobileLiveSessionExit();
+      } else {
+        // Entering live mode
+        setIsLiveMode(true);
+        setIsReplayMode(false);
+      }
+    } else {
+      // For desktop, open the modal
+      console.log('Desktop: Opening live modal');
+      setIsLiveModalOpen(true);
+    }
+  };
+
+  const handleMobileLiveSessionExit = async () => {
+    // Similar to modal close but for mobile direct page
+    if (liveSessionRef.current && liveSessionRef.current.triggerDisconnect) {
+      console.log('📱 Mobile live mode exit - triggering session completion...');
+      try {
+        await liveSessionRef.current.triggerDisconnect();
+      } catch (error) {
+        console.warn('⚠️ Error during mobile live session exit:', error);
+        // Still exit live mode even if session completion fails
+        setIsLiveMode(false);
+      }
+    } else {
+      // No active session or component not ready, just exit live mode
+      console.log('📱 Mobile live mode exit - no active session to complete');
+      setIsLiveMode(false);
+    }
   };
 
   const handleToggleReplayMode = () => {
-    console.log('Toggling replay mode. Current:', isReplayMode);
+    // For mobile, keep the old behavior (separate page)  
+    if (window.innerWidth <= 768) {
+      console.log('Mobile: Toggling replay mode. Current:', isReplayMode);
     setIsReplayMode(prevMode => !prevMode);
-    setIsLiveMode(false); // Disable live mode when entering replay mode
-    console.log('Replay mode will be:', !isReplayMode);
+      setIsLiveMode(false);
+      console.log('Mobile: Replay mode will be:', !isReplayMode);
+    } else {
+      // For desktop, open the modal with no specific session (browse mode)
+      console.log('Desktop: Opening replay modal');
+      setIsPlaybackModalOpen(true);
+      setPlaybackSessionData(null);
+    }
+  };
+
+  const handleCloseLiveModal = async () => {
+    // If there's an active live session, trigger proper disconnect to collect session data
+    if (liveSessionRef.current && liveSessionRef.current.triggerDisconnect) {
+      console.log('🎭 Modal closed via X/ESC - triggering session completion...');
+      try {
+        await liveSessionRef.current.triggerDisconnect();
+      } catch (error) {
+        console.warn('⚠️ Error during modal close session completion:', error);
+        // Still close the modal even if session completion fails
+        setIsLiveModalOpen(false);
+      }
+    } else {
+      // No active session or component not ready, just close modal
+      console.log('🎭 Modal closed - no active session to complete');
+      setIsLiveModalOpen(false);
+    }
+  };
+
+  const handleClosePlaybackModal = () => {
+    setIsPlaybackModalOpen(false);
+    setPlaybackSessionData(null);
+  };
+
+  const handleLiveSessionComplete = async (sessionData) => {
+    // This handler works for both mobile and desktop
+    const isMobile = window.innerWidth <= 768;
+    
+    // Close modal if desktop, exit live mode if mobile
+    if (isMobile) {
+      setIsLiveMode(false);
+    } else {
+      setIsLiveModalOpen(false);
+    }
+    
+    // If no sessionData, this was a casual exit - no need to save anything
+    if (!sessionData) {
+      console.log('🚪 Casual exit - no session data to save');
+      return;
+    }
+    
+    // Only save session data if we have an active chat session
+    if (sessionData && activeChatSessionId) {
+      try {
+        // Save the live session placeholder to the database
+        const response = await fetch(`${API_URL}/chat_sessions/${activeChatSessionId}/live_session_placeholder`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            sessionData: sessionData
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to save live session placeholder: ${response.statusText}`);
+        }
+
+        const placeholderMessage = await response.json();
+        console.log('✅ Live session placeholder saved to database:', placeholderMessage);
+
+        // Refresh messages to include the new placeholder
+        try {
+          const updatedMessages = await fetchSessionMessages(activeChatSessionId);
+          setMessages(updatedMessages);
+        } catch (error) {
+          console.error('Error refreshing messages after live session:', error);
+          // Fallback: add placeholder to local state if database refresh fails
+          const fallbackPlaceholder = {
+            id: placeholderMessage.id || `live-session-${Date.now()}`,
+            type: 'live_session_placeholder',
+            sessionData: sessionData,
+            timestamp: new Date().toISOString(),
+            chat_session_id: activeChatSessionId,
+            sender: 'system'
+          };
+          setMessages(prevMessages => [...prevMessages, fallbackPlaceholder]);
+        }
+
+      } catch (error) {
+        console.error('❌ Error saving live session placeholder:', error);
+        // Fallback: show error to user but still add placeholder locally for UX
+        alert(`Warning: Live session completed but couldn't save to history: ${error.message}`);
+        
+        const fallbackPlaceholder = {
+          id: `live-session-${Date.now()}`,
+          type: 'live_session_placeholder', 
+          sessionData: sessionData,
+          timestamp: new Date().toISOString(),
+          chat_session_id: activeChatSessionId,
+          sender: 'system'
+        };
+        setMessages(prevMessages => [...prevMessages, fallbackPlaceholder]);
+      }
+    }
+  };
+
+  const handlePlaybackFromPlaceholder = (sessionData) => {
+    console.log('🎭 handlePlaybackFromPlaceholder called with:', sessionData);
+    setPlaybackSessionData(sessionData);
+    setIsPlaybackModalOpen(true);
   };
 
   const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingMedia;
@@ -300,10 +446,6 @@ function App() {
   // Handle mobile sidebar toggle
   const handleMobileSidebarToggle = () => {
     setIsMobileSidebarOpen(!isMobileSidebarOpen);
-  };
-
-  const handleHeaderCollapseToggle = () => {
-    setIsHeaderCollapsed(!isHeaderCollapsed);
   };
 
   // Close mobile sidebar when clicking overlay
@@ -352,17 +494,24 @@ function App() {
       />
       
       <div className="App-main-content">
-        <ChatHeader 
-          isReplayMode={isReplayMode}
-          onToggleReplayMode={handleToggleReplayMode}
-          onMobileSidebarToggle={handleMobileSidebarToggle}
-          onHeaderCollapseToggle={handleHeaderCollapseToggle}
-          isHeaderCollapsed={isHeaderCollapsed}
-        />
+        {/* Mobile hamburger menu button */}
+        <button 
+          className={`mobile-hamburger-button ${isMobileSidebarOpen ? 'sidebar-open' : ''}`}
+          onClick={handleMobileSidebarToggle}
+          aria-label="Open menu"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
         
         {isLiveMode ? (
           <div className="live-mode-container">
-            <GeminiLiveDirect onExitLiveMode={handleToggleLiveMode} />
+            <GeminiLiveDirect 
+              onExitLiveMode={handleLiveSessionComplete} 
+              chatSessionId={activeChatSessionId}
+              ref={liveSessionRef}
+            />
           </div>
         ) : isReplayMode ? (
           <div className="replay-mode-container">
@@ -377,6 +526,7 @@ function App() {
                   isLoadingMessages={isLoadingMessages}
                   isUploadingImage={isUploadingMedia}
                   currentBotResponse={currentBotResponse}
+                  onPlaybackFromPlaceholder={handlePlaybackFromPlaceholder}
                 />
                 
                 <MessageInput 
@@ -400,6 +550,35 @@ function App() {
           </>
         )}
       </div>
+
+      {/* Live Session Modal */}
+      <Modal
+        isOpen={isLiveModalOpen}
+        onClose={handleCloseLiveModal}
+        title="Live Session"
+        size="large"
+      >
+        <GeminiLiveDirect 
+          onExitLiveMode={handleLiveSessionComplete}
+          isModal={true}
+          chatSessionId={activeChatSessionId}
+          ref={liveSessionRef}
+        />
+      </Modal>
+
+      {/* Playback Modal */}
+      <Modal
+        isOpen={isPlaybackModalOpen}
+        onClose={handleClosePlaybackModal}
+        title="Session Playback"
+        size="large"
+      >
+        <InteractionReplay 
+          onExitReplayMode={handleClosePlaybackModal}
+          sessionData={playbackSessionData}
+          isModal={true}
+        />
+      </Modal>
     </div>
   );
 }

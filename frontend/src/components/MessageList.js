@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import LiveSessionPlaceholder from './LiveSessionPlaceholder';
 
 // Function to convert LaTeX delimiters to KaTeX compatible format
 function convertLatexBracketsToDollars(text) {
@@ -19,7 +20,7 @@ function convertLatexBracketsToDollars(text) {
   return processedText;
 }
 
-function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBotResponse }) {
+function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBotResponse, onPlaybackFromPlaceholder }) {
   const messageListRef = useRef(null);
   
   // Scroll to bottom when messages change or loading status changes
@@ -31,6 +32,18 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
 
   // Helper function to render message content
   const renderMessageContent = (msg) => {
+    // Handle live session placeholder
+    if (msg.type === 'live_session_placeholder') {
+      return (
+        <LiveSessionPlaceholder
+          sessionData={msg.sessionData}
+          onPlayback={onPlaybackFromPlaceholder}
+          timestamp={msg.timestamp}
+        />
+      );
+    }
+
+    // Regular message content
     return (
       <div className="message-content">
         {msg.media_url && msg.media_type?.startsWith('image/') && (
@@ -80,11 +93,13 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
         <>
           {/* Display the messages */}
           {messages.map(msg => (
-            <div key={msg.id} className={`message-item ${msg.sender}`}>
+            <div key={msg.id} className={`message-item ${msg.sender} ${msg.type === 'live_session_placeholder' ? 'placeholder' : ''}`}>
               {renderMessageContent(msg)}
+              {msg.type !== 'live_session_placeholder' && (
               <span className="message-timestamp">
                 {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
+              )}
             </div>
           ))}
           

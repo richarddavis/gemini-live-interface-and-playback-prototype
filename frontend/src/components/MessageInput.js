@@ -272,55 +272,79 @@ const MessageInput = React.forwardRef(({
       
       <div className="gemini-input-wrapper">
         <form onSubmit={handleSubmit} className="gemini-input-form">
-          {/* Left side - Add button */}
-          <div className="input-left-controls">
+          {/* Mobile: Text input section with add button, text input, and mic button */}
+          <div className="mobile-text-section">
+            {/* Left side - Add button */}
+            <div className="input-left-controls">
+              <button 
+                type="button"
+                className="add-button"
+                disabled={isDisabled || isLoading}
+                onClick={() => fileInputRef.current.click()}
+                title="Add content"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* Center - Text input */}
+        <input
+          ref={ref}
+          type="text"
+          value={currentMessage}
+          onChange={(e) => setCurrentMessage(e.target.value)}
+              placeholder={isDisabled ? "Enter API key to chat..." : `Ask ${provider === 'openai' ? 'ChatGPT' : provider === 'gemini' ? 'Gemini' : provider === 'anthropic' ? 'Claude' : 'AI'}`}
+          disabled={isDisabled || isLoading}
+              className="gemini-text-input"
+        />
+        
+            {/* Microphone/Send button */}
             <button 
-              type="button"
-              className="add-button"
+              type="submit" 
               disabled={isDisabled || isLoading}
-              onClick={() => fileInputRef.current.click()}
-              title="Add content"
+              className={`mic-send-button ${(currentMessage.trim() || selectedMedia) ? 'send-mode' : 'mic-mode'}`}
+              title={(currentMessage.trim() || selectedMedia) ? 'Send message' : 'Voice input'}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+              {(currentMessage.trim() || selectedMedia) ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 1A3 3 0 0 0 9 4V12A3 3 0 0 0 12 15A3 3 0 0 0 15 12V4A3 3 0 0 0 12 1Z" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M19 10V12A7 7 0 0 1 5 12V10" stroke="currentColor" strokeWidth="2"/>
+                  <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" strokeWidth="2"/>
+                  <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" strokeWidth="2"/>
+                </svg>
+              )}
             </button>
           </div>
-
-          {/* Center - Text input */}
-          <input
-            ref={ref}
-            type="text"
-            value={currentMessage}
-            onChange={(e) => setCurrentMessage(e.target.value)}
-            placeholder={isDisabled ? "Enter API key to chat..." : "Ask Gemini"}
-            disabled={isDisabled || isLoading}
-            className="gemini-text-input"
-          />
-
-          {/* Right side - Action buttons */}
+            
+          {/* Action buttons - Desktop horizontal, Mobile below */}
           <div className="input-right-controls">
             {!isCapturing && (
               <>
-                <button 
-                  type="button"
+            <button 
+              type="button"
                   className="action-button"
-                  disabled={isDisabled || isLoading}
-                  onClick={() => handleCameraCapture('image')}
-                  title="Take photo"
-                >
+              disabled={isDisabled || isLoading}
+              onClick={() => handleCameraCapture('image')}
+              title="Take photo"
+            >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M23 19A2 2 0 0 1 21 21H3A2 2 0 0 1 1 19V8A2 2 0 0 1 3 6H7L9 4H15L17 6H21A2 2 0 0 1 23 8V19Z" stroke="currentColor" strokeWidth="2"/>
                     <circle cx="12" cy="13" r="4" stroke="currentColor" strokeWidth="2"/>
                   </svg>
                   <span>Camera</span>
-                </button>
-                
-                <button 
-                  type="button"
+            </button>
+            
+            <button 
+              type="button"
                   className="action-button"
                   disabled={isDisabled || isLoading || (provider !== 'gemini')}
-                  onClick={() => handleCameraCapture('video')}
+              onClick={() => handleCameraCapture('video')}
                   title="Record video"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -344,42 +368,21 @@ const MessageInput = React.forwardRef(({
                       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
                     </svg>
                     <span>{isLiveMode ? 'Stop Live' : 'Start Live'}</span>
-                  </button>
+            </button>
                 )}
               </>
             )}
-            
-            {/* Microphone/Send button */}
-            <button 
-              type="submit" 
-              disabled={isDisabled || isLoading}
-              className={`mic-send-button ${(currentMessage.trim() || selectedMedia) ? 'send-mode' : 'mic-mode'}`}
-              title={(currentMessage.trim() || selectedMedia) ? 'Send message' : 'Voice input'}
-            >
-              {(currentMessage.trim() || selectedMedia) ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 1A3 3 0 0 0 9 4V12A3 3 0 0 0 12 15A3 3 0 0 0 15 12V4A3 3 0 0 0 12 1Z" stroke="currentColor" strokeWidth="2"/>
-                  <path d="M19 10V12A7 7 0 0 1 5 12V10" stroke="currentColor" strokeWidth="2"/>
-                  <line x1="12" y1="19" x2="12" y2="23" stroke="currentColor" strokeWidth="2"/>
-                  <line x1="8" y1="23" x2="16" y2="23" stroke="currentColor" strokeWidth="2"/>
-                </svg>
-              )}
-            </button>
           </div>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            accept="image/*,video/*"
-            style={{ display: 'none' }}
-            disabled={isDisabled || isLoading}
-          />
-        </form>
+        
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          accept="image/*,video/*"
+          style={{ display: 'none' }}
+          disabled={isDisabled || isLoading}
+        />
+      </form>
       </div>
     </div>
   );

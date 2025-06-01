@@ -4,11 +4,34 @@ class InteractionLogger {
     this.chatSessionId = null;
     this.isEnabled = true;
     this.replayMode = false; // Set to true to capture full media for replay
-    this.batchSize = 10;
-    this.batchTimeout = 5000; // 5 seconds
-    this.logQueue = [];
-    this.batchTimer = null;
     this.baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
+    
+    // 🚨 NEW: REAL-TIME STREAMING SYSTEM 🚨
+    this.debugMode = true;
+    this.quietMode = false; // Set to true to reduce console noise
+    this.connectionHealth = {
+      lastLoggedAt: null,
+      consecutiveFailures: 0,
+      totalLogged: 0,
+      totalFailed: 0,
+      sessionStartTime: null,
+      expectedInteractions: 0,
+      actualInteractions: 0
+    };
+    
+    // Stream processing (no more batching delays)
+    this.pendingUploads = new Map(); // Track background uploads
+    this.streamQueue = [];
+    this.streamProcessor = null;
+    
+    // Track interaction timing and gaps
+    this.interactionTimeline = [];
+    this.lastInteractionTime = null;
+    this.gapThreshold = 2000; // 2 seconds - alert if gap is longer
+    
+    console.log('🔍 InteractionLogger: Real-time streaming mode enabled');
+    this.startStreamProcessor();
+    this.startHealthMonitoring();
   }
 
   generateSessionId() {
@@ -47,8 +70,8 @@ class InteractionLogger {
   }
 
   async endSession() {
-    // Flush any remaining logs
-    await this.flushLogs();
+    // Process any remaining items in the stream queue
+    await this.processStreamQueue();
 
     try {
       const response = await fetch(`${this.baseUrl}/interaction-logs/session/${this.sessionId}/end`, {
@@ -69,145 +92,238 @@ class InteractionLogger {
     }
   }
 
-  logInteraction(type, data = null, metadata = {}, options = {}) {
-    if (!this.isEnabled) return;
+  // 🚨 NEW: REAL-TIME STREAM PROCESSOR 🚨
+  startStreamProcessor() {
+    // Process stream immediately, no delays
+    this.streamProcessor = setInterval(() => {
+      this.processStreamQueue();
+    }, 50); // Check every 50ms for real-time feel
+  }
 
-    const interactionData = {
-      session_id: this.sessionId,
-      chat_session_id: this.chatSessionId,
-      interaction_type: type,
-      timestamp: new Date().toISOString(),
-      user_agent: navigator.userAgent,
-      ip_address: null, // Will be determined by backend
-      metadata: metadata
-    };
+  async processStreamQueue() {
+    if (this.streamQueue.length === 0) return;
+    
+    // Process up to 5 items per cycle to avoid blocking
+    const itemsToProcess = this.streamQueue.splice(0, 5);
+    
+    // Process in parallel for maximum speed
+    const promises = itemsToProcess.map(item => this.sendStreamedLog(item));
+    await Promise.allSettled(promises);
+  }
 
-    // Handle media data based on storage preference
-    if (data) {
-      // Use cloud_storage for replay mode (uploads to GCS), hash_only for privacy mode
-      const storageType = this.replayMode ? 'cloud_storage' : 'hash_only';
-      console.log(`🎬 Logging ${type} with storageType: ${storageType}, replayMode: ${this.replayMode}`);
-      
-      interactionData.media_data = {
-        storage_type: storageType,
-        is_anonymized: options.isAnonymized || false,
-        retention_days: options.retentionDays || 7
-      };
+  // 🚨 NEW: IMMEDIATE NON-BLOCKING LOG METHOD 🚨
+  logInteraction(interactionType, mediaData = null, metadata = {}, options = {}) {
+    if (!this.isEnabled) return Promise.resolve();
 
-      // Check data size for inline storage (10MB limit to match backend)
-      const maxInlineSize = 10 * 1024 * 1024; // 10MB
-      
-      if (storageType === 'inline' || storageType === 'cloud_storage') {
-        // Both inline and cloud_storage need the data sent to backend
-        // Backend will decide whether to store inline or upload to GCS
-        if (data.length <= maxInlineSize) {
-          interactionData.media_data.data = data;
-          
-          // Log size info for debugging
-          const dataSizeMB = (data.length / 1024 / 1024).toFixed(2);
-          console.log(`📦 ${storageType} storage for ${type}: ${dataSizeMB}MB`);
-        } else {
-          const dataSizeMB = (data.length / 1024 / 1024).toFixed(2);
-          console.warn(`⚠️ Data too large for ${storageType} storage: ${dataSizeMB}MB (max: ${maxInlineSize/1024/1024}MB). Falling back to hash_only.`);
-          
-          // Fallback to hash_only for oversized data
-          interactionData.media_data.storage_type = 'hash_only';
-          interactionData.media_data.data = data;
-        }
-      } else if (storageType === 'hash_only') {
-        // Store hash only for privacy
-        interactionData.media_data.data = data;
-      } else if (storageType === 'file_path' && options.filePath) {
-        interactionData.media_data.file_path = options.filePath;
-        interactionData.media_data.data = data; // For hash generation
+    const startTime = performance.now();
+    const timestamp = new Date().toISOString();
+    
+    // Update connection health tracking immediately
+    this.connectionHealth.expectedInteractions++;
+    this.connectionHealth.lastLoggedAt = Date.now();
+    
+    // Track interaction timing
+    const now = Date.now();
+    if (this.lastInteractionTime) {
+      const gap = now - this.lastInteractionTime;
+      if (gap > this.gapThreshold && this.debugMode) {
+        console.warn(`🚨 INTERACTION GAP DETECTED: ${gap}ms between ${this.interactionTimeline[this.interactionTimeline.length - 1]?.type} and ${interactionType}`);
       }
     }
-
-    // Add to queue for batch processing
-    this.logQueue.push(interactionData);
-
-    // Process immediately for critical interactions or when queue is full
-    if (options.immediate || this.logQueue.length >= this.batchSize) {
-      this.flushLogs();
-    } else {
-      this.scheduleBatchFlush();
-    }
-  }
-
-  scheduleBatchFlush() {
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
+    
+    this.interactionTimeline.push({
+      type: interactionType,
+      timestamp: now,
+      gap: this.lastInteractionTime ? now - this.lastInteractionTime : 0
+    });
+    this.lastInteractionTime = now;
+    
+    // Keep only recent timeline (last 50 interactions)
+    if (this.interactionTimeline.length > 50) {
+      this.interactionTimeline = this.interactionTimeline.slice(-50);
     }
 
-    this.batchTimer = setTimeout(() => {
-      this.flushLogs();
-    }, this.batchTimeout);
-  }
-
-  async flushLogs() {
-    if (this.logQueue.length === 0) return;
-
-    const logsToSend = [...this.logQueue];
-    this.logQueue = [];
-
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
-      this.batchTimer = null;
-    }
-
-    try {
-      // Send logs individually for now (could be optimized to batch endpoint)
-      const promises = logsToSend.map(log => this.sendLog(log));
-      await Promise.allSettled(promises);
-    } catch (error) {
-      console.warn('Error flushing logs:', error);
-      // Re-queue failed logs (optional)
-    }
-  }
-
-  async sendLog(logData) {
-    try {
-      // Debug: Log the data being sent
-      console.log('🔍 Sending log data:', {
-        interaction_type: logData.interaction_type,
-        storage_type: logData.media_data?.storage_type,
-        data_size: logData.media_data?.data?.length || 0,
-        data_preview: logData.media_data?.data ? logData.media_data.data.substring(0, 100) + '...' : 'no data'
+    if (this.debugMode) {
+      console.log(`🚀 STREAMING ${interactionType}:`, {
+        timestamp,
+        sessionId: this.sessionId,
+        replayMode: this.replayMode,
+        mediaSize: mediaData ? (typeof mediaData === 'string' ? mediaData.length : mediaData.byteLength || 'unknown') : 0,
+        queueSize: this.streamQueue.length
       });
+    }
 
+    // Create stream item for immediate processing
+    const streamItem = {
+      session_id: this.sessionId,
+      interaction_type: interactionType,
+      timestamp,
+      metadata: {
+        timestamp: timestamp,
+        frontend_logged_at: new Date().toISOString(),
+        performance_start: startTime,
+        queue_position: this.streamQueue.length,
+        ...metadata
+      },
+      mediaData,
+      options,
+      startTime
+    };
+
+    // Add to stream queue for immediate processing
+    this.streamQueue.push(streamItem);
+    
+    // Return immediately - don't block the UI
+    return Promise.resolve();
+  }
+
+  // 🚨 NEW: FAST STREAMING UPLOAD 🚨
+  async sendStreamedLog(streamItem) {
+    const { session_id, interaction_type, timestamp, metadata, mediaData, options, startTime } = streamItem;
+    
+    try {
+      // Prepare minimal payload for immediate backend storage
+      const payload = {
+        session_id,
+        interaction_type,
+        metadata: {
+          ...metadata,
+          stream_processed_at: new Date().toISOString()
+        }
+      };
+
+      // Handle media data efficiently
+      if (mediaData && this.replayMode) {
+        const storageType = options.storageType || 'cloud_storage';
+        
+        let processedData;
+        if (typeof mediaData === 'string') {
+          processedData = mediaData;
+        } else if (mediaData instanceof ArrayBuffer) {
+          processedData = btoa(String.fromCharCode(...new Uint8Array(mediaData)));
+        } else {
+          // Convert other formats
+          processedData = JSON.stringify(mediaData);
+        }
+
+        payload.media_data = {
+          storage_type: storageType,
+          data: processedData,
+          is_anonymized: options.isAnonymized || false,
+          retention_days: options.retentionDays || 1,
+          stream_upload: true // Mark as streamed upload
+        };
+        
+        if (this.debugMode && processedData.length > 100000) {
+          console.log(`🚀 Large media streaming: ${(processedData.length / 1024).toFixed(1)}KB for ${interaction_type}`);
+        }
+      }
+
+      // Send immediately with timeout for responsiveness
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch(`${this.baseUrl}/interaction-logs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(logData)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
 
-      if (!response.ok) {
-        // Enhanced error logging
-        const errorText = await response.text();
-        console.error('❌ Backend error response:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody: errorText,
-          sentData: {
-            interaction_type: logData.interaction_type,
-            storage_type: logData.media_data?.storage_type,
-            data_size: logData.media_data?.data?.length || 0
-          }
-        });
-        console.warn('Failed to send interaction log:', response.statusText);
-        return false;
-      }
+      clearTimeout(timeoutId);
+      const endTime = performance.now();
+      const duration = endTime - startTime;
 
-      return true;
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Success - update health metrics
+        this.connectionHealth.totalLogged++;
+        this.connectionHealth.actualInteractions++;
+        this.connectionHealth.consecutiveFailures = 0;
+        
+        if (this.debugMode) {
+          console.log(`✅ STREAMED ${interaction_type}:`, {
+            interactionId: result.interaction_id,
+            duration: `${duration.toFixed(1)}ms`,
+            queueRemaining: this.streamQueue.length,
+            successRate: `${((this.connectionHealth.totalLogged / this.connectionHealth.expectedInteractions) * 100).toFixed(1)}%`
+          });
+        }
+        
+        return result;
+      } else {
+        // HTTP error - but don't block other operations
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
     } catch (error) {
-      console.warn('Error sending interaction log:', error);
-      return false;
+      // Failure - update health metrics but don't block the stream
+      this.connectionHealth.totalFailed++;
+      this.connectionHealth.consecutiveFailures++;
+      
+      console.error(`🚨 STREAM FAILED ${interaction_type}:`, {
+        error: error.message,
+        duration: `${(performance.now() - startTime).toFixed(1)}ms`,
+        consecutive: this.connectionHealth.consecutiveFailures
+      });
+      
+      // Quick retry for important data (max 1 retry to avoid delays)
+      if (this.replayMode && this.connectionHealth.consecutiveFailures < 3) {
+        console.log(`🔄 Quick retry for ${interaction_type}`);
+        setTimeout(() => {
+          this.streamQueue.unshift(streamItem); // Add back to front of queue
+        }, 1000);
+      }
+      
+      throw error;
     }
   }
 
-  // Convenience methods for specific interaction types
+  // 🚨 SIMPLIFIED: HEALTH MONITORING (non-blocking) 🚨
+  startHealthMonitoring() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+    
+    this.healthCheckInterval = setInterval(() => {
+      this.checkConnectionHealth();
+    }, 5000);
+    
+    console.log('🔍 Started connection health monitoring');
+  }
+  
+  checkConnectionHealth() {
+    const now = Date.now();
+    const timeSinceLastLog = this.connectionHealth.lastLoggedAt 
+      ? now - this.connectionHealth.lastLoggedAt 
+      : null;
+    
+    if (this.debugMode && this.sessionId && !this.quietMode) {
+      console.log('🔍 STREAM HEALTH:', {
+        sessionId: this.sessionId.slice(-8),
+        lastLog: timeSinceLastLog ? `${(timeSinceLastLog/1000).toFixed(1)}s` : 'Never',
+        logged: this.connectionHealth.totalLogged,
+        failed: this.connectionHealth.totalFailed,
+        queueSize: this.streamQueue.length,
+        uploadsPending: this.pendingUploads.size
+      });
+    }
+      
+    // Alert on issues (always show critical alerts)
+    if (this.streamQueue.length > 20) {
+      console.warn('🚨 STREAM QUEUE BACKLOG: Queue has ' + this.streamQueue.length + ' items');
+    }
+    
+    if (this.connectionHealth.consecutiveFailures > 5) {
+      console.error('🚨 STREAM HEALTH CRITICAL: ' + this.connectionHealth.consecutiveFailures + ' consecutive failures');
+    }
+  }
+
+  // 🚨 FAST: CONVENIENCE METHODS (immediate return) 🚨
   logVideoFrame(frameData, metadata = {}) {
     const videoMetadata = {
       video_resolution: metadata.video_resolution || { width: 640, height: 480 },
@@ -217,7 +333,7 @@ class InteractionLogger {
       ...metadata
     };
 
-    this.logInteraction('video_frame', frameData, videoMetadata, {
+    return this.logInteraction('video_frame', frameData, videoMetadata, {
       storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
       isAnonymized: !this.replayMode,
       retentionDays: this.replayMode ? 1 : 7
@@ -226,24 +342,13 @@ class InteractionLogger {
 
   logAudioChunk(audioData, metadata = {}) {
     const audioMetadata = {
-      audio_sample_rate: 16000, // Your current audio sample rate
+      audio_sample_rate: 16000,
       audio_format: 'pcm_16bit',
       data_size_bytes: audioData ? audioData.length : 0,
       ...metadata
     };
 
-    // Check data size for replay mode
-    if (this.replayMode && audioData) {
-      const dataSizeKB = (audioData.length / 1024).toFixed(2);
-      console.log(`🎬 Logging audio chunk in replay mode: ${dataSizeKB}KB`);
-      
-      // Warn if approaching size limits (8MB warning for 10MB limit)
-      if (audioData.length > 8 * 1024 * 1024) {
-        console.warn(`⚠️ Large audio chunk detected: ${dataSizeKB}KB - may approach backend limit`);
-      }
-    }
-
-    this.logInteraction('audio_chunk', audioData, audioMetadata, {
+    return this.logInteraction('audio_chunk', audioData, audioMetadata, {
       storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
       isAnonymized: !this.replayMode,
       retentionDays: this.replayMode ? 1 : 7
@@ -256,7 +361,7 @@ class InteractionLogger {
       ...metadata
     };
 
-    this.logInteraction('text_input', textData, textMetadata, {
+    return this.logInteraction('text_input', textData, textMetadata, {
       storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
       isAnonymized: !this.replayMode,
       retentionDays: this.replayMode ? 1 : 7
@@ -264,8 +369,6 @@ class InteractionLogger {
   }
 
   logApiResponse(responseData, metadata = {}) {
-    // responseData is already an object (e.g., {mimeType: "audio/pcm;rate=24000", data: "base64string"})
-    // Don't double-stringify it
     const responseString = typeof responseData === 'string' ? responseData : JSON.stringify(responseData);
     const apiMetadata = {
       api_endpoint: 'gemini_live_api',
@@ -275,18 +378,7 @@ class InteractionLogger {
       ...metadata
     };
 
-    // Check size for replay mode logging
-    if (this.replayMode && responseString) {
-      const dataSizeMB = (responseString.length / 1024 / 1024).toFixed(2);
-      console.log(`🎬 Logging API response in replay mode: ${dataSizeMB}MB`);
-      
-      // Warn if approaching size limits
-      if (responseString.length > 8 * 1024 * 1024) {
-        console.warn(`⚠️ Large API response detected: ${dataSizeMB}MB - may approach backend limit`);
-      }
-    }
-
-    this.logInteraction('api_response', responseString, apiMetadata, {
+    return this.logInteraction('api_response', responseString, apiMetadata, {
       storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
       isAnonymized: !this.replayMode,
       retentionDays: this.replayMode ? 1 : 7
@@ -299,7 +391,7 @@ class InteractionLogger {
       ...metadata
     };
 
-    this.logInteraction('user_action', actionType, actionMetadata, {
+    return this.logInteraction('user_action', actionType, actionMetadata, {
       storageType: this.replayMode ? 'cloud_storage' : 'hash_only',
       isAnonymized: !this.replayMode,
       retentionDays: this.replayMode ? 1 : 7
@@ -314,8 +406,7 @@ class InteractionLogger {
       ...metadata
     };
 
-    this.logInteraction('error', error.message, errorMetadata, {
-      immediate: true, // Send errors immediately
+    return this.logInteraction('error', error.message, errorMetadata, {
       storageType: 'hash_only'
     });
   }
@@ -364,14 +455,6 @@ class InteractionLogger {
     console.log(`Replay mode ${enabled ? 'enabled' : 'disabled'} - ${enabled ? 'capturing full media data' : 'hash-only mode'}`);
   }
 
-  setBatchSize(size) {
-    this.batchSize = Math.max(1, size);
-  }
-
-  setBatchTimeout(timeout) {
-    this.batchTimeout = Math.max(1000, timeout);
-  }
-
   // Replay-specific methods
   async getReplayData(sessionId = null) {
     const targetSessionId = sessionId || this.sessionId;
@@ -412,10 +495,59 @@ class InteractionLogger {
 
   // Cleanup method
   destroy() {
-    this.flushLogs();
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
+    // Stop stream processor
+    if (this.streamProcessor) {
+      clearInterval(this.streamProcessor);
+      this.streamProcessor = null;
     }
+    
+    // Stop health monitoring
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+    
+    // Process any remaining items in queue
+    if (this.streamQueue.length > 0) {
+      console.log(`🚀 Flushing ${this.streamQueue.length} remaining items on destroy`);
+      this.processStreamQueue();
+    }
+  }
+
+  // 🚨 NEW: GETTER METHODS FOR COMPATIBILITY 🚨
+  getSessionId() {
+    return this.sessionId;
+  }
+
+  getReplayMode() {
+    return this.replayMode;
+  }
+
+  getConnectionHealth() {
+    return { ...this.connectionHealth };
+  }
+
+  getStreamStatus() {
+    return {
+      queueSize: this.streamQueue.length,
+      pendingUploads: this.pendingUploads.size,
+      health: this.connectionHealth,
+      isProcessing: this.streamProcessor !== null
+    };
+  }
+
+  // 🚨 NEW: HEALTH MONITORING CONTROLS 🚨
+  setQuietMode(enabled) {
+    this.quietMode = enabled;
+    console.log(`🔇 Health monitoring ${enabled ? 'silenced' : 'enabled'} (critical alerts always show)`);
+  }
+
+  enableHealthMonitoring() {
+    this.setQuietMode(false);
+  }
+
+  disableHealthMonitoring() {
+    this.setQuietMode(true);
   }
 }
 

@@ -280,6 +280,7 @@ const useAudioStreamingConfig = (updateState) => {
 // Custom hook for conversation segment processing
 const useConversationSegments = (updateState) => {
   const processIntoSegments = useCallback((logs) => {
+    console.log('🚨🚨🚨 UPDATED INTERACTIONREPLAY CODE IS RUNNING! 🚨🚨🚨');
     console.log('🎭 Processing', logs.length, 'logs into conversation segments...');
     
     // Debug: Check audio chunk distribution
@@ -311,40 +312,66 @@ const useConversationSegments = (updateState) => {
     const segments = [];
     let currentSegment = null;
     let segmentId = 0;
+    
+    // Constants for filtering noise - REDUCED THRESHOLD
+    const MIN_USER_SPEECH_DURATION = 800; // Reduced from 1500ms to 800ms to be less aggressive
 
     // Group logs by conversation segments
     logs.forEach((log, index) => {
-      const { interaction_type, timestamp, interaction_metadata } = log;
-      const isUserAudio = interaction_type === 'audio_chunk' && interaction_metadata?.microphone_on === true;
-      
-      // NEW: Properly detect API audio responses
-      const isApiAudioResponse = interaction_type === 'api_response' && (
-        log.media_data?.cloud_storage_url?.includes('.pcm') ||
-        interaction_metadata?.response_type === 'audio' ||
-        (log.media_data?.cloud_storage_url && interaction_metadata?.mime_type?.includes('audio'))
-      );
-      
-      const isVideoFrame = interaction_type === 'video_frame';
+      const { 
+        id, 
+        interaction_type, 
+        timestamp, 
+        interaction_metadata 
+      } = log;
+
+      // Type detection
       const isTextInput = interaction_type === 'text_input';
-      const isTextApiResponse = interaction_type === 'api_response' && !isApiAudioResponse;
+      const isUserAudio = interaction_type === 'audio_chunk' && interaction_metadata?.microphone_on === true;
+      const isApiAudioResponse = interaction_type === 'api_response' && log.media_data;
+      const isTextApiResponse = interaction_type === 'api_response' && !log.media_data;
+      const isVideoFrame = interaction_type === 'video_frame';
       const isUserAction = interaction_type === 'user_action';
 
-      // Debug log for audio content
+      // Debug segment detection
       if (interaction_type === 'audio_chunk') {
-        console.log(`🎭 Audio chunk ${log.id}: microphone_on=${interaction_metadata?.microphone_on}, isUserAudio=${isUserAudio}`);
+        console.log(`🎭 Audio chunk ${id}: microphone_on=${interaction_metadata?.microphone_on}, isUserAudio=${isUserAudio}`);
       } else if (isApiAudioResponse) {
-        console.log(`🎭 API audio response ${log.id}: detected as audio response`);
+        console.log(`🎭 API audio response ${id}: detected as audio response`);
       } else if (isVideoFrame) {
-        console.log(`🎭 Video frame ${log.id}: timestamp=${timestamp}, microphone_on=${interaction_metadata?.microphone_on}`);
+        console.log(`🎭 Video frame ${id}: timestamp=${timestamp}, microphone_on=${interaction_metadata?.microphone_on}`);
       }
 
-      // Define segment boundaries
+      // Look ahead to see if this is a trailing single audio chunk (likely noise)
+      const nextLog = index < logs.length - 1 ? logs[index + 1] : null;
+      const isTrailingSingleAudioChunk = (
+        isUserAudio && 
+        currentSegment && 
+        currentSegment.type === 'api_response' &&
+        (!nextLog || nextLog.interaction_type !== 'audio_chunk' || nextLog.interaction_metadata?.microphone_on !== true)
+      );
+
+      // Define segment boundaries (improved to prevent trailing noise segments)
       const isSegmentStart = (
         isTextInput || 
         (isUserAction && interaction_metadata?.action_type === 'audio_stream_start') ||
-        (isUserAudio && (!currentSegment || currentSegment.type !== 'user_speech')) ||
+        (isUserAudio && !isTrailingSingleAudioChunk && (!currentSegment || currentSegment.type !== 'user_speech')) ||
         (isApiAudioResponse && (!currentSegment || currentSegment.type !== 'api_response'))
       );
+
+      // Handle trailing audio chunks by adding them to current API response segment
+      if (isTrailingSingleAudioChunk) {
+        console.log(`🎭 ⚠️  Detected trailing single audio chunk ${id} after API response - adding to current segment instead of creating new segment`);
+        currentSegment.logs.push(log);
+        currentSegment.audioChunks.push(log);
+        currentSegment.endTime = timestamp;
+        currentSegment.metadata.chunkCount++;
+        if (log.media_data?.data_size_bytes) {
+          currentSegment.metadata.totalBytes += log.media_data.data_size_bytes;
+        }
+        console.log(`🎭 Added trailing audio to segment ${currentSegment.id}: ${currentSegment.audioChunks.length} chunks`);
+        return; // Skip the rest of the processing for this log
+      }
 
       // Create new segment if needed
       if (isSegmentStart || !currentSegment) {
@@ -405,14 +432,104 @@ const useConversationSegments = (updateState) => {
       console.log(`🎭 Finalized final segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.audioChunks.length} audio, ${currentSegment.videoFrames.length} video, ${currentSegment.duration}ms`);
     }
 
-    console.log('🎭 Created', segments.length, 'conversation segments:', 
-      segments.map(s => `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`));
+    // ============================================
+    // 🚨 FILTERING COMPLETELY REMOVED FOR DEBUGGING 🚨
+    // ============================================
+    console.log(`🚨🚨🚨 FILTERING DISABLED - ALL SEGMENTS WILL BE USED (Updated Code Running!) 🚨🚨🚨`);
+    console.log(`🎭 Using all ${segments.length} segments without any filtering`);
+    
+    const filteredSegments = segments; // Use ALL segments without any filtering
+
+    // MERGE CONSECUTIVE API RESPONSE SEGMENTS for smooth playback
+    console.log(`🎭 🔗 MERGING consecutive API response segments for smooth playback...`);
+    const mergedSegments = [];
+    let currentMergedSegment = null;
+    
+    filteredSegments.forEach((segment, index) => {
+      if (segment.type === 'api_response') {
+        if (currentMergedSegment && currentMergedSegment.type === 'api_response') {
+          // Merge this API response with the previous one
+          console.log(`🎭 🔗 Merging API response segment ${segment.id} into merged segment ${currentMergedSegment.id}`);
+          
+          // Extend the merged segment
+          currentMergedSegment.logs.push(...segment.logs);
+          currentMergedSegment.audioChunks.push(...segment.audioChunks);
+          currentMergedSegment.videoFrames.push(...segment.videoFrames);
+          currentMergedSegment.endTime = segment.endTime;
+          // FIX: Calculate duration as sum of actual audio content, not wall-clock time span
+          currentMergedSegment.duration += segment.duration; // Add this segment's actual duration
+          currentMergedSegment.metadata.chunkCount += segment.metadata.chunkCount;
+          currentMergedSegment.metadata.totalBytes += segment.metadata.totalBytes;
+          
+          // Add the original segment IDs to track what was merged
+          if (!currentMergedSegment.mergedSegmentIds) {
+            currentMergedSegment.mergedSegmentIds = [currentMergedSegment.originalId];
+          }
+          currentMergedSegment.mergedSegmentIds.push(segment.id);
+          
+        } else {
+          // Start a new merged API response segment
+          currentMergedSegment = {
+            ...segment,
+            originalId: segment.id,
+            id: `merged_api_${segment.id}`,
+            mergedSegmentIds: []
+          };
+          mergedSegments.push(currentMergedSegment);
+          console.log(`🎭 🔗 Started new merged API response segment: ${currentMergedSegment.id}`);
+        }
+      } else {
+        // Non-API response segment - add as-is and reset merge tracking
+        mergedSegments.push(segment);
+        currentMergedSegment = null;
+        console.log(`🎭 🔗 Added non-API segment: ${segment.type} ${segment.id}`);
+      }
+    });
+    
+    console.log(`🎭 🔗 Merging complete: ${filteredSegments.length} segments → ${mergedSegments.length} segments`);
+    console.log(`🎭 🔗 Merged segments:`, mergedSegments.map(s => {
+      if (s.mergedSegmentIds && s.mergedSegmentIds.length > 0) {
+        return `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms) [merged: ${s.mergedSegmentIds.join(',')}]`;
+      } else {
+        return `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`;
+      }
+    }));
+
+    console.log('🎭 Created', mergedSegments.length, 'conversation segments (after filtering and merging):', 
+      mergedSegments.map(s => `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`));
+      
+    // DETAILED DEBUG: Show exact segment breakdown for troubleshooting
+    console.log('🎭 🔍 DETAILED SEGMENT BREAKDOWN:');
+    mergedSegments.forEach((segment, index) => {
+      const durationSec = (segment.duration / 1000).toFixed(2);
+      const startTime = new Date(segment.startTime).toLocaleTimeString();
+      const endTime = new Date(segment.endTime).toLocaleTimeString();
+      
+      console.log(`🎭 📋 Segment ${index + 1}/${mergedSegments.length}: ${segment.type.toUpperCase()}`);
+      console.log(`     ⏱️  Duration: ${durationSec}s (${segment.duration}ms)`);
+      console.log(`     🕐 Time: ${startTime} → ${endTime}`);
+      console.log(`     🎵 Audio chunks: ${segment.audioChunks.length}`);
+      console.log(`     📹 Video frames: ${segment.videoFrames.length}`);
+      console.log(`     🆔 ID: ${segment.id} ${segment.mergedSegmentIds ? `[merged: ${segment.mergedSegmentIds.join(',')}]` : ''}`);
+      
+      if (segment.type === 'user_speech' && segment.audioChunks.length > 0) {
+        const firstChunk = segment.audioChunks[0];
+        const lastChunk = segment.audioChunks[segment.audioChunks.length - 1];
+        console.log(`     🎤 User speech: ${firstChunk.id} → ${lastChunk.id} (${segment.audioChunks.length} chunks)`);
+      }
+      
+      if (segment.type === 'api_response' && segment.audioChunks.length > 0) {
+        const firstChunk = segment.audioChunks[0];
+        const lastChunk = segment.audioChunks[segment.audioChunks.length - 1];
+        console.log(`     🤖 API response: ${firstChunk.id} → ${lastChunk.id} (${segment.audioChunks.length} chunks)`);
+      }
+    });
       
     // Additional debug: show which segments have video
-    const segmentsWithVideo = segments.filter(s => s.videoFrames.length > 0);
-    console.log(`🎭 Segments with video (${segmentsWithVideo.length}/${segments.length}):`, segmentsWithVideo.map(s => `Segment ${s.id} (${s.type}): ${s.videoFrames.length} frames`));
+    const segmentsWithVideo = mergedSegments.filter(s => s.videoFrames.length > 0);
+    console.log(`🎭 Merged segments with video (${segmentsWithVideo.length}/${mergedSegments.length}):`, segmentsWithVideo.map(s => `Segment ${s.id} (${s.type}): ${s.videoFrames.length} frames`));
 
-    return segments;
+    return mergedSegments;
   }, []);
 
   const createSegmentAudio = useCallback(async (segment, audioCache) => {
@@ -420,6 +537,7 @@ const useConversationSegments = (updateState) => {
 
     try {
       console.log(`🎵 Creating unified audio for ${segment.type} segment with ${segment.audioChunks.length} chunks`);
+      console.log(`🎵 Segment duration: ${(segment.duration / 1000).toFixed(2)}s, ID: ${segment.id}`);
       
       // Get all cached audio buffers for this segment
       const audioBuffers = segment.audioChunks
@@ -431,37 +549,116 @@ const useConversationSegments = (updateState) => {
         return null;
       }
 
-      // Create unified audio buffer by concatenating all chunk buffers
+      console.log(`🎵 Found ${audioBuffers.length}/${segment.audioChunks.length} cached audio buffers`);
+
+      // Calculate total duration and samples
       const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+      const totalDuration = audioBuffers.reduce((sum, buffer) => sum + buffer.duration, 0);
       const sampleRate = segment.metadata.sampleRate;
       
+      console.log(`🎵 Total samples: ${totalSamples}, Total duration: ${totalDuration.toFixed(3)}s, Sample rate: ${sampleRate}Hz`);
+      
+      // SAFETY CHECK: Prevent massive audio buffers that can cause corruption
+      const MAX_BUFFER_DURATION = 30; // 30 seconds max
+      const MAX_CHUNK_COUNT = 150; // Increased from 50 to handle longer Gemini responses
+      
+      if (totalDuration > MAX_BUFFER_DURATION) {
+        console.warn(`🎵 ⚠️  Segment audio too long (${totalDuration.toFixed(2)}s > ${MAX_BUFFER_DURATION}s) - using first ${MAX_BUFFER_DURATION}s only`);
+        // Truncate to prevent corruption
+        let accumulatedDuration = 0;
+        const truncatedBuffers = [];
+        
+        for (const buffer of audioBuffers) {
+          if (accumulatedDuration + buffer.duration <= MAX_BUFFER_DURATION) {
+            truncatedBuffers.push(buffer);
+            accumulatedDuration += buffer.duration;
+          } else {
+            console.warn(`🎵 ⚠️  Truncating merged segment at ${accumulatedDuration.toFixed(2)}s`);
+            break;
+          }
+        }
+        
+        return await createTruncatedSegmentAudio(truncatedBuffers, sampleRate, segment.type);
+      }
+      
+      if (audioBuffers.length > MAX_CHUNK_COUNT) {
+        console.warn(`🎵 ⚠️  Too many chunks (${audioBuffers.length} > ${MAX_CHUNK_COUNT}) - using first ${MAX_CHUNK_COUNT} chunks only`);
+        const truncatedBuffers = audioBuffers.slice(0, MAX_CHUNK_COUNT);
+        return await createTruncatedSegmentAudio(truncatedBuffers, sampleRate, segment.type);
+      }
+
       // Create new Web Audio API buffer
       const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
       const unifiedBuffer = audioContext.createBuffer(1, totalSamples, sampleRate);
       const channelData = unifiedBuffer.getChannelData(0);
 
-      // Concatenate all audio chunks
+      // Concatenate all audio chunks with detailed logging
       let offset = 0;
-      audioBuffers.forEach(buffer => {
+      audioBuffers.forEach((buffer, index) => {
         const sourceData = buffer.getChannelData(0);
+        console.log(`🎵 Concatenating chunk ${index + 1}/${audioBuffers.length}: ${sourceData.length} samples at offset ${offset}`);
+        
+        // Safety check for buffer overflow
+        if (offset + sourceData.length > totalSamples) {
+          console.error(`🎵 ❌ Buffer overflow detected! offset: ${offset}, chunk size: ${sourceData.length}, total: ${totalSamples}`);
+          const availableSpace = totalSamples - offset;
+          const truncatedData = sourceData.slice(0, availableSpace);
+          channelData.set(truncatedData, offset);
+          console.warn(`🎵 ⚠️  Truncated chunk to fit: ${truncatedData.length} samples`);
+          return;
+        }
+        
         channelData.set(sourceData, offset);
         offset += sourceData.length;
       });
 
-      console.log(`🎵 Created unified audio: ${unifiedBuffer.duration.toFixed(2)}s, ${totalSamples} samples`);
+      console.log(`🎵 Created unified audio: ${unifiedBuffer.duration.toFixed(2)}s, ${totalSamples} samples (${audioBuffers.length} chunks merged)`);
       
       return {
         audioBuffer: unifiedBuffer,
         audioContext,
         duration: unifiedBuffer.duration,
-        type: segment.type
+        type: segment.type,
+        chunkCount: audioBuffers.length
       };
 
     } catch (error) {
       console.error('🚨 Failed to create segment audio:', error);
+      console.error('🚨 Segment details:', { 
+        id: segment.id, 
+        type: segment.type, 
+        duration: segment.duration, 
+        chunkCount: segment.audioChunks.length 
+      });
       return null;
     }
   }, []);
+
+  // Helper function for creating truncated segment audio
+  const createTruncatedSegmentAudio = async (audioBuffers, sampleRate, segmentType) => {
+    const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate });
+    const unifiedBuffer = audioContext.createBuffer(1, totalSamples, sampleRate);
+    const channelData = unifiedBuffer.getChannelData(0);
+
+    let offset = 0;
+    audioBuffers.forEach((buffer, index) => {
+      const sourceData = buffer.getChannelData(0);
+      channelData.set(sourceData, offset);
+      offset += sourceData.length;
+    });
+
+    console.log(`🎵 Created truncated unified audio: ${unifiedBuffer.duration.toFixed(2)}s, ${totalSamples} samples (${audioBuffers.length} chunks, truncated for safety)`);
+    
+    return {
+      audioBuffer: unifiedBuffer,
+      audioContext,
+      duration: unifiedBuffer.duration,
+      type: segmentType,
+      chunkCount: audioBuffers.length,
+      truncated: true
+    };
+  };
 
   const createSegmentVideo = useCallback((segment, videoCache) => {
     if (segment.videoFrames.length === 0) return null;
@@ -846,26 +1043,30 @@ const InteractionReplay = () => {
     console.log('🎬 Audio cache size:', state.audioCache.size);
     console.log('🎬 Video cache size:', state.videoCache.size);
     
-    // Choose replay mode based on available segments
-    if (state.conversationSegments.length > 0 && state.processedSegments.size > 0) {
-      console.log('🎭 Starting segment-based replay with', state.conversationSegments.length, 'segments');
+    // 🚨 FIX: Use segment-based playback to prevent simultaneous audio 🚨
+    if (state.conversationSegments && state.conversationSegments.length > 0 && state.processedSegments && state.processedSegments.size > 0) {
+      console.log('🎬 🎭 STARTING SEGMENT-BASED PLAYBACK - Unified audio segments');
       updateState({ 
-        replayStatus: `Starting segment-based replay of ${state.conversationSegments.length} conversation segments...`,
-        segmentReplayMode: true,
-        isPlaying: true,
-        currentSegmentIndex: 0 
-      });
-      // Fix: Pass isPlaying=true directly to avoid state timing issue
-      playNextSegment(0, true, state.conversationSegments);
-    } else {
-      console.log('🎬 Falling back to chunk-based replay');
-      updateState({ 
-        replayStatus: `Starting chunk-based replay of ${state.replayData.logs.length} interactions...`,
-        segmentReplayMode: false,
+        replayStatus: `Starting segment replay of ${state.conversationSegments.length} conversation segments...`,
         isPlaying: true,
         currentIndex: 0,
-        shouldStartPlayback: true 
+        currentSegmentIndex: 0
       });
+      playNextSegment(0, true, state.conversationSegments);
+    } else {
+      // Fallback to individual interaction playback if segments unavailable
+      console.log('🎬 📝 STARTING INDIVIDUAL INTERACTION PLAYBACK - Fallback mode');
+      updateState({ 
+        replayStatus: `Starting individual interaction replay of ${state.replayData.logs.length} interactions...`,
+        isPlaying: true,
+        currentIndex: 0
+      });
+      
+      // Sort logs by timestamp to ensure correct order
+      const sortedLogs = [...state.replayData.logs].sort((a, b) => 
+        new Date(a.timestamp) - new Date(b.timestamp)
+      );
+      playNextInteraction(0);
     }
   };
 
@@ -877,6 +1078,11 @@ const InteractionReplay = () => {
     updateState({ currentApiResponse: '' });
     updateState({ currentUserAction: '' });
     updateState({ replayStatus: 'Replay stopped' });
+    
+    // Stop raw playback if active
+    if (state.rawPlaybackControl?.stop) {
+      state.rawPlaybackControl.stop();
+    }
     
     if (playbackTimeoutRef.current) {
       clearTimeout(playbackTimeoutRef.current);
@@ -1148,6 +1354,8 @@ const InteractionReplay = () => {
             // Insert after the video element
             videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
             console.log('🎬 Created new image element');
+          } else {
+            console.log(`📹 Using existing image element`);
           }
           
           // Clean up previous image URL
@@ -1742,6 +1950,77 @@ const InteractionReplay = () => {
       console.warn(`📹 No frames available for video playback`);
     }
   };
+
+  // Debug test function - add this after the component definition
+  const testSegmentFiltering = () => {
+    console.log('🧪 ===== TESTING SEGMENT FILTERING IN INTERACTIONREPLAY =====');
+    
+    // Mock problematic data similar to the session
+    const testLogs = [
+      {
+        id: 1,
+        interaction_type: 'audio_chunk',
+        timestamp: '2025-05-31T23:52:48.962553',
+        interaction_metadata: { microphone_on: true, audio_sample_rate: 16000 }
+      },
+      {
+        id: 2,
+        interaction_type: 'audio_chunk',
+        timestamp: '2025-05-31T23:52:48.964553', // 2ms later
+        interaction_metadata: { microphone_on: true, audio_sample_rate: 16000 }
+      },
+      {
+        id: 3,
+        interaction_type: 'api_response',
+        timestamp: '2025-05-31T23:52:58.862340',
+        media_data: { cloud_storage_url: 'test.pcm' },
+        interaction_metadata: { response_type: 'audio' }
+      },
+      {
+        id: 4,
+        interaction_type: 'audio_chunk',
+        timestamp: '2025-05-31T23:53:02.809097',
+        interaction_metadata: { microphone_on: true, audio_sample_rate: 16000 }
+      },
+      {
+        id: 5,
+        interaction_type: 'audio_chunk',
+        timestamp: '2025-05-31T23:53:02.827097', // 18ms later
+        interaction_metadata: { microphone_on: true, audio_sample_rate: 16000 }
+      }
+    ];
+    
+    console.log('🧪 Testing with mock logs that should create short user speech segments...');
+    const result = processIntoSegments(testLogs);
+    
+    console.log('🧪 Result segments:', result);
+    const userSpeechSegments = result.filter(s => s.type === 'user_speech');
+    const shortSegments = userSpeechSegments.filter(s => s.duration < 500);
+    
+    console.log(`🧪 User speech segments found: ${userSpeechSegments.length}`);
+    console.log(`🧪 Short user speech segments (< 500ms): ${shortSegments.length}`);
+    
+    if (shortSegments.length === 0) {
+      console.log('🧪 ✅ FILTERING IS WORKING: No short segments remain');
+    } else {
+      console.log('🧪 ❌ FILTERING NOT WORKING: Short segments still exist:', shortSegments);
+    }
+    
+    return result;
+  };
+
+  // Export test function to window for console access
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.testSegmentFiltering = testSegmentFiltering;
+      window.debugInteractionReplay = {
+        processIntoSegments,
+        testSegmentFiltering,
+        currentState: state,
+        conversationSegments: state.conversationSegments
+      };
+    }
+  }, [state.conversationSegments]);
 
   return (
     <div className="interaction-replay">

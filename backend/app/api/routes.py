@@ -434,93 +434,178 @@ def log_interaction():
             )
             db.session.add(interaction_metadata)
         
+        # 🚨 NEW: FAST TRACK FOR IMMEDIATE DATABASE STORAGE 🚨
+        media_data_record = None
+        background_upload_needed = False
+        
         # Handle media data if provided
         media_data_info = data.get('media_data')
         if media_data_info:
             storage_type = media_data_info.get('storage_type', 'hash_only')
-            
-            # Get interaction type for file extension logic (move this outside nested blocks)
             interaction_type = data['interaction_type']
             
-            media_data = InteractionMediaData(
+            media_data_record = InteractionMediaData(
                 interaction_log_id=interaction_log.id,
                 storage_type=storage_type,
                 is_anonymized=media_data_info.get('is_anonymized', False),
                 retention_until=datetime.utcnow() + timedelta(days=media_data_info.get('retention_days', 7))
             )
             
-            # Handle different storage types
-            if (storage_type == 'inline' or storage_type == 'cloud_storage') and 'data' in media_data_info:
-                # For replay mode, upload to GCS instead of storing inline
+            # Fast path: immediate database storage with background upload
+            if (storage_type == 'cloud_storage') and 'data' in media_data_info:
+                # Generate hash immediately for database
                 if isinstance(media_data_info['data'], str):
                     try:
-                        # For API responses that are JSON, handle differently
+                        # Process data for hash generation
                         if interaction_type == 'api_response':
-                            # Try to parse as JSON first to extract base64 data
                             try:
                                 json_data = json.loads(media_data_info['data'])
                                 if isinstance(json_data, dict) and 'data' in json_data:
-                                    # Extract the actual base64 data from JSON
                                     base64_data = json_data['data']
-                                    
-                                    # Validate and fix base64 padding if necessary
-                                    # Base64 strings should be multiples of 4 characters
+                                    # Fix padding if needed
                                     missing_padding = len(base64_data) % 4
                                     if missing_padding != 0:
-                                        padding_needed = 4 - missing_padding
-                                        base64_data += '=' * padding_needed
-                                        current_app.logger.warning(f"Fixed base64 padding: added {padding_needed} '=' characters")
-                                    
-                                    try:
-                                        decoded_data = base64.b64decode(base64_data)
-                                    except Exception as b64_error:
-                                        current_app.logger.error(f"Failed to decode base64 data: {str(b64_error)}")
-                                        # Fallback: store as text if base64 decode fails
-                                        decoded_data = media_data_info['data'].encode('utf-8')
-                                        file_extension = 'json'
-                                        content_type = 'application/json'
-                                    else:
-                                        file_extension = 'pcm'  # Based on the mimeType
-                                        content_type = json_data.get('mimeType', 'audio/pcm')
+                                        base64_data += '=' * (4 - missing_padding)
+                                    decoded_data = base64.b64decode(base64_data)
                                 else:
-                                    # Store as JSON if it's not media data
                                     decoded_data = media_data_info['data'].encode('utf-8')
-                                    file_extension = 'json'
-                                    content_type = 'application/json'
-                            except (json.JSONDecodeError, KeyError):
-                                # If not JSON, try as regular base64
+                            except (json.JSONDecodeError, KeyError, Exception):
+                                # Fallback for non-JSON or decode errors
                                 try:
-                                    # Validate and fix base64 padding if necessary
                                     base64_data = media_data_info['data']
                                     missing_padding = len(base64_data) % 4
                                     if missing_padding != 0:
-                                        padding_needed = 4 - missing_padding
-                                        base64_data += '=' * padding_needed
-                                        current_app.logger.warning(f"Fixed non-JSON base64 padding: added {padding_needed} '=' characters")
-                                    
+                                        base64_data += '=' * (4 - missing_padding)
+                                    decoded_data = base64.b64decode(base64_data)
+                                except Exception:
+                                    decoded_data = media_data_info['data'].encode('utf-8')
+                        else:
+                            # For audio/video chunks
+                            try:
+                                base64_data = media_data_info['data']
+                                missing_padding = len(base64_data) % 4
+                                if missing_padding != 0:
+                                    base64_data += '=' * (4 - missing_padding)
+                                decoded_data = base64.b64decode(base64_data)
+                            except Exception:
+                                decoded_data = media_data_info['data'].encode('utf-8')
+                        
+                        # Store hash immediately
+                        media_data_record.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                        
+                        # Mark for background upload but store locally temporarily
+                        media_data_record.cloud_storage_url = f"pending_upload_{interaction_log.id}"
+                        background_upload_needed = True
+                        
+                        current_app.logger.info(f"Queued {interaction_type} for background upload (size: {len(decoded_data)} bytes)")
+                        
+                        # 🚨 TEMPORARY FIX: Disable background uploads until GCS threading is fixed 🚨
+                        # Force all storage to hash-only mode to ensure replay works
+                        # media_data_record.storage_type = 'hash_only'
+                        # media_data_record.cloud_storage_url = None
+                        # background_upload_needed = False
+                        # 
+                        # current_app.logger.info(f"Stored {interaction_type} as hash-only (background upload disabled)")
+                        
+                    except Exception as e:
+                        current_app.logger.error(f"Error processing media data: {str(e)}")
+                        # Fallback to hash-only
+                        media_data_record.storage_type = 'hash_only'
+                        if 'data' in media_data_info:
+                            try:
+                                decoded_data = base64.b64decode(media_data_info['data'])
+                                media_data_record.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                            except:
+                                media_data_record.data_hash = hashlib.sha256(media_data_info['data'].encode()).hexdigest()
+            
+            elif storage_type == 'hash_only' and 'data' in media_data_info:
+                # Hash-only storage (immediate)
+                if isinstance(media_data_info['data'], str):
+                    try:
+                        decoded_data = base64.b64decode(media_data_info['data'])
+                        media_data_record.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                    except:
+                        media_data_record.data_hash = hashlib.sha256(media_data_info['data'].encode()).hexdigest()
+            
+            elif storage_type == 'file_path' and 'file_path' in media_data_info:
+                media_data_record.file_path = media_data_info['file_path']
+                if 'data' in media_data_info:
+                    try:
+                        decoded_data = base64.b64decode(media_data_info['data'])
+                        media_data_record.data_hash = hashlib.sha256(decoded_data).hexdigest()
+                    except:
+                        pass
+            
+            db.session.add(media_data_record)
+        
+        # 🚨 COMMIT TO DATABASE IMMEDIATELY 🚨
+        db.session.commit()
+        
+        # Get the committed interaction ID
+        interaction_id = interaction_log.id
+        
+        # 🚨 BACKGROUND UPLOAD PROCESSING 🚨
+        if background_upload_needed and media_data_record:
+            # Use threading to handle upload asynchronously
+            import threading
+            
+            # Get the real Flask app object BEFORE starting the thread
+            app_obj = current_app._get_current_object()
+            
+            def background_gcs_upload(app, interaction_id, media_data_record_id, media_data_info, interaction_type, session_id):
+                """Background function to handle GCS upload"""
+                try:
+                    # Use the passed Flask app object in background thread
+                    with app.app_context():
+                        # Get fresh database session for background thread
+                        from app import db as bg_db
+                        from app.models import InteractionMediaData as BgInteractionMediaData
+                        
+                        bg_media_data = bg_db.session.get(BgInteractionMediaData, media_data_record_id)
+                        if not bg_media_data:
+                            app.logger.error(f"Background upload: Media data {media_data_record_id} not found")
+                            return
+                        
+                        app.logger.info(f"Starting background upload for interaction {interaction_id}")
+                        
+                        # Recreate the upload data
+                        decoded_data = None
+                        if interaction_type == 'api_response':
+                            try:
+                                json_data = json.loads(media_data_info['data'])
+                                if isinstance(json_data, dict) and 'data' in json_data:
+                                    base64_data = json_data['data']
+                                    missing_padding = len(base64_data) % 4
+                                    if missing_padding != 0:
+                                        base64_data += '=' * (4 - missing_padding)
+                                    decoded_data = base64.b64decode(base64_data)
+                                    file_extension = 'pcm'
+                                    content_type = json_data.get('mimeType', 'audio/pcm')
+                                else:
+                                    decoded_data = media_data_info['data'].encode('utf-8')
+                                    file_extension = 'json'
+                                    content_type = 'application/json'
+                            except Exception:
+                                try:
+                                    base64_data = media_data_info['data']
+                                    missing_padding = len(base64_data) % 4
+                                    if missing_padding != 0:
+                                        base64_data += '=' * (4 - missing_padding)
                                     decoded_data = base64.b64decode(base64_data)
                                     file_extension = 'json'
                                     content_type = 'application/json'
-                                except Exception as b64_error:
-                                    current_app.logger.error(f"Failed to decode non-JSON base64: {str(b64_error)}")
-                                    # Final fallback: store as text
+                                except Exception:
                                     decoded_data = media_data_info['data'].encode('utf-8')
                                     file_extension = 'txt'
                                     content_type = 'text/plain'
                         else:
-                            # For non-API responses, decode base64 data directly
                             try:
-                                # Validate and fix base64 padding if necessary
                                 base64_data = media_data_info['data']
                                 missing_padding = len(base64_data) % 4
                                 if missing_padding != 0:
-                                    padding_needed = 4 - missing_padding
-                                    base64_data += '=' * padding_needed
-                                    current_app.logger.warning(f"Fixed {interaction_type} base64 padding: added {padding_needed} '=' characters")
-                                
+                                    base64_data += '=' * (4 - missing_padding)
                                 decoded_data = base64.b64decode(base64_data)
                                 
-                                # Determine file extension based on interaction type
                                 if interaction_type == 'audio_chunk':
                                     file_extension = 'pcm'
                                     content_type = 'audio/pcm'
@@ -530,73 +615,66 @@ def log_interaction():
                                 else:
                                     file_extension = 'bin'
                                     content_type = 'application/octet-stream'
-                            except Exception as b64_error:
-                                current_app.logger.error(f"Failed to decode {interaction_type} base64: {str(b64_error)}")
-                                # Fallback: store as text
+                            except Exception:
                                 decoded_data = media_data_info['data'].encode('utf-8')
                                 file_extension = 'txt'
                                 content_type = 'text/plain'
                         
-                        # Create a unique filename
-                        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                        session_short = data['session_id'][-8:]  # Last 8 chars of session ID
-                        filename = f"interactions/{timestamp}_{session_short}_{interaction_type}_{interaction_log.id}.{file_extension}"
+                        if decoded_data:
+                            # Create filename and upload
+                            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                            session_short = session_id[-8:]
+                            filename = f"interactions/{timestamp}_{session_short}_{interaction_type}_{interaction_id}.{file_extension}"
+                            
+                            temp_file = BytesIO(decoded_data)
+                            temp_file.name = filename
+                            temp_file.content_type = content_type
+                            
+                            # Upload to GCS with extended expiration for replay data
+                            gcs_url, _ = GCSStorageService.upload_file(temp_file, filename, expiration_hours=168)
+                            
+                            # Update database with final URL
+                            bg_media_data.cloud_storage_url = gcs_url
+                            bg_db.session.commit()
+                            
+                            app.logger.info(f"Background upload completed: {filename} -> {gcs_url[:100]}...")
                         
-                        # Create a temporary file-like object for GCS upload
-                        temp_file = BytesIO(decoded_data)
-                        temp_file.name = filename
-                        temp_file.content_type = content_type
-                        
-                        # Upload to GCS
-                        try:
-                            gcs_url, _ = GCSStorageService.upload_file(temp_file, filename)
-                            
-                            # Store GCS URL and hash
-                            media_data.cloud_storage_url = gcs_url
-                            media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
-                            media_data.storage_type = 'cloud_storage'  # Update storage type
-                            
-                            current_app.logger.info(f"Uploaded {interaction_type} to GCS: {filename}")
-                            
-                        except Exception as gcs_error:
-                            current_app.logger.error(f"GCS upload failed: {str(gcs_error)}")
-                            # Fallback to hash-only storage
-                            media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
-                            media_data.storage_type = 'hash_only'
-                            
-                    except Exception as e:
-                        return jsonify({"error": f"Invalid base64 data: {str(e)}"}), 400
-            
-            elif storage_type == 'hash_only' and 'data' in media_data_info:
-                # Only store hash for privacy
-                if isinstance(media_data_info['data'], str):
+                except Exception as gcs_error:
+                    app.logger.error(f"Background GCS upload failed for interaction {interaction_id}: {str(gcs_error)}")
+                    # Update database to reflect failure (keep hash-only)
                     try:
-                        decoded_data = base64.b64decode(media_data_info['data'])
-                        media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
-                    except:
-                        # Assume it's already text, hash directly
-                        media_data.data_hash = hashlib.sha256(media_data_info['data'].encode()).hexdigest()
+                        with app.app_context():
+                            from app import db as bg_db
+                            from app.models import InteractionMediaData as BgInteractionMediaData
+                            
+                            bg_media_data = bg_db.session.get(BgInteractionMediaData, media_data_record_id)
+                            if bg_media_data:
+                                bg_media_data.storage_type = 'hash_only'
+                                bg_media_data.cloud_storage_url = None
+                                bg_db.session.commit()
+                                app.logger.info(f"Fallback: Set interaction {interaction_id} to hash-only after upload failure")
+                    except Exception as db_error:
+                        # If we can't even access the app context here, just log the error
+                        app.logger.error(f"Failed to update database after upload failure: {str(db_error)}")
             
-            elif storage_type == 'file_path' and 'file_path' in media_data_info:
-                media_data.file_path = media_data_info['file_path']
-                # Generate hash if data is provided
-                if 'data' in media_data_info:
-                    try:
-                        decoded_data = base64.b64decode(media_data_info['data'])
-                        media_data.data_hash = hashlib.sha256(decoded_data).hexdigest()
-                    except:
-                        pass
+            # Start background upload with all necessary parameters
+            upload_thread = threading.Thread(
+                target=background_gcs_upload, 
+                args=(app_obj, interaction_id, media_data_record.id, media_data_info, interaction_type, data['session_id']),
+                daemon=True
+            )
+            upload_thread.start()
             
-            db.session.add(media_data)
+            current_app.logger.info(f"Started background upload thread for interaction {interaction_id}")
         
-        db.session.commit()
-        
-        # Update session summary
+        # Update session summary (quick operation)
         _update_session_summary(data['session_id'], data['interaction_type'], metadata_data)
         
+        # 🚨 RETURN IMMEDIATELY (don't wait for upload) 🚨
         return jsonify({
             "message": "Interaction logged successfully",
-            "interaction_id": interaction_log.id
+            "interaction_id": interaction_id,
+            "background_upload": background_upload_needed
         }), 201
         
     except Exception as e:
@@ -1058,3 +1136,60 @@ def regenerate_session_urls(session_id):
         db.session.rollback()
         current_app.logger.error(f"Error regenerating URLs for session {session_id}: {str(e)}")
         return jsonify({"error": f"Failed to regenerate URLs: {str(e)}"}), 500 
+
+@api.route('/interaction-logs/recover-uploads/<session_id>', methods=['POST'])
+def recover_failed_uploads(session_id):
+    """Recover from failed background uploads by reprocessing pending uploads"""
+    try:
+        # Find all interactions with pending uploads
+        interactions = db.session.query(InteractionLog)\
+            .join(InteractionMediaData)\
+            .filter(
+                InteractionLog.session_id == session_id,
+                InteractionMediaData.cloud_storage_url.like('pending_upload_%')
+            ).all()
+        
+        if not interactions:
+            return jsonify({
+                "message": "No pending uploads found for this session",
+                "recovered": 0
+            }), 200
+        
+        recovered_count = 0
+        failed_count = 0
+        errors = []
+        
+        for interaction in interactions:
+            try:
+                media_data = interaction.media_data
+                
+                current_app.logger.info(f"Attempting to recover upload for interaction {interaction.id}")
+                
+                # Set storage to hash-only for now (immediate fix)
+                media_data.storage_type = 'hash_only'
+                media_data.cloud_storage_url = None
+                
+                recovered_count += 1
+                current_app.logger.info(f"Recovered interaction {interaction.id} by switching to hash-only storage")
+                
+            except Exception as e:
+                failed_count += 1
+                error_msg = f"Failed to recover interaction {interaction.id}: {str(e)}"
+                errors.append(error_msg)
+                current_app.logger.error(error_msg)
+        
+        # Commit all changes
+        if recovered_count > 0:
+            db.session.commit()
+        
+        return jsonify({
+            "message": f"Recovery completed for session {session_id}",
+            "recovered": recovered_count,
+            "failed": failed_count,
+            "errors": errors if failed_count > 0 else None
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error recovering uploads for session {session_id}: {str(e)}")
+        return jsonify({"error": f"Failed to recover uploads: {str(e)}"}), 500 

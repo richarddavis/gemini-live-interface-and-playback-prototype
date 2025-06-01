@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import './App.css';
-import ChatHeader from './components/ChatHeader';
 import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
@@ -24,7 +23,6 @@ function App() {
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [isReplayMode, setIsReplayMode] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   
   // New modal states
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
@@ -413,10 +411,6 @@ function App() {
     setIsMobileSidebarOpen(!isMobileSidebarOpen);
   };
 
-  const handleHeaderCollapseToggle = () => {
-    setIsHeaderCollapsed(!isHeaderCollapsed);
-  };
-
   // Close mobile sidebar when clicking overlay
   const handleOverlayClick = () => {
     setIsMobileSidebarOpen(false);
@@ -463,14 +457,6 @@ function App() {
       />
       
       <div className="App-main-content">
-        <ChatHeader 
-          isReplayMode={isReplayMode}
-          onToggleReplayMode={handleToggleReplayMode}
-          onMobileSidebarToggle={handleMobileSidebarToggle}
-          onHeaderCollapseToggle={handleHeaderCollapseToggle}
-          isHeaderCollapsed={isHeaderCollapsed}
-        />
-        
         {isLiveMode ? (
           <div className="live-mode-container">
             <GeminiLiveDirect 

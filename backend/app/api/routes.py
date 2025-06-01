@@ -398,21 +398,52 @@ def log_interaction():
         user_agent = request.headers.get('User-Agent')
         ip_address = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR'))
         
+        # Check if frontend provided a more precise timestamp
+        metadata_data = data.get('metadata', {})
+        frontend_timestamp = metadata_data.get('timestamp')
+        if frontend_timestamp:
+            try:
+                # Parse frontend timestamp (ISO format)
+                parsed_timestamp = datetime.fromisoformat(frontend_timestamp.replace('Z', '+00:00'))
+                interaction_timestamp = parsed_timestamp.replace(tzinfo=None)  # Remove timezone for SQLite compatibility
+                current_app.logger.info(f"Using frontend timestamp: {frontend_timestamp} -> {interaction_timestamp}")
+            except (ValueError, AttributeError) as e:
+                # Fallback to current time if parsing fails
+                interaction_timestamp = datetime.utcnow()
+                current_app.logger.warning(f"Failed to parse frontend timestamp '{frontend_timestamp}': {e}")
+        else:
+            interaction_timestamp = datetime.utcnow()
+            current_app.logger.debug("No frontend timestamp provided, using current time")
+        
         # Create main interaction log
         interaction_log = InteractionLog(
             session_id=data['session_id'],
             chat_session_id=data.get('chat_session_id'),
             interaction_type=data['interaction_type'],
             user_agent=user_agent,
-            ip_address=ip_address
+            ip_address=ip_address,
+            timestamp=interaction_timestamp  # Use the precise timestamp
         )
         
         db.session.add(interaction_log)
         db.session.flush()  # Get the ID
         
         # Add metadata if provided
-        metadata_data = data.get('metadata', {})
         if metadata_data:
+            # Prepare custom metadata from any non-standard fields
+            custom_metadata = {}
+            standard_fields = {
+                'frame_rate', 'audio_sample_rate', 'video_resolution', 'audio_format', 
+                'video_format', 'compression_quality', 'data_size_bytes', 'processing_time_ms',
+                'api_endpoint', 'api_response_time_ms', 'api_status_code', 'camera_on', 
+                'microphone_on', 'is_connected', 'timestamp', 'frontend_logged_at'
+            }
+            
+            # Store any additional fields in custom_metadata
+            for key, value in metadata_data.items():
+                if key not in standard_fields:
+                    custom_metadata[key] = value
+            
             interaction_metadata = InteractionMetadata(
                 interaction_log_id=interaction_log.id,
                 frame_rate=metadata_data.get('frame_rate'),
@@ -430,7 +461,7 @@ def log_interaction():
                 camera_on=metadata_data.get('camera_on'),
                 microphone_on=metadata_data.get('microphone_on'),
                 is_connected=metadata_data.get('is_connected'),
-                custom_metadata=metadata_data.get('custom_metadata')
+                custom_metadata=custom_metadata if custom_metadata else None
             )
             db.session.add(interaction_metadata)
         
@@ -702,7 +733,7 @@ def get_interaction_logs(session_id):
         total_count = query.count()
         
         # Apply pagination
-        logs = query.order_by(InteractionLog.timestamp.desc())\
+        logs = query.order_by(InteractionLog.timestamp.asc())\
                    .offset(offset)\
                    .limit(limit)\
                    .all()

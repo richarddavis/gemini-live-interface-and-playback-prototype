@@ -183,4 +183,15 @@ backend/app/api/
 - [ ] Screen sharing support
 - [ ] Session recording/playback
 - [ ] Multi-user sessions
-- [ ] Advanced analytics dashboard 
+- [ ] Advanced analytics dashboard
+
+## 🆕 2025 Gemini-Style UI Redesign
+
+The Gemini Live Direct interface now features a complete Gemini-inspired UI overhaul:
+- **Pill-shaped message input** with SVG icons and modern action buttons
+- **Gemini-style sidebar** with active chat highlighting and provider/API key controls at the bottom
+- **Start Live** button is now in the input area for intuitive access
+- **Custom CSS** (no Bootstrap) for a clean, modern, and mobile-first look
+- **Fully mobile-responsive** with touch-friendly controls and smooth animations
+
+This redesign closely matches the look and feel of Google Gemini's official interface, providing a more intuitive and visually appealing user experience. 

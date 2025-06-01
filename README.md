@@ -26,14 +26,16 @@ Backend (Analytics Only)
 - **Session Management**: Create, switch, delete conversations
 - **Streaming Responses**: Real-time message streaming
 - **Persistent Storage**: PostgreSQL database
+- **Modern Gemini-Style UI**: Clean, pill-shaped message input, Gemini-inspired sidebar, and custom CSS (no Bootstrap)
+- **Mobile-First Design**: Fully responsive, touch-friendly controls, and smooth animations
 
 ### 🎤 Gemini Live API (Direct Connection)
 - **Real-time Voice Chat**: Natural voice conversations
 - **Video Streaming**: Camera input for visual context
-- **Multiple Voices**: Choose from 5 different AI voices
+- **Multiple Voices**: Choose from 5+ AI voices
 - **Text + Voice**: Seamless switching between modalities
 - **Session Analytics**: Usage tracking and statistics
-- **Modern UI**: Clean, responsive interface
+- **Gemini-Style UI**: Pill-shaped input, Start Live button in input area, provider/API key controls in sidebar
 
 ## 🚀 Quick Start
 
@@ -93,9 +95,7 @@ webapp_starter_cursor/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── GeminiLiveDirect.js    # Live API component
-│   │   │   ├── ChatHeader.js          # Chat controls
-│   │   │   └── ...
-│   │   └── hooks/
+│   │   └── ...
 │   └── package.json
 ├── backend/                  # Flask application
 │   ├── app/
@@ -115,16 +115,16 @@ webapp_starter_cursor/
 
 ### Traditional Chat
 1. Open http://localhost:3000
-2. Add your API keys in the header
-3. Select an LLM provider
-4. Start chatting with text, images, or videos
+2. Add your API key and select provider in the **sidebar** (bottom left)
+3. Start chatting with text, images, or videos using the modern Gemini-style input bar
 
 ### Gemini Live API
-1. Click "Toggle Live Mode" in the chat header
-2. Click "Connect to Gemini"
-3. Configure voice and response settings
-4. Enable camera/microphone as needed
-5. Start your multimodal conversation!
+1. Select Gemini as provider in the sidebar
+2. Enter your Gemini API key in the sidebar
+3. Use the **Start Live** button in the input area to begin a live session
+4. Configure voice and response settings as needed
+5. Enable camera/microphone as needed
+6. Start your multimodal conversation!
 
 ## 🔧 Configuration
 
@@ -261,6 +261,11 @@ docker-compose logs frontend
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🆕 What's New
+
+### v2.1 - Gemini-Style UI Redesign (2025)
+- ✅ Complete Gemini-inspired UI overhaul: pill-shaped message input, modern sidebar, and custom CSS
+- ✅ Start Live button moved to input area, provider/API key controls in sidebar
+- ✅ Fully mobile-responsive, touch-friendly, and visually modern
 
 ### v2.0 - Direct Gemini Live API
 - ✅ Removed complex backend proxy architecture

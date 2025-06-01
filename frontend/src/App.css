@@ -1394,4 +1394,38 @@ body {
   color: white;
 }
 
+/* Live Session Placeholder Specific Styling */
+.message-item.placeholder {
+  align-self: stretch;
+  max-width: 100%;
+  background: transparent;
+  padding: 0;
+  margin: 16px 0;
+}
 
+.message-item.placeholder .message-content {
+  width: 100%;
+}
+
+/* Ensure placeholder displays properly in message list */
+.message-list .message-item.placeholder {
+  width: 100%;
+  display: block;
+}
+
+/* Modal responsive adjustments */
+@media (max-width: 768px) {
+  .modal-container {
+    width: 95vw !important;
+    height: 95vh !important;
+    max-width: none !important;
+    max-height: none !important;
+  }
+}
+
+/* Hide modal on mobile when using separate pages */
+@media (max-width: 768px) {
+  .modal-overlay {
+    display: none;
+  }
+}

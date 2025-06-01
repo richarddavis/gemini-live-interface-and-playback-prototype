@@ -723,7 +723,7 @@ const calculatePlaybackDelay = (currentLog, nextLog, playbackSpeed, isStreamingA
   return Math.max(CONSTANTS.TIMING.MIN_DELAY, Math.min(CONSTANTS.TIMING.MAX_DELAY, timeDiff / playbackSpeed));
 };
 
-const InteractionReplay = ({ onExitReplayMode }) => {
+const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = null }) => {
   const { state, updateState, resetPlayback } = useReplayState();
   const mediaCache = useMediaCache(updateState);
   const { createStreamingConfig } = useAudioStreamingConfig(updateState);
@@ -754,10 +754,17 @@ const InteractionReplay = ({ onExitReplayMode }) => {
     [state.replayData, state.mediaCacheReady, state.isPlaying]
   );
 
-  // Load all available sessions on component mount
+  // Load specific session data if provided (for modal usage)
   useEffect(() => {
-    loadSessions();
-  }, []);
+    if (isModal && sessionData?.session_id) {
+      console.log('🎭 Modal mode: Loading specific session', sessionData.session_id);
+      console.log('🎭 Full sessionData received:', sessionData);
+      loadReplayData(sessionData.session_id);
+    } else if (!isModal) {
+      // Load all available sessions for browse mode
+      loadSessions();
+    }
+  }, [isModal, sessionData]);
 
   // Handle playback start after state updates
   useEffect(() => {
@@ -783,8 +790,16 @@ const InteractionReplay = ({ onExitReplayMode }) => {
 
   const loadReplayData = async (sessionId) => {
     updateState({ loading: true });
+    console.log('🎭 Loading replay data for session ID:', sessionId);
     try {
       const data = await interactionLogger.getReplayData(sessionId);
+      console.log('🎭 Replay data loaded:', {
+        sessionId: sessionId,
+        dataLoaded: !!data,
+        logsCount: data?.logs?.length || 0,
+        firstLogSessionId: data?.logs?.[0]?.session_id,
+        allSessionIds: [...new Set(data?.logs?.map(log => log.session_id))]
+      });
       updateState({ replayData: data });
       updateState({ currentIndex: 0 });
       updateState({ isPlaying: false });

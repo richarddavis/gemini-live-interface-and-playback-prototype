@@ -170,6 +170,35 @@ def create_session_message(session_id):
 
     return jsonify(message.to_dict()), 201
 
+@api.route('/chat_sessions/<int:session_id>/live_session_placeholder', methods=['POST'])
+def create_live_session_placeholder(session_id):
+    """Create a live session placeholder message in the chat history"""
+    ChatSession.query.get_or_404(session_id)
+    data = request.get_json()
+
+    if not data or not data.get('sessionData'):
+        return jsonify({"error": "sessionData is required"}), 400
+
+    try:
+        import json
+        session_data_json = json.dumps(data.get('sessionData'))
+        
+        # Create a system message with live session placeholder data
+        message = ChatMessage(
+            text=session_data_json,  # Store session data as JSON in text field
+            sender='system',
+            chat_session_id=session_id,
+            media_type='live_session_placeholder'  # Special media type for placeholders
+        )
+
+        db.session.add(message)
+        db.session.commit()
+
+        return jsonify(message.to_dict()), 201
+        
+    except Exception as e:
+        return jsonify({"error": f"Error creating live session placeholder: {str(e)}"}), 500
+
 @api.route('/chat_sessions/<int:session_id>/respond_llm', methods=['POST'])
 def respond_llm(session_id):
     data = request.get_json()

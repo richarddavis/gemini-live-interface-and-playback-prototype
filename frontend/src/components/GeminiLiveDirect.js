@@ -10,7 +10,7 @@ import { interactionLogger } from '../services/interactionLogger';
  * Architecture: Frontend ↔ WebSocket ↔ Google Gemini Live API
  * Backend is used only for analytics/logging.
  */
-const GeminiLiveDirect = ({ onExitLiveMode }) => {
+const GeminiLiveDirect = ({ onExitLiveMode, isModal = false, chatSessionId = null }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
@@ -19,6 +19,7 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
   const [responseMode, setResponseMode] = useState('TEXT'); // 'TEXT' or 'AUDIO'
   const [messages, setMessages] = useState([]);
   const [textInput, setTextInput] = useState('');
+  const [sessionStartTime, setSessionStartTime] = useState(null);
   
   // Audio buffering state
   const [isReceivingAudio, setIsReceivingAudio] = useState(false);
@@ -61,7 +62,7 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
       console.log('🎬 InteractionLogger instance:', interactionLogger);
       
       // Start interaction session when component mounts
-      interactionLogger.startSession();
+      interactionLogger.startNewSession(chatSessionId);
     } catch (error) {
       console.warn('⚠️ Failed to initialize interaction logging:', error);
     }
@@ -78,7 +79,7 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
         console.warn('⚠️ Failed to cleanup interaction logging:', error);
       }
     };
-  }, []);
+  }, [chatSessionId]);
 
   // Capture and send video frame to Gemini Live API
   const captureAndSendVideoFrame = useCallback(() => {
@@ -233,20 +234,99 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
     }
   }, [selectedVoice, responseMode]);
 
-  // Connect to Google Live API
-  const connectToGemini = useCallback(() => {
-    if (!API_KEY) {
-      addMessage('error', 'Google AI Studio API key not found. Please check your environment configuration.');
-      // Log error with error handling
+  // Updated disconnect with session completion logic
+  const disconnect = useCallback(async () => {
+    stopVideoFrameCapture(); // Stop sending video frames
+    
+    let sessionData = null;
+    
+    // If this is a modal, collect session analytics before disconnecting
+    if (isModal && sessionStartTime) {
       try {
-        interactionLogger.logError(new Error('API key not found'), { context: 'connection_attempt' });
-      } catch (logError) {
-        console.warn('⚠️ Failed to log error:', logError);
+        // Calculate session duration
+        const duration = Math.floor((Date.now() - sessionStartTime) / 1000);
+        
+        // Get analytics data
+        const analytics = await interactionLogger.getSessionAnalytics();
+        
+        // Prepare session data for the placeholder
+        sessionData = {
+          session_id: interactionLogger.getSessionId(),
+          duration: duration,
+          exchanges_count: messages.filter(msg => msg.type === 'gemini' || msg.type === 'user').length,
+          has_audio: messages.some(msg => msg.type === 'audio_received'),
+          has_video: isCameraOn,
+          timestamp: new Date().toISOString(),
+          voice_used: selectedVoice,
+          response_mode: responseMode,
+          analytics: analytics
+        };
+        
+        console.log('🎭 Session completed with data:', sessionData);
+      } catch (error) {
+        console.warn('⚠️ Error collecting session analytics:', error);
+        // Still create basic session data
+        sessionData = {
+          session_id: interactionLogger.getSessionId(),
+          duration: sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : 0,
+          exchanges_count: messages.filter(msg => msg.type === 'gemini' || msg.type === 'user').length,
+          has_audio: messages.some(msg => msg.type === 'audio_received'),
+          has_video: isCameraOn,
+          timestamp: new Date().toISOString(),
+          voice_used: selectedVoice,
+          response_mode: responseMode
+        };
       }
+    }
+    
+    // Perform normal disconnect logic
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    // Clean up audio buffering
+    if (audioTimeoutRef.current) {
+      clearTimeout(audioTimeoutRef.current);
+      audioTimeoutRef.current = null;
+    }
+    audioBufferRef.current = [];
+    setIsReceivingAudio(false);
+    
+    setIsConnected(false);
+    setIsMicOn(false);
+    setIsCameraOn(false);
+    setupCompleteRef.current = false;
+    logAnalytics('session_end');
+    
+    // Pass session data to parent if this is a modal
+    if (isModal && onExitLiveMode && sessionData) {
+      onExitLiveMode(sessionData);
+    } else if (onExitLiveMode) {
+      // Regular exit for non-modal usage
+      onExitLiveMode();
+    }
+  }, [logAnalytics, stopVideoFrameCapture, isModal, sessionStartTime, messages, isCameraOn, selectedVoice, responseMode, onExitLiveMode]);
+
+  // Update connectToGemini to track session start time
+  const connectToGemini = useCallback(async () => {
+    if (!API_KEY) {
+      addMessage('error', 'Google AI Studio API key is required. Please set REACT_APP_GOOGLE_AI_STUDIO_API_KEY.');
       return;
     }
 
     setIsConnecting(true);
+    setSessionStartTime(Date.now()); // Track when session starts
     setupCompleteRef.current = false;
     
     // Log connection attempt with error handling
@@ -930,46 +1010,6 @@ const GeminiLiveDirect = ({ onExitLiveMode }) => {
       addMessage('error', `Camera error: ${error.message}`);
     }
   }, [isCameraOn, addMessage, stopVideoFrameCapture]);
-
-  // Disconnect
-  const disconnect = useCallback(() => {
-    stopVideoFrameCapture(); // Stop sending video frames
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (cameraStreamRef.current) {
-      cameraStreamRef.current.getTracks().forEach(track => track.stop());
-      cameraStreamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    
-    // Clean up audio buffering
-    if (audioTimeoutRef.current) {
-      clearTimeout(audioTimeoutRef.current);
-      audioTimeoutRef.current = null;
-    }
-    audioBufferRef.current = [];
-    setIsReceivingAudio(false);
-    
-    setIsConnected(false);
-    setIsMicOn(false);
-    setIsCameraOn(false);
-    setupCompleteRef.current = false;
-    logAnalytics('session_end');
-  }, [logAnalytics, stopVideoFrameCapture]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      disconnect();
-    };
-  }, [disconnect]);
 
   return (
     <div className="gemini-live-container">

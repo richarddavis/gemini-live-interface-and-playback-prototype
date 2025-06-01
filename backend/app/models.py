@@ -67,6 +67,17 @@ class ChatMessage(db.Model):
         if self.media_url:
             result['media_url'] = self.media_url
             
+        # Handle live session placeholder data stored in text field as JSON
+        if self.media_type == 'live_session_placeholder' and self.text:
+            try:
+                import json
+                result['sessionData'] = json.loads(self.text)
+                result['type'] = 'live_session_placeholder'
+            except (json.JSONDecodeError, TypeError):
+                # Fallback if JSON parsing fails
+                result['type'] = 'live_session_placeholder'
+                result['sessionData'] = {}
+            
         return result
 
 # New models for interaction logging

@@ -1013,6 +1013,21 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
     }
   }, [isCameraOn, addMessage, stopVideoFrameCapture]);
 
+  // Handle exit - distinguish between casual exit and session completion
+  const handleExit = useCallback(() => {
+    if (!isConnected && messages.length === 0) {
+      // Casual exit - no session to save, just go back
+      console.log('🚪 Casual exit - no session data to save');
+      if (onExitLiveMode) {
+        onExitLiveMode(); // Call without session data for simple exit
+      }
+    } else {
+      // There might be session data to save - trigger disconnect
+      console.log('🚪 Exit with potential session data - triggering disconnect');
+      disconnect();
+    }
+  }, [isConnected, messages.length, onExitLiveMode, disconnect]);
+
   useImperativeHandle(ref, () => ({
     triggerDisconnect: disconnect
   }));
@@ -1022,7 +1037,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
       <div className="header">
         <div className="header-left">
           {onExitLiveMode && (
-            <button onClick={onExitLiveMode} className="exit-live-btn" title="Exit Live Mode">
+            <button onClick={handleExit} className="exit-live-btn" title="Exit Live Mode">
               ← Back to Chat
             </button>
           )}

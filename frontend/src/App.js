@@ -290,13 +290,36 @@ function App() {
     // For mobile, keep the old behavior (separate page)
     if (window.innerWidth <= 768) {
       console.log('Mobile: Toggling live mode. Current:', isLiveMode);
-      setIsLiveMode(prevMode => !prevMode);
-      setIsReplayMode(false);
-      console.log('Mobile: Live mode will be:', !isLiveMode);
+      if (isLiveMode) {
+        // Exiting live mode - trigger session completion
+        handleMobileLiveSessionExit();
+      } else {
+        // Entering live mode
+        setIsLiveMode(true);
+        setIsReplayMode(false);
+      }
     } else {
       // For desktop, open the modal
       console.log('Desktop: Opening live modal');
       setIsLiveModalOpen(true);
+    }
+  };
+
+  const handleMobileLiveSessionExit = async () => {
+    // Similar to modal close but for mobile direct page
+    if (liveSessionRef.current && liveSessionRef.current.triggerDisconnect) {
+      console.log('📱 Mobile live mode exit - triggering session completion...');
+      try {
+        await liveSessionRef.current.triggerDisconnect();
+      } catch (error) {
+        console.warn('⚠️ Error during mobile live session exit:', error);
+        // Still exit live mode even if session completion fails
+        setIsLiveMode(false);
+      }
+    } else {
+      // No active session or component not ready, just exit live mode
+      console.log('📱 Mobile live mode exit - no active session to complete');
+      setIsLiveMode(false);
     }
   };
 
@@ -339,9 +362,23 @@ function App() {
   };
 
   const handleLiveSessionComplete = async (sessionData) => {
-    // Close the modal first
-    setIsLiveModalOpen(false);
+    // This handler works for both mobile and desktop
+    const isMobile = window.innerWidth <= 768;
     
+    // Close modal if desktop, exit live mode if mobile
+    if (isMobile) {
+      setIsLiveMode(false);
+    } else {
+      setIsLiveModalOpen(false);
+    }
+    
+    // If no sessionData, this was a casual exit - no need to save anything
+    if (!sessionData) {
+      console.log('🚪 Casual exit - no session data to save');
+      return;
+    }
+    
+    // Only save session data if we have an active chat session
     if (sessionData && activeChatSessionId) {
       try {
         // Save the live session placeholder to the database
@@ -471,7 +508,7 @@ function App() {
         {isLiveMode ? (
           <div className="live-mode-container">
             <GeminiLiveDirect 
-              onExitLiveMode={handleToggleLiveMode} 
+              onExitLiveMode={handleLiveSessionComplete} 
               chatSessionId={activeChatSessionId}
               ref={liveSessionRef}
             />

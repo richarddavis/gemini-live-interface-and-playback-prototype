@@ -12,13 +12,14 @@ body {
   height: 100vh;
   overflow: hidden; /* Prevent body scroll when sidebar/chat scrolls */
   position: relative; /* Add relative positioning for mobile overlay */
+  flex-direction: column; /* Always stack header on top, then content below */
 }
 
-/* Mobile-first approach */
-@media (max-width: 768px) {
-  .App-container {
-    flex-direction: column;
-  }
+.app-body {
+  display: flex;
+  flex: 1; /* Take remaining space after header - flexbox handles this automatically */
+  overflow: hidden;
+  position: relative; /* For overlay positioning */
 }
 
 .chat-sidebar {
@@ -30,45 +31,68 @@ body {
   display: flex;
   flex-direction: column;
   border-right: 1px solid #4a184c;
-  overflow-y: auto;
-  overflow-x: hidden; /* Add this to prevent horizontal overflow from expanding */
+  overflow-x: hidden; /* Prevent horizontal overflow */
   z-index: 1000; /* Add z-index for mobile overlay */
-  transition: transform 0.3s ease; /* Add transition for smooth sliding */
-  height: 100vh; /* Ensure full height */
+  transition: all 0.3s ease; /* Add transition for smooth sliding */
+  height: 100%; /* Take full height of app-body - flexbox provides this naturally */
   box-sizing: border-box; /* Include padding in height calculation */
 }
 
-/* Mobile sidebar - overlay style */
+/* Desktop - sidebar visible by default, toggleable */
+@media (min-width: 769px) {
+  .chat-sidebar {
+    position: relative; /* Use normal flow on desktop */
+    display: flex; /* Show by default */
+    overflow-y: hidden; /* Prevent sidebar itself from scrolling on desktop */
+  }
+  
+  .chat-sidebar.sidebar-hidden {
+    display: none; /* Hide completely when toggled off */
+  }
+  
+  .App-main-content {
+    transition: none; /* No transition needed since we're not using margins */
+  }
+}
+
+/* Mobile sidebar - overlay style with proper flexbox */
 @media (max-width: 768px) {
   .chat-sidebar {
-    position: fixed;
-    top: 56px; /* Start below the header */
+    position: fixed; /* Keep fixed for overlay */
+    top: 56px; /* Start below header */
     left: 0;
+    bottom: 0; /* Extend to bottom */
     width: 85%;
     max-width: 320px;
-    height: calc(100vh - 56px); /* Adjust height to account for header */
-    height: calc(100dvh - 56px); /* Use dynamic viewport height on mobile */
-    transform: translateX(-100%);
+    transform: translateX(-100%); /* Hidden by default on mobile */
     box-shadow: 2px 0 10px rgba(0,0,0,0.3);
-    padding: 15px;
-    box-sizing: border-box;
+    height: calc(100vh - 56px); /* Explicit height to ensure proper flexbox behavior */
+    overflow-y: auto; /* Allow scrolling of entire sidebar if needed */
   }
   
   .chat-sidebar.mobile-open {
-    transform: translateX(0);
+    transform: translateX(0); /* Show when toggled on mobile */
   }
 
+  /* Ensure chat session list can scroll but doesn't push API controls off screen */
   .chat-session-list {
     margin-bottom: 15px;
+    flex: 1; /* Take available space */
+    overflow-y: auto; /* Scroll if many sessions */
+    min-height: 0; /* Allow shrinking */
   }
 
+  /* Ensure API controls stay at bottom and are always visible */
   .sidebar-api-controls {
+    flex-shrink: 0; /* Never shrink */
     padding-top: 12px;
     gap: 10px;
+    margin-top: auto; /* Push to bottom */
   }
 
   .sidebar-control-group {
     gap: 4px;
+    flex-shrink: 0; /* Never shrink */
   }
 
   .sidebar-select,
@@ -77,6 +101,11 @@ body {
     font-size: 12px;
     height: 32px;
     box-sizing: border-box;
+    flex-shrink: 0; /* Never shrink */
+  }
+  
+  .App-main-content {
+    margin-left: 0; /* No margin needed on mobile */
   }
 }
 
@@ -120,9 +149,10 @@ body {
   list-style: none;
   padding: 0;
   margin: 0;
-  flex: 1; /* Take up available space */
+  flex: 1; /* Take up available space and allow natural shrinking */
   overflow-y: auto; /* Allow scrolling if many chats */
-  margin-bottom: 10px; /* Space before API controls */
+  margin-bottom: 15px; /* Space before API controls */
+  min-height: 0; /* Important for flex child to shrink properly */
 }
 
 .chat-session-item {
@@ -196,23 +226,20 @@ body {
   color: #ff6b6b;
 }
 
-.App-main-content { /* Container for header and chat-container */
-  flex-grow: 1;
+.App-main-content { /* Container for chat-container */
+  flex: 1; /* Take remaining space in app-body */
   display: flex;
   flex-direction: column;
   overflow: hidden; /* Prevent double scrollbars */
-  padding-top: 60px; /* Add space for fixed header */
 }
 
 /* Mobile responsive adjustments */
 @media (max-width: 768px) {
   .App-main-content {
     width: 100%;
-    padding-top: 56px; /* Slightly shorter header on mobile */
+    margin-left: 0; /* No margin needed on mobile */
   }
 }
-
-
 
 /* Enhanced API controls */
 .api-controls {
@@ -1235,15 +1262,17 @@ body {
   padding-top: 15px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
-    flex-direction: column;
+  flex-direction: column;
   gap: 12px;
   background-color: #2c3e50; /* Ensure background matches */
+  margin-top: auto; /* Push to bottom */
 }
 
 .sidebar-control-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 .sidebar-control-group label {
@@ -1252,6 +1281,7 @@ body {
   color: rgba(255, 255, 255, 0.8);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  flex-shrink: 0; /* Prevent shrinking */
 }
 
 .sidebar-select,
@@ -1263,6 +1293,8 @@ body {
   color: white;
   font-size: 13px;
   transition: all 0.2s ease;
+  flex-shrink: 0; /* Prevent shrinking */
+  min-height: 36px; /* Ensure minimum touch target */
 }
 
 .sidebar-select:focus,

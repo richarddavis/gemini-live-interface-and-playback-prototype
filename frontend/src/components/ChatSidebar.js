@@ -7,6 +7,7 @@ function ChatSidebar({
   onCreateNewChat, 
   onDeleteSession,
   isMobileSidebarOpen,
+  isDesktopSidebarHidden,
   onOverlayClick,
   apiKey, 
   onApiKeyChange, 
@@ -42,6 +43,25 @@ function ChatSidebar({
     sessionStorage.setItem('chatProvider', value);
   };
 
+  // Determine CSS classes based on screen size and state
+  const getSidebarClasses = () => {
+    let classes = 'chat-sidebar';
+    
+    if (window.innerWidth <= 768) {
+      // Mobile: use mobile-open class
+      if (isMobileSidebarOpen) {
+        classes += ' mobile-open';
+      }
+    } else {
+      // Desktop: use sidebar-hidden class
+      if (isDesktopSidebarHidden) {
+        classes += ' sidebar-hidden';
+      }
+    }
+    
+    return classes;
+  };
+
   return (
     <>
       {/* Mobile overlay */}
@@ -53,7 +73,7 @@ function ChatSidebar({
         />
       )}
       
-      <aside className={`chat-sidebar ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
+      <aside className={getSidebarClasses()}>
         <button 
           className="new-chat-button" 
           onClick={onCreateNewChat}

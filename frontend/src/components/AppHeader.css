@@ -1,15 +1,16 @@
 .app-header {
-  position: fixed;
+  position: relative; /* Change from fixed to relative - let it be part of flex flow */
   top: 0;
   left: 0;
   right: 0;
-  height: 60px;
+  height: 56px; /* Use consistent mobile height for all screen sizes */
   background: #ffffff;
   border-bottom: 1px solid #e0e0e0;
   z-index: 1100;
   display: flex;
   align-items: center;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 /* Header content with proper spacing */
@@ -18,16 +19,14 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 16px; /* Remove max-width constraint for full-width spanning */
   height: 100%;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px; /* Use mobile gap for all screen sizes */
 }
 
 .header-right {
@@ -36,9 +35,9 @@
   gap: 12px;
 }
 
-/* Mobile menu button */
+/* Mobile menu button - show on all screen sizes for consistent sidebar control */
 .mobile-menu-button {
-  display: none;
+  display: flex; /* Show on all screen sizes */
   background: none;
   border: none;
   padding: 8px;
@@ -74,7 +73,7 @@
 }
 
 .app-name {
-  font-size: 20px;
+  font-size: 18px; /* Use mobile font size for all screen sizes */
   font-weight: 600;
   color: #202124;
   letter-spacing: -0.5px;
@@ -90,38 +89,4 @@
   opacity: 0;
 }
 
-/* Mobile styles */
-@media (max-width: 768px) {
-  .app-header {
-    height: 56px; /* Slightly shorter on mobile */
-    left: 0; /* Full width on mobile */
-  }
-  
-  .header-content {
-    padding: 0 16px;
-  }
-  
-  .mobile-menu-button {
-    display: flex;
-  }
-  
-  .app-name {
-    font-size: 18px;
-  }
-  
-  .header-left {
-    gap: 12px;
-  }
-}
-
-/* Desktop - hide mobile menu button when sidebar is always visible */
-@media (min-width: 769px) {
-  .mobile-menu-button {
-    display: none;
-  }
-  
-  .header-left {
-    /* Adjust for desktop layout where sidebar is always visible */
-    margin-left: 0;
-  }
-} 
+/* Remove all the old desktop-specific overrides since we're using mobile layout for all */ 

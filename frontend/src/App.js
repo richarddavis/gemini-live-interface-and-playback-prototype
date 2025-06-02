@@ -27,6 +27,7 @@ function App() {
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
   const [isReplayMode, setIsReplayMode] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isDesktopSidebarHidden, setIsDesktopSidebarHidden] = useState(false);
   
   // New modal states
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
@@ -452,7 +453,13 @@ function App() {
 
   // Handle mobile sidebar toggle
   const handleMobileSidebarToggle = () => {
-    setIsMobileSidebarOpen(!isMobileSidebarOpen);
+    if (window.innerWidth <= 768) {
+      // Mobile behavior: toggle overlay
+      setIsMobileSidebarOpen(!isMobileSidebarOpen);
+    } else {
+      // Desktop behavior: toggle visibility
+      setIsDesktopSidebarHidden(!isDesktopSidebarHidden);
+    }
   };
 
   // Close mobile sidebar when clicking overlay
@@ -470,9 +477,8 @@ function App() {
   // Close mobile sidebar when window resizes to desktop
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth > 768) {
-        setIsMobileSidebarOpen(false);
-      }
+      // Remove the auto-close behavior for desktop since we now use 
+      // the hamburger menu for all screen sizes
     };
 
     window.addEventListener('resize', handleResize);
@@ -487,116 +493,122 @@ function App() {
       <AppHeader 
         onToggleMobileMenu={handleMobileSidebarToggle}
         isMobileSidebarOpen={isMobileSidebarOpen}
+        isAuthenticated={isAuthenticated}
+        isAuthLoading={isAuthLoading}
       />
       
-      {/* Show loading spinner while checking authentication */}
-      {isAuthLoading ? (
-        <div className="auth-loading-container">
-          <div className="auth-loading-content">
-            <div className="loading-spinner"></div>
-            <p>Checking authentication...</p>
+      {/* Main content container below header */}
+      <div className="app-body">
+        {/* Show loading spinner while checking authentication */}
+        {isAuthLoading ? (
+          <div className="auth-loading-container">
+            <div className="auth-loading-content">
+              <div className="loading-spinner"></div>
+              <p>Checking authentication...</p>
+            </div>
           </div>
-        </div>
-      ) : !isAuthenticated ? (
-        /* Show welcome message when not authenticated */
-        <div className="auth-required-container">
-          <div className="auth-required-content">
-            <h2>Welcome to Chat App!</h2>
-            <p>Please sign in to start chatting with AI assistants.</p>
-            <p>Use the "Log in" button in the top-right corner to get started.</p>
+        ) : !isAuthenticated ? (
+          /* Show welcome message when not authenticated */
+          <div className="auth-required-container">
+            <div className="auth-required-content">
+              <h2>Welcome to Chat App!</h2>
+              <p>Please sign in to start chatting with AI assistants.</p>
+              <p>Use the "Log in" button in the top-right corner to get started.</p>
+            </div>
           </div>
-        </div>
-      ) : (
-        /* Main app content - only show when authenticated */
-        <>
-          <ChatSidebar
-            chatSessions={chatSessions}
-            activeChatSessionId={activeChatSessionId}
-            onSelectSession={handleSelectSession}
-            onCreateNewChat={() => handleCreateNewChat(true)}
-            onDeleteSession={handleDeleteSession}
-            isMobileSidebarOpen={isMobileSidebarOpen}
-            onMobileSidebarToggle={handleMobileSidebarToggle}
-            onOverlayClick={handleOverlayClick}
-            onSelectSessionMobile={handleSelectSessionMobile}
-            apiKey={apiKey}
-            onApiKeyChange={handleApiKeyChange}
-            provider={provider}
-            onProviderChange={handleProviderChange}
-            isOpen={isMobileSidebarOpen}
-            onClose={handleOverlayClick}
-          />
-          
-          <div className="App-main-content">
-            {isReplayMode ? (
-              <div className="replay-mode-container">
-                <InteractionReplay onExitReplayMode={handleToggleReplayMode} />
-              </div>
-            ) : (
-              <>
-                {activeChatSessionId ? (
-                  <main className="chat-container">
-                    <MessageList 
-                      messages={messages} 
-                      isLoadingMessages={isLoadingMessages}
-                      isUploadingImage={isUploadingMedia}
-                      currentBotResponse={currentBotResponse}
-                      onPlaybackFromPlaceholder={handlePlaybackFromPlaceholder}
-                    />
-                    
-                    <MessageInput 
-                      ref={messageInputRef}
-                      onSendMessage={handleSendMessage} 
-                      isDisabled={isChatDisabled}
-                      isLoading={isApiLoading || isUploadingMedia}
-                      provider={provider}
-                      onToggleLiveMode={handleToggleLiveMode}
-                      apiKey={apiKey}
-                    />
-                  </main>
-                ) : (
-                  <div className="no-active-chat">
-                    <h2>Welcome to Chat App!</h2>
-                    <p>Select a chat from the sidebar or create a new one to start messaging.</p>
-                    <button onClick={() => handleCreateNewChat(true)}>Start New Chat</button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Live Session Modal */}
-          <Modal
-            isOpen={isLiveModalOpen}
-            onClose={handleCloseLiveModal}
-            title="Live Session"
-            subtitle={getLiveSessionSubtitle()}
-            size="large"
-          >
-            <GeminiLiveDirect 
-              onExitLiveMode={handleLiveSessionComplete}
-              onStatusChange={handleLiveSessionStatusChange}
-              isModal={true}
-              chatSessionId={activeChatSessionId}
-              ref={liveSessionRef}
+        ) : (
+          /* Main app content - only show when authenticated */
+          <>
+            <ChatSidebar
+              chatSessions={chatSessions}
+              activeChatSessionId={activeChatSessionId}
+              onSelectSession={handleSelectSession}
+              onCreateNewChat={() => handleCreateNewChat(true)}
+              onDeleteSession={handleDeleteSession}
+              isMobileSidebarOpen={isMobileSidebarOpen}
+              isDesktopSidebarHidden={isDesktopSidebarHidden}
+              onMobileSidebarToggle={handleMobileSidebarToggle}
+              onOverlayClick={handleOverlayClick}
+              onSelectSessionMobile={handleSelectSessionMobile}
+              apiKey={apiKey}
+              onApiKeyChange={handleApiKeyChange}
+              provider={provider}
+              onProviderChange={handleProviderChange}
+              isOpen={isMobileSidebarOpen}
+              onClose={handleOverlayClick}
             />
-          </Modal>
+            
+            <div className="App-main-content">
+              {isReplayMode ? (
+                <div className="replay-mode-container">
+                  <InteractionReplay onExitReplayMode={handleToggleReplayMode} />
+                </div>
+              ) : (
+                <>
+                  {activeChatSessionId ? (
+                    <main className="chat-container">
+                      <MessageList 
+                        messages={messages} 
+                        isLoadingMessages={isLoadingMessages}
+                        isUploadingImage={isUploadingMedia}
+                        currentBotResponse={currentBotResponse}
+                        onPlaybackFromPlaceholder={handlePlaybackFromPlaceholder}
+                      />
+                      
+                      <MessageInput 
+                        ref={messageInputRef}
+                        onSendMessage={handleSendMessage} 
+                        isDisabled={isChatDisabled}
+                        isLoading={isApiLoading || isUploadingMedia}
+                        provider={provider}
+                        onToggleLiveMode={handleToggleLiveMode}
+                        apiKey={apiKey}
+                      />
+                    </main>
+                  ) : (
+                    <div className="no-active-chat">
+                      <h2>Welcome to Chat App!</h2>
+                      <p>Select a chat from the sidebar or create a new one to start messaging.</p>
+                      <button onClick={() => handleCreateNewChat(true)}>Start New Chat</button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
-          {/* Playback Modal */}
-          <Modal
-            isOpen={isPlaybackModalOpen}
-            onClose={handleClosePlaybackModal}
-            title="Session Playback"
-            size="large"
-          >
-            <InteractionReplay 
-              onExitReplayMode={handleClosePlaybackModal}
-              sessionData={playbackSessionData}
-              isModal={true}
-            />
-          </Modal>
-        </>
-      )}
+            {/* Live Session Modal */}
+            <Modal
+              isOpen={isLiveModalOpen}
+              onClose={handleCloseLiveModal}
+              title="Live Session"
+              subtitle={getLiveSessionSubtitle()}
+              size="large"
+            >
+              <GeminiLiveDirect 
+                onExitLiveMode={handleLiveSessionComplete}
+                onStatusChange={handleLiveSessionStatusChange}
+                isModal={true}
+                chatSessionId={activeChatSessionId}
+                ref={liveSessionRef}
+              />
+            </Modal>
+
+            {/* Playback Modal */}
+            <Modal
+              isOpen={isPlaybackModalOpen}
+              onClose={handleClosePlaybackModal}
+              title="Session Playback"
+              size="large"
+            >
+              <InteractionReplay 
+                onExitReplayMode={handleClosePlaybackModal}
+                sessionData={playbackSessionData}
+                isModal={true}
+              />
+            </Modal>
+          </>
+        )}
+      </div>
     </div>
   );
 }

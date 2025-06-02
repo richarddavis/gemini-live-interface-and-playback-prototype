@@ -42,11 +42,4 @@ staticPasswords:
     username: "user2"
     userID: "3"
     groups:
-      - "users"
-
-# Mock GitHub-like connector for realistic OAuth flow
-connectors:
-  - type: mockCallback
-    id: mock-github
-    name: GitHub (Mock)
-    # This connector will return a predefined user for testing 
+      - "users" 

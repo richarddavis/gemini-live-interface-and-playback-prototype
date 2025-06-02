@@ -1,8 +1,7 @@
 import os
-import jwt
 import requests
 from datetime import datetime, timedelta
-from flask import current_app, session, url_for
+from flask import current_app, session
 from urllib.parse import urlencode
 from ..models import User, OAuthAccount
 from .. import db
@@ -27,14 +26,11 @@ class AuthService:
             return response.json()
         except requests.RequestException as e:
             current_app.logger.error(f"Failed to get discovery document: {e}")
-            # Fallback: construct endpoints manually for development
-            current_app.logger.info("Using fallback endpoint construction")
+            # Fallback for development
             return {
-                'issuer': self.oauth_issuer,
                 'authorization_endpoint': f"{self.oauth_issuer}/auth",
                 'token_endpoint': f"{self.oauth_issuer}/token",
-                'userinfo_endpoint': f"{self.oauth_issuer}/userinfo",
-                'jwks_uri': f"{self.oauth_issuer}/keys"
+                'userinfo_endpoint': f"{self.oauth_issuer}/userinfo"
             }
     
     def generate_pkce_challenge(self):
@@ -151,8 +147,8 @@ class AuthService:
     def create_or_update_user(self, user_info, tokens):
         """Create or update user from OAuth user info"""
         try:
-            provider = 'dex'  # Since we're using Dex mock server
-            provider_id = user_info.get('sub')  # Subject claim is the user ID
+            provider = 'dex'
+            provider_id = user_info.get('sub')
             email = user_info.get('email')
             username = user_info.get('preferred_username', user_info.get('name'))
             

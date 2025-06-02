@@ -114,13 +114,4 @@ def get_auth_status():
         })
     except Exception as e:
         current_app.logger.error(f"Auth status error: {e}")
-        return jsonify({'error': 'Failed to get auth status'}), 500
-
-# Helper function to get current user in other routes
-def get_current_user():
-    """Helper function to get current user in other routes"""
-    return auth_service.get_current_user()
-
-def is_authenticated():
-    """Helper function to check authentication in other routes"""
-    return auth_service.is_authenticated() 
+        return jsonify({'error': 'Failed to get auth status'}), 500 

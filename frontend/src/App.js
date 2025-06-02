@@ -550,7 +550,7 @@ function App() {
                       <MessageList 
                         messages={messages} 
                         isLoadingMessages={isLoadingMessages}
-                        isUploadingImage={isUploadingMedia}
+                        isUploadingMedia={isUploadingMedia}
                         currentBotResponse={currentBotResponse}
                         onPlaybackFromPlaceholder={handlePlaybackFromPlaceholder}
                       />

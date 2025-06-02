@@ -14,147 +14,382 @@ const MessageInput = React.forwardRef(({
   const [previewUrl, setPreviewUrl] = useState(null);
   const [mediaType, setMediaType] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
-  const [captureMode, setCaptureMode] = useState('image'); // 'image' or 'video'
+  const [captureMode, setCaptureMode] = useState('image'); // 'image', 'video', or 'audio'
   const [videoStream, setVideoStream] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTimeLeft, setRecordingTimeLeft] = useState(0);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
+  const videoStreamRef = useRef(null);
+  const isRecordingRef = useRef(false);
+  const isRecordingAudioRef = useRef(false);
 
-  // Moved stopCameraStream definition before useEffect that uses it
+  // Update refs when state changes
+  useEffect(() => {
+    videoStreamRef.current = videoStream;
+  }, [videoStream]);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    isRecordingAudioRef.current = isRecordingAudio;
+  }, [isRecordingAudio]);
+
+  // Cleanup function to properly stop media streams
   const stopCameraStream = useCallback(() => {
-    if (videoStream) {
-      videoStream.getTracks().forEach(track => track.stop());
+    console.log('stopCameraStream called');
+    
+    if (videoStreamRef.current) {
+      console.log('Stopping video stream tracks...');
+      videoStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped track:', track.kind, track.label);
+      });
       setVideoStream(null);
+      videoStreamRef.current = null;
     }
     
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && (isRecordingRef.current || isRecordingAudioRef.current)) {
+      console.log('Stopping media recorder...');
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+      setIsRecordingAudio(false);
+      isRecordingRef.current = false;
+      isRecordingAudioRef.current = false;
     }
     
     if (timerRef.current) {
+      console.log('Clearing timer...');
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     
+    // Clear video element source
+    if (videoRef.current) {
+      console.log('Clearing video element...');
+      videoRef.current.srcObject = null;
+      videoRef.current.src = '';
+      videoRef.current.onloadedmetadata = null;
+      videoRef.current.onerror = null;
+    }
+    
+    console.log('Setting isCapturing to false');
     setIsCapturing(false);
-  }, [videoStream, isRecording, mediaRecorderRef, timerRef, setVideoStream, setIsRecording, setIsCapturing]);
+    setRecordingTimeLeft(0);
+  }, []); // No dependencies - use refs for current values
 
-  // Clean up camera stream when component unmounts
+  // Clean up camera stream when component unmounts ONLY
   useEffect(() => {
     return () => {
-      stopCameraStream();
+      console.log('Component unmounting, cleaning up...');
+      // Only clean up on actual unmount, not on every videoStream change
+      if (videoStreamRef.current) {
+        videoStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (mediaRecorderRef.current && (isRecordingRef.current || isRecordingAudioRef.current)) {
+        mediaRecorderRef.current.stop();
+      }
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
     };
-  }, [stopCameraStream]);
+  }, []); // Empty dependency array - only run on mount/unmount
 
-  // Handle camera stream for both video preview and taking photo
+  // Handle camera/microphone capture for different modes
   const handleCameraCapture = async (mode) => {
     try {
-      // Close any existing stream first
-      stopCameraStream();
+      // Only close existing stream if we're already capturing
+      if (isCapturing) {
+        console.log('Closing existing capture session...');
+        stopCameraStream();
+        // Add a small delay to let the previous stream fully close
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
       
       setCaptureMode(mode);
       setIsCapturing(true);
       
-      // Request camera access
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
-        audio: mode === 'video' 
-      });
+      console.log(`Starting ${mode} capture...`);
+      
+      let streamConstraints;
+      if (mode === 'audio') {
+        streamConstraints = { 
+          audio: true, 
+          video: false 
+        };
+      } else {
+        streamConstraints = { 
+          video: true, 
+          audio: mode === 'video'
+        };
+      }
+      
+      // Request media access
+      console.log('Requesting media access with constraints:', streamConstraints);
+      const stream = await navigator.mediaDevices.getUserMedia(streamConstraints);
+      console.log('Media access granted, stream received:', stream);
       
       setVideoStream(stream);
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      // For video/image modes, set up video element with proper timing
+      if (mode !== 'audio' && videoRef.current) {
+        console.log('Setting up video element...');
+        
+        // Add a small delay to ensure DOM is ready and capture interface is rendered
+        setTimeout(() => {
+          if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+            
+            // Set up event handlers
+            videoRef.current.onloadedmetadata = () => {
+              console.log('Video metadata loaded, attempting to play...');
+              if (videoRef.current) {
+                videoRef.current.play().then(() => {
+                  console.log('Video playing successfully');
+                }).catch(err => {
+                  console.error('Error playing video:', err);
+                  // Don't close capture interface on play error
+                });
+              }
+            };
+            
+            videoRef.current.onerror = (error) => {
+              console.error('Video element error:', error);
+              // Don't close capture interface on video error
+            };
+            
+            // Fallback: try to play immediately in case metadata is already loaded
+            if (videoRef.current.readyState >= 1) {
+              videoRef.current.play().catch(err => {
+                console.error('Fallback video play error:', err);
+              });
+            }
+          }
+        }, 100); // Small delay to ensure DOM is ready
       }
+      
+      // For audio mode, start recording immediately
+      if (mode === 'audio') {
+        console.log('Starting audio recording...');
+        startAudioRecording(stream);
+      }
+      
+      console.log(`${mode} capture setup completed successfully`);
+      
     } catch (err) {
-      console.error('Error accessing camera:', err);
-      alert('Error accessing camera: ' + err.message);
+      console.error('Error accessing camera/microphone:', err);
+      let errorMessage = 'Error accessing media: ';
+      if (err.name === 'NotAllowedError') {
+        errorMessage += 'Permission denied. Please allow camera/microphone access.';
+      } else if (err.name === 'NotFoundError') {
+        errorMessage += 'No camera/microphone found.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage += 'Camera/microphone is already in use by another application.';
+      } else if (err.name === 'OverconstrainedError') {
+        errorMessage += 'Camera/microphone constraints cannot be satisfied.';
+      } else {
+        errorMessage += err.message;
+      }
+      alert(errorMessage);
       setIsCapturing(false);
     }
   };
 
   const takePicture = () => {
-    if (!videoRef.current || !videoStream) return;
+    if (!videoRef.current || !videoStream) {
+      console.error('Cannot take picture: video element or stream not available');
+      return;
+    }
     
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(videoRef.current, 0, 0);
+    console.log('Taking picture...');
     
-    // Convert to blob
-    canvas.toBlob((blob) => {
-      const file = new File([blob], `capture-${Date.now()}.png`, { type: 'image/png' });
-      setSelectedMedia(file);
-      setMediaType('image');
-      setPreviewUrl(URL.createObjectURL(blob));
-      stopCameraStream();
-    }, 'image/png');
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(videoRef.current, 0, 0);
+      
+      // Convert to blob
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], `capture-${Date.now()}.png`, { type: 'image/png' });
+          setSelectedMedia(file);
+          setMediaType('image');
+          setPreviewUrl(URL.createObjectURL(blob));
+          stopCameraStream();
+          console.log('Picture taken successfully');
+        } else {
+          console.error('Failed to create image blob');
+          alert('Failed to capture image. Please try again.');
+        }
+      }, 'image/png');
+    } catch (error) {
+      console.error('Error taking picture:', error);
+      alert('Error taking picture: ' + error.message);
+    }
+  };
+
+  const startAudioRecording = (stream) => {
+    if (!stream) {
+      console.error('No stream provided to startAudioRecording');
+      return;
+    }
+    
+    console.log('Setting up audio recording...');
+    chunksRef.current = [];
+    
+    try {
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      
+      mediaRecorder.ondataavailable = (e) => {
+        console.log('Audio data available, size:', e.data.size);
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+      
+      mediaRecorder.onstop = () => {
+        console.log('Audio recording stopped, creating file...');
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const file = new File([blob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
+        setSelectedMedia(file);
+        setMediaType('audio');
+        setPreviewUrl(URL.createObjectURL(blob));
+        
+        // Close capture interface after successful recording
+        stopCameraStream();
+        
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        
+        setRecordingTimeLeft(0);
+        console.log('Audio file created successfully');
+      };
+      
+      mediaRecorder.onerror = (error) => {
+        console.error('MediaRecorder error:', error);
+        // Don't close interface on error, let user try again
+      };
+      
+      // Maximum 60 seconds of audio recording
+      const maxRecordingTime = 60;
+      setRecordingTimeLeft(maxRecordingTime);
+      
+      // Start countdown timer
+      timerRef.current = setInterval(() => {
+        setRecordingTimeLeft(prev => {
+          if (prev <= 1) {
+            console.log('Audio recording time limit reached');
+            mediaRecorder.stop();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      mediaRecorder.start();
+      setIsRecordingAudio(true);
+      console.log('Audio recording started');
+      
+    } catch (error) {
+      console.error('Error setting up audio recording:', error);
+      alert('Error setting up audio recording: ' + error.message);
+    }
   };
 
   const startRecordingVideo = () => {
-    if (!videoRef.current || !videoStream) return;
+    if (!videoRef.current || !videoStream) {
+      console.error('Cannot start video recording: video element or stream not available');
+      return;
+    }
     
+    console.log('Starting video recording...');
     chunksRef.current = [];
     
-    const mediaRecorder = new MediaRecorder(videoStream);
-    mediaRecorderRef.current = mediaRecorder;
-    
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        chunksRef.current.push(e.data);
-      }
-    };
-    
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
-      const file = new File([blob], `video-${Date.now()}.mp4`, { type: 'video/mp4' });
-      setSelectedMedia(file);
-      setMediaType('video');
-      setPreviewUrl(URL.createObjectURL(blob));
-      stopCameraStream();
+    try {
+      const mediaRecorder = new MediaRecorder(videoStream);
+      mediaRecorderRef.current = mediaRecorder;
       
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      
-      setRecordingTimeLeft(0);
-    };
-    
-    // Maximum 60 seconds of video recording
-    const maxRecordingTime = 60;
-    setRecordingTimeLeft(maxRecordingTime);
-    
-    // Start countdown timer
-    timerRef.current = setInterval(() => {
-      setRecordingTimeLeft(prev => {
-        if (prev <= 1) {
-          mediaRecorder.stop();
-          return 0;
+      mediaRecorder.ondataavailable = (e) => {
+        console.log('Video data available, size:', e.data.size);
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
         }
-        return prev - 1;
-      });
-    }, 1000);
-    
-    mediaRecorder.start();
-    setIsRecording(true);
+      };
+      
+      mediaRecorder.onstop = () => {
+        console.log('Video recording stopped, creating file...');
+        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+        const file = new File([blob], `video-${Date.now()}.webm`, { type: 'video/webm' });
+        setSelectedMedia(file);
+        setMediaType('video');
+        setPreviewUrl(URL.createObjectURL(blob));
+        
+        // Close capture interface after successful recording
+        stopCameraStream();
+        
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        
+        setRecordingTimeLeft(0);
+        console.log('Video file created successfully');
+      };
+      
+      mediaRecorder.onerror = (error) => {
+        console.error('Video MediaRecorder error:', error);
+        // Don't close interface on error, let user try again
+      };
+      
+      // Maximum 60 seconds of video recording
+      const maxRecordingTime = 60;
+      setRecordingTimeLeft(maxRecordingTime);
+      
+      // Start countdown timer
+      timerRef.current = setInterval(() => {
+        setRecordingTimeLeft(prev => {
+          if (prev <= 1) {
+            console.log('Video recording time limit reached');
+            mediaRecorder.stop();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+      console.log('Video recording started');
+      
+    } catch (error) {
+      console.error('Error setting up video recording:', error);
+      alert('Error setting up video recording: ' + error.message);
+    }
   };
 
   const stopRecordingVideo = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+    }
+  };
+
+  const stopRecordingAudio = () => {
+    if (mediaRecorderRef.current && isRecordingAudio) {
+      mediaRecorderRef.current.stop();
+      setIsRecordingAudio(false);
     }
   };
 
@@ -176,9 +411,16 @@ const MessageInput = React.forwardRef(({
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       
-      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      if (file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/')) {
         setSelectedMedia(file);
-        setMediaType(file.type.startsWith('image/') ? 'image' : 'video');
+        
+        if (file.type.startsWith('image/')) {
+          setMediaType('image');
+        } else if (file.type.startsWith('video/')) {
+          setMediaType('video');
+        } else if (file.type.startsWith('audio/')) {
+          setMediaType('audio');
+        }
         
         const fileReader = new FileReader();
         fileReader.onload = () => {
@@ -186,7 +428,7 @@ const MessageInput = React.forwardRef(({
         };
         fileReader.readAsDataURL(file);
       } else {
-        alert('Please select an image or video file (PNG, JPG, GIF, MP4, WEBM, MOV etc.)');
+        alert('Please select an image, video, or audio file (PNG, JPG, GIF, MP4, WEBM, MOV, WAV, MP3, etc.)');
       }
     }
   };
@@ -200,15 +442,34 @@ const MessageInput = React.forwardRef(({
     }
   };
 
+  // Handle microphone button click for audio recording
+  const handleMicrophoneClick = () => {
+    if (currentMessage.trim() || selectedMedia) {
+      // If there's text or media, send the message
+      handleSubmit(new Event('submit'));
+    } else {
+      // If no text, start audio recording
+      handleCameraCapture('audio');
+    }
+  };
+
+  // Manual close function for user-initiated closure
+  const handleManualClose = () => {
+    console.log('User manually closed capture interface');
+    stopCameraStream();
+  };
+
   return (
     <div className="message-input-container">
       {previewUrl && (
         <div className="media-preview">
           {mediaType === 'image' ? (
             <img src={previewUrl} alt="Preview" />
-          ) : (
+          ) : mediaType === 'video' ? (
             <video src={previewUrl} controls />
-          )}
+          ) : mediaType === 'audio' ? (
+            <audio src={previewUrl} controls />
+          ) : null}
           <button 
             type="button" 
             className="remove-media-button" 
@@ -222,12 +483,21 @@ const MessageInput = React.forwardRef(({
       
       {isCapturing && (
         <div className="camera-capture-container">
-          <video 
-            ref={videoRef} 
-            autoPlay 
-            muted 
-            className="camera-preview"
-          />
+          {captureMode !== 'audio' && (
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              muted 
+              className="camera-preview"
+            />
+          )}
+          
+          {captureMode === 'audio' && (
+            <div className="audio-recording-indicator">
+              <div className="audio-wave">🎤</div>
+              <p>Recording audio...</p>
+            </div>
+          )}
           
           <div className="camera-controls">
             {captureMode === 'image' ? (
@@ -238,7 +508,7 @@ const MessageInput = React.forwardRef(({
               >
                 Take Photo
               </button>
-            ) : (
+            ) : captureMode === 'video' ? (
               <>
                 {!isRecording ? (
                   <button 
@@ -258,11 +528,32 @@ const MessageInput = React.forwardRef(({
                   </button>
                 )}
               </>
-            )}
+            ) : captureMode === 'audio' ? (
+              <>
+                {!isRecordingAudio ? (
+                  <button 
+                    type="button" 
+                    className="capture-button" 
+                    onClick={() => startAudioRecording(videoStream)}
+                  >
+                    Start Recording
+                  </button>
+                ) : (
+                  <button 
+                    type="button" 
+                    className="capture-button recording" 
+                    onClick={stopRecordingAudio}
+                  >
+                    Stop ({recordingTimeLeft}s)
+                  </button>
+                )}
+              </>
+            ) : null}
+            
             <button 
               type="button" 
               className="cancel-button" 
-              onClick={stopCameraStream}
+              onClick={handleManualClose}
             >
               Cancel
             </button>
@@ -302,10 +593,11 @@ const MessageInput = React.forwardRef(({
         
             {/* Microphone/Send button */}
             <button 
-              type="submit" 
+              type="button"
               disabled={isDisabled || isLoading}
               className={`mic-send-button ${(currentMessage.trim() || selectedMedia) ? 'send-mode' : 'mic-mode'}`}
               title={(currentMessage.trim() || selectedMedia) ? 'Send message' : 'Voice input'}
+              onClick={handleMicrophoneClick}
             >
               {(currentMessage.trim() || selectedMedia) ? (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -378,7 +670,7 @@ const MessageInput = React.forwardRef(({
           type="file"
           ref={fileInputRef}
           onChange={handleFileSelect}
-          accept="image/*,video/*"
+          accept="image/*,video/*,audio/*"
           style={{ display: 'none' }}
           disabled={isDisabled || isLoading}
         />

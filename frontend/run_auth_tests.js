@@ -47,7 +47,7 @@ function printWarning(message) {
 function runTest(testFile, testName) {
   return new Promise((resolve) => {
     const testCommand = 'npm';
-    const testArgs = ['test', '--', '--testPathPattern=' + testFile, '--verbose', '--silent'];
+    const testArgs = ['test', '--', '--testPathPattern=' + testFile, '--verbose', '--silent', '--watchAll=false'];
     
     printTestSuite(testName);
     

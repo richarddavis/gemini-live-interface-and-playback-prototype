@@ -20,7 +20,7 @@ function convertLatexBracketsToDollars(text) {
   return processedText;
 }
 
-function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBotResponse, onPlaybackFromPlaceholder }) {
+function MessageList({ messages, isLoadingMessages, isUploadingMedia, currentBotResponse, onPlaybackFromPlaceholder }) {
   const messageListRef = useRef(null);
   
   // Scroll to bottom when messages change or loading status changes
@@ -28,7 +28,7 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
     if (messageListRef.current) {
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
-  }, [messages, currentBotResponse, isUploadingImage]);
+  }, [messages, currentBotResponse, isUploadingMedia]);
 
   // Helper function to render message content
   const renderMessageContent = (msg) => {
@@ -62,6 +62,16 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
               src={msg.media_url} 
               controls
               className="message-video"
+            />
+          </div>
+        )}
+        
+        {msg.media_url && msg.media_type?.startsWith('audio/') && (
+          <div className="message-audio-container">
+            <audio 
+              src={msg.media_url} 
+              controls
+              className="message-audio"
             />
           </div>
         )}
@@ -103,8 +113,8 @@ function MessageList({ messages, isLoadingMessages, isUploadingImage, currentBot
             </div>
           ))}
           
-          {/* Show image upload indicator */}
-          {isUploadingImage && (
+          {/* Show media upload indicator */}
+          {isUploadingMedia && (
             <div className="upload-indicator">
               <div className="loading-spinner"></div>
               <p>Uploading media...</p>

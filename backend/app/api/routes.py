@@ -18,7 +18,7 @@ from ..services.auth_service import auth_service
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
-    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mov'}
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mov', 'wav', 'mp3', 'm4a', 'ogg', 'flac', 'aac'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @api.route('/health', methods=['GET'])

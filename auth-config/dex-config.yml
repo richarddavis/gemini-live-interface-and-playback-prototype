@@ -20,7 +20,24 @@ staticClients:
       - "http://127.0.0.1:3000/auth/callback"
     public: false
 
-# Mock users for development
+# GitHub OAuth Connector (add this for production)
+connectors:
+  - type: github
+    id: github
+    name: GitHub
+    config:
+      clientID: $GITHUB_CLIENT_ID
+      clientSecret: $GITHUB_CLIENT_SECRET
+      redirectURI: http://oauth-server:5556/dex/callback
+      
+      # Organization/team restrictions (optional)
+      orgs:
+        - name: your-github-organization
+          teams:
+            - developers
+            - admins
+
+# Mock users for development (keep for local testing)
 enablePasswordDB: true
 staticPasswords:
   - email: "admin@example.com"
@@ -42,4 +59,4 @@ staticPasswords:
     username: "user2"
     userID: "3"
     groups:
-      - "users" 
+      - "users"

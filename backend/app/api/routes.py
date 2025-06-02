@@ -1,8 +1,7 @@
 from flask import jsonify, request, Response, stream_with_context, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
 from . import api
 from .. import db
-from ..models import Task, ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary, User
+from ..models import Task, ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
 from app.llm_providers import OpenAIProvider, GeminiProvider
 from app.services.storage import GCSStorageService
 import json
@@ -14,37 +13,6 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from io import BytesIO
 import requests
-from functools import wraps
-
-# Helper function to get current user
-def get_current_user():
-    """Get current authenticated user from JWT token"""
-    try:
-        verify_jwt_in_request()
-        user_id = get_jwt_identity()
-        return User.query.get(user_id)
-    except:
-        return None
-
-# Authentication decorator with optional requirement
-def auth_required(optional=False):
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if optional:
-                # Optional auth - set current_user but don't require it
-                try:
-                    verify_jwt_in_request()
-                    user_id = get_jwt_identity()
-                    current_user = User.query.get(user_id)
-                except:
-                    current_user = None
-                return f(current_user=current_user, *args, **kwargs)
-            else:
-                # Required auth
-                return jwt_required()(f)(*args, **kwargs)
-        return decorated_function
-    return decorator
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
@@ -57,23 +25,17 @@ def health_check():
     return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()}), 200
 
 @api.route('/tasks', methods=['GET'])
-@jwt_required()
 def get_tasks():
-    user_id = get_jwt_identity()
-    tasks = Task.query.filter_by(user_id=user_id).all()
+    tasks = Task.query.all()
     return jsonify([task.to_dict() for task in tasks]), 200
 
 @api.route('/tasks/<int:task_id>', methods=['GET'])
-@jwt_required()
 def get_task(task_id):
-    user_id = get_jwt_identity()
-    task = Task.query.filter_by(id=task_id, user_id=user_id).first_or_404()
+    task = Task.query.get_or_404(task_id)
     return jsonify(task.to_dict()), 200
 
 @api.route('/tasks', methods=['POST'])
-@jwt_required()
 def create_task():
-    user_id = get_jwt_identity()
     data = request.get_json()
     
     if not data or not data.get('title'):
@@ -82,8 +44,7 @@ def create_task():
     task = Task(
         title=data.get('title'),
         description=data.get('description', ''),
-        completed=data.get('completed', False),
-        user_id=user_id
+        completed=data.get('completed', False)
     )
     
     db.session.add(task)
@@ -92,10 +53,8 @@ def create_task():
     return jsonify(task.to_dict()), 201
 
 @api.route('/tasks/<int:task_id>', methods=['PUT'])
-@jwt_required()
 def update_task(task_id):
-    user_id = get_jwt_identity()
-    task = Task.query.filter_by(id=task_id, user_id=user_id).first_or_404()
+    task = Task.query.get_or_404(task_id)
     data = request.get_json()
     
     if 'title' in data:
@@ -110,10 +69,8 @@ def update_task(task_id):
     return jsonify(task.to_dict()), 200
 
 @api.route('/tasks/<int:task_id>', methods=['DELETE'])
-@jwt_required()
 def delete_task(task_id):
-    user_id = get_jwt_identity()
-    task = Task.query.filter_by(id=task_id, user_id=user_id).first_or_404()
+    task = Task.query.get_or_404(task_id)
     
     db.session.delete(task)
     db.session.commit()
@@ -122,19 +79,12 @@ def delete_task(task_id):
 
 # Chat Message Routes
 @api.route('/messages', methods=['GET'])
-@jwt_required()
 def get_messages():
-    user_id = get_jwt_identity()
-    # Get messages from user's chat sessions only
-    messages = db.session.query(ChatMessage).join(ChatSession).filter(
-        ChatSession.user_id == user_id
-    ).order_by(ChatMessage.timestamp.asc()).all()
+    messages = ChatMessage.query.order_by(ChatMessage.timestamp.asc()).all()
     return jsonify([message.to_dict() for message in messages]), 200
 
 @api.route('/messages', methods=['POST'])
-@jwt_required()
 def create_message():
-    user_id = get_jwt_identity()
     data = request.get_json()
     
     if not data or not data.get('text') or not data.get('sender'):
@@ -143,16 +93,10 @@ def create_message():
     if not data.get('chat_session_id'):
         return jsonify({"error": "chat_session_id is required for this endpoint"}), 400
 
-    # Verify the chat session belongs to the user
-    chat_session = ChatSession.query.filter_by(
-        id=data.get('chat_session_id'), 
-        user_id=user_id
-    ).first_or_404()
-
     message = ChatMessage(
         text=data.get('text'),
         sender=data.get('sender'),
-        chat_session_id=chat_session.id
+        chat_session_id=data.get('chat_session_id')
     )
     
     db.session.add(message)
@@ -162,30 +106,24 @@ def create_message():
 
 # Chat Session Routes
 @api.route('/chat_sessions', methods=['GET'])
-@jwt_required()
 def get_chat_sessions():
-    user_id = get_jwt_identity()
-    sessions = ChatSession.query.filter_by(user_id=user_id).order_by(ChatSession.created_at.desc()).all()
+    sessions = ChatSession.query.order_by(ChatSession.created_at.desc()).all()
     return jsonify([session.to_dict() for session in sessions]), 200
 
 @api.route('/chat_sessions', methods=['POST'])
-@jwt_required()
 def create_chat_session():
-    user_id = get_jwt_identity()
     data = request.get_json() or {}
     provider = data.get('provider', 'openai')
     
-    session = ChatSession(provider=provider, user_id=user_id)
+    session = ChatSession(provider=provider)
     db.session.add(session)
     db.session.commit()
     db.session.refresh(session)
     return jsonify(session.to_dict()), 201
 
 @api.route('/chat_sessions/<int:session_id>', methods=['DELETE'])
-@jwt_required()
 def delete_chat_session(session_id):
-    user_id = get_jwt_identity()
-    session = ChatSession.query.filter_by(id=session_id, user_id=user_id).first_or_404()
+    session = ChatSession.query.get_or_404(session_id)
     
     # No need to manually delete messages, the cascade will handle it
     db.session.delete(session)
@@ -194,10 +132,8 @@ def delete_chat_session(session_id):
     return jsonify({"message": "Chat session deleted successfully"}), 200
 
 @api.route('/chat_sessions/<int:session_id>/update_provider', methods=['POST'])
-@jwt_required()
 def update_chat_session_provider(session_id):
-    user_id = get_jwt_identity()
-    session = ChatSession.query.filter_by(id=session_id, user_id=user_id).first_or_404()
+    session = ChatSession.query.get_or_404(session_id)
     data = request.get_json()
     
     if not data or 'provider' not in data:
@@ -210,18 +146,14 @@ def update_chat_session_provider(session_id):
 
 # Session-Specific Message Routes
 @api.route('/chat_sessions/<int:session_id>/messages', methods=['GET'])
-@jwt_required()
 def get_session_messages(session_id):
-    user_id = get_jwt_identity()
-    session = ChatSession.query.filter_by(id=session_id, user_id=user_id).first_or_404()
+    session = ChatSession.query.get_or_404(session_id)
     messages = session.messages.order_by(ChatMessage.timestamp.asc()).all()
     return jsonify([message.to_dict() for message in messages]), 200
 
 @api.route('/chat_sessions/<int:session_id>/messages', methods=['POST'])
-@jwt_required()
 def create_session_message(session_id):
-    user_id = get_jwt_identity()
-    session = ChatSession.query.filter_by(id=session_id, user_id=user_id).first_or_404()
+    ChatSession.query.get_or_404(session_id)
     data = request.get_json()
 
     if not data or not data.get('text') or not data.get('sender'):
@@ -239,11 +171,9 @@ def create_session_message(session_id):
     return jsonify(message.to_dict()), 201
 
 @api.route('/chat_sessions/<int:session_id>/live_session_placeholder', methods=['POST'])
-@jwt_required()
 def create_live_session_placeholder(session_id):
     """Create a live session placeholder message in the chat history"""
-    user_id = get_jwt_identity()
-    session = ChatSession.query.filter_by(id=session_id, user_id=user_id).first_or_404()
+    ChatSession.query.get_or_404(session_id)
     data = request.get_json()
 
     if not data or not data.get('sessionData'):

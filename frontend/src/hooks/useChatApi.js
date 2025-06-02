@@ -1,29 +1,14 @@
 import { useState, useCallback } from 'react';
 
-export function useChatApi(apiUrl, authToken) {
+export function useChatApi(apiUrl) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Helper function to get auth headers
-  const getAuthHeaders = useCallback(() => {
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-    return headers;
-  }, [authToken]);
-
   const fetchChatSessions = useCallback(async () => {
-    if (!authToken) return [];
-    
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/chat_sessions`, {
-        headers: getAuthHeaders()
-      });
+      const response = await fetch(`${apiUrl}/chat_sessions`);
       if (!response.ok) throw new Error('Failed to fetch chat sessions');
       return await response.json();
     } catch (error) {
@@ -33,17 +18,17 @@ export function useChatApi(apiUrl, authToken) {
     } finally {
       setIsLoading(false);
     }
-  }, [apiUrl, authToken, getAuthHeaders]);
+  }, [apiUrl]);
 
   const createChatSession = useCallback(async (provider = 'openai') => {
-    if (!authToken) return null;
-    
     setIsLoading(true);
     setError(null);
     try {
       const response = await fetch(`${apiUrl}/chat_sessions`, { 
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({ provider })
       });
       if (!response.ok) throw new Error('Failed to create new chat session');
@@ -55,17 +40,14 @@ export function useChatApi(apiUrl, authToken) {
     } finally {
       setIsLoading(false);
     }
-  }, [apiUrl, authToken, getAuthHeaders]);
+  }, [apiUrl]);
 
   const fetchSessionMessages = useCallback(async (sessionId) => {
-    if (!sessionId || !authToken) return [];
-    
+    if (!sessionId) return [];
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${apiUrl}/chat_sessions/${sessionId}/messages`, {
-        headers: getAuthHeaders()
-      });
+      const response = await fetch(`${apiUrl}/chat_sessions/${sessionId}/messages`);
       if (!response.ok) throw new Error('Failed to fetch messages for session');
       return await response.json();
     } catch (error) {
@@ -75,10 +57,10 @@ export function useChatApi(apiUrl, authToken) {
     } finally {
       setIsLoading(false);
     }
-  }, [apiUrl, authToken, getAuthHeaders]);
+  }, [apiUrl]);
 
   const uploadFile = useCallback(async (file) => {
-    if (!file || !authToken) return null;
+    if (!file) return null;
     
     setIsLoading(true);
     setError(null);
@@ -92,9 +74,6 @@ export function useChatApi(apiUrl, authToken) {
       console.log('Upload request to:', `${apiUrl}/uploads`);
       const response = await fetch(`${apiUrl}/uploads`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authToken}`
-        },
         body: formData,
       });
       
@@ -113,7 +92,7 @@ export function useChatApi(apiUrl, authToken) {
     } finally {
       setIsLoading(false);
     }
-  }, [apiUrl, authToken]);
+  }, [apiUrl]);
 
   const streamMessageToLLM = useCallback((sessionId, messageObj, apiKey, provider, { onChunk, onComplete, onError }) => {
     if (!sessionId || !apiKey) {

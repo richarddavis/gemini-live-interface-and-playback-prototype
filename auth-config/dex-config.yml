@@ -1,0 +1,52 @@
+# Dex OAuth Mock Server Configuration for Local Development
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true  # Skip consent screen for development
+
+# Define OAuth clients (our React app)
+staticClients:
+  - name: "Chat App (Development)"
+    id: "chat-app-dev"
+    secret: "chat-app-dev-secret-12345"
+    redirectURIs:
+      - "http://localhost:3000/auth/callback"
+      - "http://127.0.0.1:3000/auth/callback"
+    public: false
+
+# Mock users for development
+enablePasswordDB: true
+staticPasswords:
+  - email: "admin@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"  # password: "password"
+    username: "admin"
+    userID: "1"
+    groups:
+      - "admins"
+
+  - email: "user1@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"  # password: "password"
+    username: "user1"
+    userID: "2"
+    groups:
+      - "users"
+
+  - email: "user2@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"  # password: "password"
+    username: "user2"
+    userID: "3"
+    groups:
+      - "users"
+
+# Mock GitHub-like connector for realistic OAuth flow
+connectors:
+  - type: mockCallback
+    id: mock-github
+    name: GitHub (Mock)
+    # This connector will return a predefined user for testing 

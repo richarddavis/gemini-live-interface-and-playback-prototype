@@ -12,8 +12,12 @@ services:
       - .env  # Load environment variables from .env file (including REACT_APP_GOOGLE_AI_STUDIO_API_KEY)
     environment:
       - REACT_APP_API_URL=http://localhost:8080/api
+      - REACT_APP_OAUTH_ISSUER=http://localhost:5556/dex
+      - REACT_APP_OAUTH_CLIENT_ID=chat-app-dev
     depends_on:
       backend:
+        condition: service_started
+      oauth-server:
         condition: service_started
 
   backend:
@@ -31,9 +35,14 @@ services:
       - FLASK_APP=wsgi.py
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
+      - OAUTH_ISSUER=http://localhost:5556/dex
+      - OAUTH_CLIENT_ID=chat-app-dev
+      - OAUTH_CLIENT_SECRET=chat-app-dev-secret-12345
     depends_on:
       db:
         condition: service_healthy
+      oauth-server:
+        condition: service_started
     command: >
       sh -c '
         echo "Database is healthy. Applying database migrations..." &&
@@ -57,6 +66,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
+
+  oauth-server:
+    image: dexidp/dex:v2.37.0
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./auth-config/dex-config.yml:/etc/dex/config.yaml:ro
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5556/dex/.well-known/openid_configuration"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
       start_period: 10s
 
 volumes:

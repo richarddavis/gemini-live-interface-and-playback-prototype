@@ -1,10 +1,18 @@
 import os
+import secrets
 
 class Config:
     """Application configuration"""
     
     # Google Cloud Storage settings
     GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME', 'your-gcs-bucket-name')
+    
+    # Session configuration for authentication
+    SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+    SESSION_TYPE = 'filesystem'
+    SESSION_PERMANENT = False
+    SESSION_USE_SIGNER = True
+    SESSION_KEY_PREFIX = 'chat_app:'
     
     # Set GOOGLE_APPLICATION_CREDENTIALS in environment or configure here
     # Example: 

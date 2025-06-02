@@ -2,13 +2,12 @@ from flask import Blueprint
 
 api = Blueprint('api', __name__)
 
-# Import all route modules to register them
 from . import routes
-from . import video_creation  
-from . import analytics_routes
-from . import auth_routes  # Add authentication routes
-
 from .analytics_routes import analytics_bp
+from .auth_routes import auth_bp
 
-# Register the analytics blueprint
-api.register_blueprint(analytics_bp, url_prefix='/analytics') 
+# Register the Analytics blueprint (for logging Live API usage)
+api.register_blueprint(analytics_bp, url_prefix='/analytics')
+
+# Register the Authentication blueprint
+api.register_blueprint(auth_bp, url_prefix='/auth') 

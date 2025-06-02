@@ -1,11 +1,11 @@
 # Path: backend/migrations/script.py.mako
 # This is the Mako template for migration scripts.
 # It is used by Alembic to generate new migration files.
-"""Add authentication system with User and OAuthAccount models - clean
+"""Add authentication system with User and OAuthAccount models
 
-Revision ID: 5ef36a11a626
+Revision ID: 0cedea11d655
 Revises: '7b9c9b0fb3a3'
-Create Date: 2025-06-02 00:23:17.169167
+Create Date: 2025-06-02 08:06:27.164952
 
 """
 from alembic import op
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '5ef36a11a626'
+revision = '0cedea11d655'
 down_revision = '7b9c9b0fb3a3'
 branch_labels = None
 depends_on = None

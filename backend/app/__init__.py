@@ -2,7 +2,6 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
 import os
 from dotenv import load_dotenv
 
@@ -10,7 +9,6 @@ load_dotenv()
 
 db = SQLAlchemy()
 migrate = Migrate()
-jwt = JWTManager()
 
 def create_app(config_name=None):
     app = Flask(__name__)
@@ -27,18 +25,6 @@ def create_app(config_name=None):
         app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@db:5432/webapp')
         app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # JWT Configuration
-    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False  # For simplicity in development
-    
-    # OAuth Configuration
-    app.config['OAUTH_GOOGLE_CLIENT_ID'] = os.getenv('OAUTH_GOOGLE_CLIENT_ID')
-    app.config['OAUTH_GOOGLE_CLIENT_SECRET'] = os.getenv('OAUTH_GOOGLE_CLIENT_SECRET')
-    app.config['OAUTH_GITHUB_CLIENT_ID'] = os.getenv('OAUTH_GITHUB_CLIENT_ID')
-    app.config['OAUTH_GITHUB_CLIENT_SECRET'] = os.getenv('OAUTH_GITHUB_CLIENT_SECRET')
-    app.config['OAUTH_MICROSOFT_CLIENT_ID'] = os.getenv('OAUTH_MICROSOFT_CLIENT_ID')
-    app.config['OAUTH_MICROSOFT_CLIENT_SECRET'] = os.getenv('OAUTH_MICROSOFT_CLIENT_SECRET')
-    
     # Enable CORS for frontend connections with proper preflight handling
     CORS(app, 
          origins=['http://localhost:3000', 'http://127.0.0.1:3000'],
@@ -49,12 +35,6 @@ def create_app(config_name=None):
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
-    jwt.init_app(app)
-    
-    # Initialize OAuth (after app and extensions are set up)
-    with app.app_context():
-        from .api.auth_routes import register_oauth
-        register_oauth(app)
     
     # Create uploads directory (only for non-testing)
     if config_name != 'testing':

@@ -107,6 +107,10 @@ class ChatSession(db.Model):
     # New relationship for interaction logs
     interaction_logs = db.relationship('InteractionLog', backref='chat_session',
                                      lazy='dynamic', cascade='all, delete-orphan')
+    
+    # Relationship for interaction session summaries - add cascade delete
+    interaction_session_summaries = db.relationship('InteractionSessionSummary', backref='chat_session',
+                                                   lazy='dynamic', cascade='all, delete-orphan')
 
     def to_dict(self):
         return {

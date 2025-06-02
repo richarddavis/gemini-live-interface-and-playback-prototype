@@ -38,6 +38,12 @@
   max-width: 800px;
 }
 
+.modal-container.live-session {
+  width: 680px;
+  max-width: 90vw;
+  max-height: 85vh;
+}
+
 /* Modal Header */
 .modal-header {
   display: flex;
@@ -121,7 +127,8 @@
   }
   
   .modal-container.large,
-  .modal-container.medium {
+  .modal-container.medium,
+  .modal-container.live-session {
     width: 95%;
     max-width: none;
     max-height: 95vh;

@@ -582,7 +582,7 @@ function App() {
               onClose={handleCloseLiveModal}
               title="Live Session"
               subtitle={getLiveSessionSubtitle()}
-              size="large"
+              size="live-session"
             >
               <GeminiLiveDirect 
                 onExitLiveMode={handleLiveSessionComplete}

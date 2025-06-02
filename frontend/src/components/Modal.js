@@ -6,6 +6,7 @@ function Modal({
   onClose, 
   children, 
   title,
+  subtitle, // New prop for status/subtitle
   size = 'large', // 'large' (80-90%) or 'medium' (60-70%)
   showCloseButton = true 
 }) {
@@ -42,7 +43,10 @@ function Modal({
       <div className={`modal-container ${size}`}>
         {(title || showCloseButton) && (
           <div className="modal-header">
-            {title && <h2 className="modal-title">{title}</h2>}
+            <div className="modal-header-content">
+              {title && <h2 className="modal-title">{title}</h2>}
+              {subtitle && <div className="modal-subtitle">{subtitle}</div>}
+            </div>
             {showCloseButton && (
               <button 
                 className="modal-close-button"

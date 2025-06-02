@@ -10,13 +10,13 @@ import { interactionLogger } from '../services/interactionLogger';
  * Architecture: Frontend ↔ WebSocket ↔ Google Gemini Live API
  * Backend is used only for analytics/logging.
  */
-const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSessionId = null }, ref) => {
+const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal = false, chatSessionId = null }, ref) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('Aoede');
-  const [responseMode, setResponseMode] = useState('TEXT'); // 'TEXT' or 'AUDIO'
+  const [responseMode, setResponseMode] = useState('AUDIO'); // 'TEXT' or 'AUDIO'
   const [messages, setMessages] = useState([]);
   const [textInput, setTextInput] = useState('');
   const [sessionStartTime, setSessionStartTime] = useState(null);
@@ -51,6 +51,19 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Notify parent of status changes
+  useEffect(() => {
+    if (onStatusChange) {
+      if (isConnecting) {
+        onStatusChange('connecting');
+      } else if (isConnected) {
+        onStatusChange('connected');
+      } else {
+        onStatusChange('disconnected');
+      }
+    }
+  }, [isConnecting, isConnected, onStatusChange]);
 
   // Initialize interaction logging
   useEffect(() => {
@@ -1041,83 +1054,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
 
   return (
     <div className="gemini-live-container">
-      <div className="header">
-        <div className="header-left">
-          {onExitLiveMode && (
-            <button onClick={handleExit} className="exit-live-btn" title="Exit Live Mode">
-              ← Back to Chat
-            </button>
-          )}
-        <h2>🎭 Gemini Live Direct</h2>
-        </div>
-        <div className="connection-status">
-          {isConnecting && <span className="status connecting">Connecting...</span>}
-          {isConnected && <span className="status connected">Connected</span>}
-          {!isConnecting && !isConnected && <span className="status disconnected">Disconnected</span>}
-        </div>
-      </div>
-
-      <div className="controls-section">
-        <div className="main-controls">
-          {!isConnected && !isConnecting && (
-            <button onClick={connectToGemini} className="connect-btn">
-              Connect to Gemini
-            </button>
-          )}
-          {isConnected && (
-            <button onClick={disconnect} className="disconnect-btn">
-              Disconnect
-            </button>
-          )}
-        </div>
-
-        <div className="config-controls">
-          <div className="voice-selector">
-            <label htmlFor="voice">Voice:</label>
-            <select 
-              id="voice"
-              value={selectedVoice} 
-              onChange={(e) => setSelectedVoice(e.target.value)}
-              disabled={isConnected}
-            >
-              {voices.map(voice => (
-                <option key={voice} value={voice}>{voice}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="response-mode-selector">
-            <label htmlFor="response-mode">Response Mode:</label>
-            <select 
-              id="response-mode"
-              value={responseMode} 
-              onChange={(e) => setResponseMode(e.target.value)}
-              disabled={isConnected}
-            >
-              <option value="TEXT">Text</option>
-              <option value="AUDIO">Audio</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="media-controls">
-          <button 
-            onClick={toggleMicrophone} 
-            className={`media-btn ${isMicOn ? 'active' : ''}`}
-            disabled={!isConnected}
-          >
-            🎤 {isMicOn ? 'Mic On' : 'Mic Off'}
-          </button>
-          <button 
-            onClick={toggleCamera} 
-            className={`media-btn ${isCameraOn ? 'active' : ''}`}
-            disabled={!isConnected}
-          >
-            📹 {isCameraOn ? 'Camera On' : 'Camera Off'}
-          </button>
-        </div>
-      </div>
-
+      {/* Video preview */}
       {isCameraOn && (
         <div className="video-preview">
           <video 
@@ -1128,8 +1065,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
             playsInline
             style={{ 
               display: 'block',
-              width: '320px', 
-              height: '240px',
+              width: '100%', 
+              maxWidth: '400px',
+              height: 'auto',
+              borderRadius: '12px',
               backgroundColor: '#000'
             }}
           >
@@ -1150,6 +1089,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
         </div>
       )}
 
+      {/* Chat messages */}
       <div className="chat-section">
         <div className="messages">
           {messages.map((msg) => (
@@ -1162,8 +1102,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
           ))}
           <div ref={messagesEndRef} />
         </div>
+      </div>
 
-        <div className="input-section">
+      {/* Bottom controls cluster */}
+      <div className="bottom-controls">
+        {/* Text input */}
+        <div className="text-input-container">
           <input
             type="text"
             value={textInput}
@@ -1178,8 +1122,74 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, isModal = false, chatSess
             disabled={!isConnected || !textInput.trim()}
             className="send-btn"
           >
-            Send
+            ↑
           </button>
+        </div>
+
+        {/* Control buttons */}
+        <div className="control-buttons">
+          {/* Camera toggle */}
+          <button 
+            onClick={toggleCamera} 
+            className={`control-btn camera-btn ${isCameraOn ? 'active' : ''}`}
+            disabled={!isConnected}
+            title={isCameraOn ? 'Turn off camera' : 'Turn on camera'}
+          >
+            📹
+          </button>
+
+          {/* Microphone toggle */}
+          <button 
+            onClick={toggleMicrophone} 
+            className={`control-btn mic-btn ${isMicOn ? 'active' : ''}`}
+            disabled={!isConnected}
+            title={isMicOn ? 'Turn off microphone' : 'Turn on microphone'}
+          >
+            🎤
+          </button>
+
+          {/* Connect/Disconnect button */}
+          {!isConnected && !isConnecting ? (
+            <button onClick={connectToGemini} className="control-btn connect-btn">
+              ▶️
+            </button>
+          ) : (
+            <button onClick={disconnect} className="control-btn disconnect-btn">
+              ⏹️
+            </button>
+          )}
+
+          {/* Voice selection menu */}
+          <div className="voice-selector-container">
+            <button className="control-btn voice-btn" title="Voice settings">
+              🗣️
+            </button>
+            <div className="voice-menu">
+              <div className="voice-option-group">
+                <label>Voice:</label>
+                <select 
+                  value={selectedVoice} 
+                  onChange={(e) => setSelectedVoice(e.target.value)}
+                  disabled={isConnected}
+                >
+                  {voices.map(voice => (
+                    <option key={voice} value={voice}>{voice}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="voice-option-group">
+                <label>Response Mode:</label>
+                <select 
+                  value={responseMode} 
+                  onChange={(e) => setResponseMode(e.target.value)}
+                  disabled={isConnected}
+                >
+                  <option value="TEXT">Text</option>
+                  <option value="AUDIO">Audio</option>
+                </select>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,17 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
 import Modal from './components/Modal';
 import AppHeader from './components/AppHeader';
+import Login from './components/Login';
+import ProtectedRoute from './components/ProtectedRoute';
+import UserProfile from './components/UserProfile';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useChatApi } from './hooks/useChatApi';
 import GeminiLiveDirect from './components/GeminiLiveDirect';
 import InteractionReplay from './components/InteractionReplay';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
 
-function App() {
+// Main App Component (with authentication)
+function MainApp() {
+  const { user, token } = useAuth();
+  
   // State
   const [messages, setMessages] = useState([]);
   const [chatSessions, setChatSessions] = useState([]);
@@ -33,7 +41,7 @@ function App() {
   const messageInputRef = useRef(null);
   const liveSessionRef = useRef(null);
   
-  // API hook
+  // API hook with authentication
   const { 
     isLoading: isApiLoading, 
     error: apiError, 
@@ -42,11 +50,13 @@ function App() {
     fetchSessionMessages,
     uploadFile,
     streamMessageToLLM
-  } = useChatApi(API_URL);
+  } = useChatApi(API_URL, token);
 
   // Fetch chat sessions on component mount
   useEffect(() => {
     async function loadInitialData() {
+      if (!token) return;
+      
       const sessions = await fetchChatSessions();
       setChatSessions(sessions);
       
@@ -58,12 +68,12 @@ function App() {
     }
     loadInitialData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [token]);
 
   // Fetch messages for the active chat session
   useEffect(() => {
     async function loadMessagesForSession() {
-      if (!activeChatSessionId) {
+      if (!activeChatSessionId || !token) {
         setMessages([]);
         return;
       }
@@ -78,7 +88,7 @@ function App() {
     if (activeChatSessionId) {
       loadMessagesForSession();
     }
-  }, [activeChatSessionId, fetchSessionMessages]);
+  }, [activeChatSessionId, fetchSessionMessages, token]);
   
   // Update provider when active chat changes
   useEffect(() => {
@@ -107,7 +117,7 @@ function App() {
     setProvider(newProvider);
     
     // When provider changes, save it to the current chat session
-    if (activeChatSessionId) {
+    if (activeChatSessionId && token) {
       // Update local state
       setChatSessions(prevSessions => 
         prevSessions.map(session => 
@@ -121,7 +131,8 @@ function App() {
       fetch(`${API_URL}/chat_sessions/${activeChatSessionId}/update_provider`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({ provider: newProvider })
       }).catch(err => console.error("Error updating provider:", err));
@@ -550,6 +561,51 @@ function App() {
           isModal={true}
         />
       </Modal>
+    </div>
+  );
+}
+
+// Main App wrapper with authentication and routing
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<Login />} />
+          <Route 
+            path="/" 
+            element={
+              <ProtectedRoute>
+                <AppWithAuth />
+              </ProtectedRoute>
+            } 
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
+  );
+}
+
+// App component with authentication context
+function AppWithAuth() {
+  const { user } = useAuth();
+  
+  return (
+    <div className="App-container">
+      {/* Add user profile to header */}
+      <div className="app-header-with-auth">
+        <AppHeader 
+          onToggleMobileMenu={() => {}}
+          isMobileSidebarOpen={false}
+        />
+        <div className="auth-section">
+          <UserProfile />
+        </div>
+      </div>
+      
+      <MainApp />
     </div>
   );
 }

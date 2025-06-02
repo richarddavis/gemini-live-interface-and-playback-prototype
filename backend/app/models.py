@@ -1,8 +1,89 @@
 from datetime import datetime
 from . import db
 
+class User(db.Model):
+    """User model for authentication and user management"""
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    username = db.Column(db.String(80), unique=True, nullable=True, index=True)
+    display_name = db.Column(db.String(100), nullable=True)
+    avatar_url = db.Column(db.String(500), nullable=True)
+    
+    # Account status
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_verified = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_login_at = db.Column(db.DateTime, nullable=True)
+    
+    # Preferences
+    timezone = db.Column(db.String(50), default='UTC')
+    language = db.Column(db.String(10), default='en')
+    
+    # Relationships
+    oauth_accounts = db.relationship('OAuthAccount', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    chat_sessions = db.relationship('ChatSession', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    tasks = db.relationship('Task', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'username': self.username,
+            'display_name': self.display_name,
+            'avatar_url': self.avatar_url,
+            'is_active': self.is_active,
+            'is_verified': self.is_verified,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'last_login_at': self.last_login_at.isoformat() if self.last_login_at else None,
+            'timezone': self.timezone,
+            'language': self.language
+        }
+
+class OAuthAccount(db.Model):
+    """OAuth account linking for multiple OAuth providers"""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    
+    # OAuth provider information
+    provider = db.Column(db.String(50), nullable=False, index=True)  # 'google', 'github', 'microsoft', etc.
+    provider_id = db.Column(db.String(100), nullable=False)  # OAuth provider's user ID
+    provider_email = db.Column(db.String(120), nullable=True)  # Email from OAuth provider
+    provider_username = db.Column(db.String(100), nullable=True)  # Username from OAuth provider
+    
+    # OAuth tokens (encrypted in production)
+    access_token = db.Column(db.Text, nullable=True)
+    refresh_token = db.Column(db.Text, nullable=True)
+    token_expires_at = db.Column(db.DateTime, nullable=True)
+    
+    # Provider profile data
+    provider_data = db.Column(db.JSON, nullable=True)  # Store additional profile info
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_used_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Unique constraint to prevent duplicate accounts
+    __table_args__ = (db.UniqueConstraint('provider', 'provider_id', name='unique_provider_account'),)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'provider': self.provider,
+            'provider_id': self.provider_id,
+            'provider_email': self.provider_email,
+            'provider_username': self.provider_username,
+            'created_at': self.created_at.isoformat(),
+            'last_used_at': self.last_used_at.isoformat()
+        }
+
 class ChatSession(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     name = db.Column(db.String(100), nullable=True) # Optional name for the chat
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     provider = db.Column(db.String(50), nullable=True, default='openai')  # AI provider for this chat
@@ -18,6 +99,7 @@ class ChatSession(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'user_id': self.user_id,
             'name': self.name or f"Chat {self.id}", # Default name if not set
             'created_at': self.created_at.isoformat(),
             'provider': self.provider
@@ -25,6 +107,7 @@ class ChatSession(db.Model):
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=True)
     completed = db.Column(db.Boolean, default=False)
@@ -34,6 +117,7 @@ class Task(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'user_id': self.user_id,
             'title': self.title,
             'description': self.description,
             'completed': self.completed,
@@ -85,6 +169,7 @@ class ChatMessage(db.Model):
 class InteractionLog(db.Model):
     """Main interaction log table for tracking all user interactions"""
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)  # Link to user
     session_id = db.Column(db.String(100), nullable=False, index=True)  # Frontend session ID
     chat_session_id = db.Column(db.Integer, db.ForeignKey('chat_session.id'), nullable=True)  # Link to chat session if applicable
     interaction_type = db.Column(db.String(50), nullable=False, index=True)  # 'video_frame', 'audio_chunk', 'text_input', 'api_response'
@@ -105,6 +190,7 @@ class InteractionLog(db.Model):
     def to_dict(self, include_media=False):
         result = {
             'id': self.id,
+            'user_id': self.user_id,
             'session_id': self.session_id,
             'chat_session_id': self.chat_session_id,
             'interaction_type': self.interaction_type,
@@ -219,6 +305,7 @@ class InteractionMediaData(db.Model):
 class InteractionSessionSummary(db.Model):
     """Summary statistics for each interaction session"""
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)  # Link to user
     session_id = db.Column(db.String(100), nullable=False, unique=True, index=True)
     chat_session_id = db.Column(db.Integer, db.ForeignKey('chat_session.id'), nullable=True)
     
@@ -246,6 +333,7 @@ class InteractionSessionSummary(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'user_id': self.user_id,
             'session_id': self.session_id,
             'chat_session_id': self.chat_session_id,
             'started_at': self.started_at.isoformat(),

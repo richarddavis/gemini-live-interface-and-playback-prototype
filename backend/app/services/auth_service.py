@@ -13,7 +13,7 @@ class AuthService:
     """Service for handling OAuth authentication with Dex"""
     
     def __init__(self):
-        self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://localhost:5556/dex')
+        self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://localhost:5556')
         self.client_id = os.getenv('OAUTH_CLIENT_ID', 'chat-app-dev')
         self.client_secret = os.getenv('OAUTH_CLIENT_SECRET', 'chat-app-dev-secret-12345')
         self.redirect_uri = 'http://localhost:3000/auth/callback'
@@ -23,14 +23,28 @@ class AuthService:
         try:
             response = requests.get(f"{self.oauth_issuer}/.well-known/openid_configuration")
             response.raise_for_status()
-            return response.json()
+            discovery = response.json()
+            
+            # Only replace oauth-server with localhost for browser-facing endpoints
+            # Keep internal endpoints as-is for server-to-server communication
+            if 'authorization_endpoint' in discovery and discovery['authorization_endpoint']:
+                discovery['authorization_endpoint'] = discovery['authorization_endpoint'].replace('http://oauth-server:', 'http://localhost:')
+            
+            # Keep the issuer as oauth-server for internal token validation
+            # but create a browser-friendly issuer for the frontend
+            discovery['browser_issuer'] = discovery.get('issuer', '').replace('http://oauth-server:', 'http://localhost:')
+            
+            return discovery
         except requests.RequestException as e:
             current_app.logger.error(f"Failed to get discovery document: {e}")
             # Fallback for development
             return {
-                'authorization_endpoint': f"{self.oauth_issuer}/auth",
+                'authorization_endpoint': f"{self.oauth_issuer.replace('oauth-server', 'localhost')}/auth",
                 'token_endpoint': f"{self.oauth_issuer}/token",
-                'userinfo_endpoint': f"{self.oauth_issuer}/userinfo"
+                'userinfo_endpoint': f"{self.oauth_issuer}/userinfo",
+                'jwks_uri': f"{self.oauth_issuer}/keys",
+                'issuer': self.oauth_issuer,
+                'browser_issuer': self.oauth_issuer.replace('oauth-server', 'localhost')
             }
     
     def generate_pkce_challenge(self):

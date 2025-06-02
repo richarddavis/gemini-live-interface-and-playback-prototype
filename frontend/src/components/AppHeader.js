@@ -1,4 +1,5 @@
 import React from 'react';
+import AuthWidget from './AuthWidget';
 import './AppHeader.css';
 
 function AppHeader({ 
@@ -25,12 +26,9 @@ function AppHeader({
           </div>
         </div>
 
-        {/* Right side - Future user account area */}
+        {/* Right side - Authentication widget */}
         <div className="header-right">
-          {/* Placeholder for future user account menu */}
-          <div className="user-menu-placeholder">
-            {/* This will be replaced with user avatar/menu in the future */}
-          </div>
+          <AuthWidget />
         </div>
       </div>
     </header>

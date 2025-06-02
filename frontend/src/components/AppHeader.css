@@ -12,13 +12,7 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
-/* Desktop - adjust for sidebar */
-@media (min-width: 769px) {
-  .app-header {
-    left: 280px; /* Account for sidebar width */
-  }
-}
-
+/* Header content with proper spacing */
 .header-content {
   display: flex;
   align-items: center;

@@ -14,6 +14,13 @@ class Config:
     SESSION_USE_SIGNER = True
     SESSION_KEY_PREFIX = 'chat_app:'
     
+    # Session cookie settings for cross-origin requests
+    SESSION_COOKIE_NAME = 'session'
+    SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'  # Allows cookies in top-level navigation
+    SESSION_COOKIE_PATH = '/'
+    
     # Set GOOGLE_APPLICATION_CREDENTIALS in environment or configure here
     # Example: 
     # os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/path/to/service-account-key.json'

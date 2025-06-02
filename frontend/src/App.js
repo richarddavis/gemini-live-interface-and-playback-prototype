@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
 import ChatSidebar from './components/ChatSidebar';
 import Modal from './components/Modal';
+import AppHeader from './components/AppHeader';
 import { useChatApi } from './hooks/useChatApi';
 import GeminiLiveDirect from './components/GeminiLiveDirect';
 import InteractionReplay from './components/InteractionReplay';
@@ -20,7 +21,6 @@ function App() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [currentBotResponse, setCurrentBotResponse] = useState(null);
-  const [isLiveMode, setIsLiveMode] = useState(false);
   const [isReplayMode, setIsReplayMode] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   
@@ -28,6 +28,7 @@ function App() {
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
   const [isPlaybackModalOpen, setIsPlaybackModalOpen] = useState(false);
   const [playbackSessionData, setPlaybackSessionData] = useState(null);
+  const [liveSessionStatus, setLiveSessionStatus] = useState('disconnected');
   
   const messageInputRef = useRef(null);
   const liveSessionRef = useRef(null);
@@ -286,49 +287,37 @@ function App() {
     }
   };
 
-  const handleToggleLiveMode = () => {
-    // For mobile, keep the old behavior (separate page)
-    if (window.innerWidth <= 768) {
-      console.log('Mobile: Toggling live mode. Current:', isLiveMode);
-      if (isLiveMode) {
-        // Exiting live mode - trigger session completion
-        handleMobileLiveSessionExit();
-      } else {
-        // Entering live mode
-        setIsLiveMode(true);
-        setIsReplayMode(false);
-      }
-    } else {
-      // For desktop, open the modal
-      console.log('Desktop: Opening live modal');
-      setIsLiveModalOpen(true);
-    }
+  // Handle status changes from live session component
+  const handleLiveSessionStatusChange = (status) => {
+    setLiveSessionStatus(status);
   };
 
-  const handleMobileLiveSessionExit = async () => {
-    // Similar to modal close but for mobile direct page
-    if (liveSessionRef.current && liveSessionRef.current.triggerDisconnect) {
-      console.log('📱 Mobile live mode exit - triggering session completion...');
-      try {
-        await liveSessionRef.current.triggerDisconnect();
-      } catch (error) {
-        console.warn('⚠️ Error during mobile live session exit:', error);
-        // Still exit live mode even if session completion fails
-        setIsLiveMode(false);
-      }
-    } else {
-      // No active session or component not ready, just exit live mode
-      console.log('📱 Mobile live mode exit - no active session to complete');
-      setIsLiveMode(false);
-    }
+  // Create subtitle for modal header
+  const getLiveSessionSubtitle = () => {
+    const statusMap = {
+      'connecting': 'Connecting...',
+      'connected': '🔴 Live',
+      'disconnected': 'Disconnected'
+    };
+    
+    return (
+      <span className={`modal-subtitle ${liveSessionStatus}`}>
+        {statusMap[liveSessionStatus] || 'Disconnected'}
+      </span>
+    );
+  };
+
+  const handleToggleLiveMode = () => {
+    // Use modal for both desktop and mobile (consistent with playback interface)
+    console.log('Opening live modal for both desktop and mobile');
+    setIsLiveModalOpen(true);
   };
 
   const handleToggleReplayMode = () => {
     // For mobile, keep the old behavior (separate page)  
     if (window.innerWidth <= 768) {
       console.log('Mobile: Toggling replay mode. Current:', isReplayMode);
-    setIsReplayMode(prevMode => !prevMode);
-      setIsLiveMode(false);
+      setIsReplayMode(prevMode => !prevMode);
       console.log('Mobile: Replay mode will be:', !isReplayMode);
     } else {
       // For desktop, open the modal with no specific session (browse mode)
@@ -362,15 +351,8 @@ function App() {
   };
 
   const handleLiveSessionComplete = async (sessionData) => {
-    // This handler works for both mobile and desktop
-    const isMobile = window.innerWidth <= 768;
-    
-    // Close modal if desktop, exit live mode if mobile
-    if (isMobile) {
-      setIsLiveMode(false);
-    } else {
-      setIsLiveModalOpen(false);
-    }
+    // Close modal for both desktop and mobile (now using consistent modal approach)
+    setIsLiveModalOpen(false);
     
     // If no sessionData, this was a casual exit - no need to save anything
     if (!sessionData) {
@@ -474,7 +456,14 @@ function App() {
 
   return (
     <div className="App-container">
-      {console.log('Rendering App. isLiveMode:', isLiveMode)}
+      {console.log('Rendering App - live sessions now use modals')}
+      
+      {/* Fixed Header */}
+      <AppHeader 
+        onToggleMobileMenu={handleMobileSidebarToggle}
+        isMobileSidebarOpen={isMobileSidebarOpen}
+      />
+      
       <ChatSidebar
         chatSessions={chatSessions}
         activeChatSessionId={activeChatSessionId}
@@ -494,26 +483,7 @@ function App() {
       />
       
       <div className="App-main-content">
-        {/* Mobile hamburger menu button */}
-        <button 
-          className={`mobile-hamburger-button ${isMobileSidebarOpen ? 'sidebar-open' : ''}`}
-          onClick={handleMobileSidebarToggle}
-          aria-label="Open menu"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-        
-        {isLiveMode ? (
-          <div className="live-mode-container">
-            <GeminiLiveDirect 
-              onExitLiveMode={handleLiveSessionComplete} 
-              chatSessionId={activeChatSessionId}
-              ref={liveSessionRef}
-            />
-          </div>
-        ) : isReplayMode ? (
+        {isReplayMode ? (
           <div className="replay-mode-container">
             <InteractionReplay onExitReplayMode={handleToggleReplayMode} />
           </div>
@@ -536,7 +506,6 @@ function App() {
                   isLoading={isApiLoading || isUploadingMedia}
                   provider={provider}
                   onToggleLiveMode={handleToggleLiveMode}
-                  isLiveMode={isLiveMode}
                   apiKey={apiKey}
                 />
               </main>
@@ -556,10 +525,12 @@ function App() {
         isOpen={isLiveModalOpen}
         onClose={handleCloseLiveModal}
         title="Live Session"
+        subtitle={getLiveSessionSubtitle()}
         size="large"
       >
         <GeminiLiveDirect 
           onExitLiveMode={handleLiveSessionComplete}
+          onStatusChange={handleLiveSessionStatusChange}
           isModal={true}
           chatSessionId={activeChatSessionId}
           ref={liveSessionRef}

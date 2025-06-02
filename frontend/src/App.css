@@ -42,12 +42,12 @@ body {
 @media (max-width: 768px) {
   .chat-sidebar {
     position: fixed;
-    top: 0;
+    top: 56px; /* Start below the header */
     left: 0;
     width: 85%;
     max-width: 320px;
-    height: 100vh;
-    height: 100dvh; /* Use dynamic viewport height on mobile */
+    height: calc(100vh - 56px); /* Adjust height to account for header */
+    height: calc(100dvh - 56px); /* Use dynamic viewport height on mobile */
     transform: translateX(-100%);
     box-shadow: 2px 0 10px rgba(0,0,0,0.3);
     padding: 15px;
@@ -200,52 +200,19 @@ body {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* Important for chat-container to scroll correctly */
-  position: relative;
+  overflow: hidden; /* Prevent double scrollbars */
+  padding-top: 60px; /* Add space for fixed header */
 }
 
-/* Mobile hamburger menu button */
-.mobile-hamburger-button {
-  display: none;
-  position: fixed;
-  top: 16px;
-  left: 16px;
-  z-index: 1001;
-  background: transparent;
-  color: rgba(44, 62, 80, 0.8);
-  border: none;
-  border-radius: 0;
-  width: 32px;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: none;
-  transition: all 0.2s ease;
-  padding: 4px;
-}
-
+/* Mobile responsive adjustments */
 @media (max-width: 768px) {
-  .mobile-hamburger-button {
-  display: flex;
-  }
-  
-  /* Hide hamburger when sidebar is open */
-  .mobile-hamburger-button.sidebar-open {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(-8px);
+  .App-main-content {
+    width: 100%;
+    padding-top: 56px; /* Slightly shorter header on mobile */
   }
 }
 
-.mobile-hamburger-button:hover {
-  color: rgba(44, 62, 80, 1);
-  transform: scale(1.1);
-}
 
-.mobile-hamburger-button:active {
-  transform: scale(0.95);
-}
 
 /* Enhanced API controls */
 .api-controls {

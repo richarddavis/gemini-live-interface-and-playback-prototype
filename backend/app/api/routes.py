@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from io import BytesIO
 import requests
+from ..api.auth_routes import require_auth
+from ..services.auth_service import auth_service
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
@@ -106,24 +108,45 @@ def create_message():
 
 # Chat Session Routes
 @api.route('/chat_sessions', methods=['GET'])
+@require_auth
 def get_chat_sessions():
-    sessions = ChatSession.query.order_by(ChatSession.created_at.desc()).all()
+    # Get the current authenticated user
+    user = auth_service.get_current_user()
+    if not user:
+        return jsonify({"error": "User not found"}), 401
+    
+    # Only return sessions for the authenticated user
+    sessions = ChatSession.query.filter_by(user_id=user.id).order_by(ChatSession.created_at.desc()).all()
     return jsonify([session.to_dict() for session in sessions]), 200
 
 @api.route('/chat_sessions', methods=['POST'])
+@require_auth
 def create_chat_session():
     data = request.get_json() or {}
     provider = data.get('provider', 'openai')
     
-    session = ChatSession(provider=provider)
+    # Get the current authenticated user
+    user = auth_service.get_current_user()
+    if not user:
+        return jsonify({"error": "User not found"}), 401
+    
+    session = ChatSession(provider=provider, user_id=user.id)
     db.session.add(session)
     db.session.commit()
     db.session.refresh(session)
     return jsonify(session.to_dict()), 201
 
 @api.route('/chat_sessions/<int:session_id>', methods=['DELETE'])
+@require_auth
 def delete_chat_session(session_id):
-    session = ChatSession.query.get_or_404(session_id)
+    # Get the current authenticated user
+    user = auth_service.get_current_user()
+    if not user:
+        return jsonify({"error": "User not found"}), 401
+    
+    session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+    if not session:
+        return jsonify({"error": "Chat session not found or unauthorized"}), 404
     
     # No need to manually delete messages, the cascade will handle it
     db.session.delete(session)
@@ -132,8 +155,17 @@ def delete_chat_session(session_id):
     return jsonify({"message": "Chat session deleted successfully"}), 200
 
 @api.route('/chat_sessions/<int:session_id>/update_provider', methods=['POST'])
+@require_auth
 def update_chat_session_provider(session_id):
-    session = ChatSession.query.get_or_404(session_id)
+    # Get the current authenticated user
+    user = auth_service.get_current_user()
+    if not user:
+        return jsonify({"error": "User not found"}), 401
+    
+    session = ChatSession.query.filter_by(id=session_id, user_id=user.id).first()
+    if not session:
+        return jsonify({"error": "Chat session not found or unauthorized"}), 404
+    
     data = request.get_json()
     
     if not data or 'provider' not in data:
@@ -414,9 +446,15 @@ def upload_file():
 # ===========================
 
 @api.route('/interaction-logs', methods=['POST'])
+@require_auth
 def log_interaction():
     """Log a user interaction with optional media data"""
     try:
+        # Get the current authenticated user
+        user = auth_service.get_current_user()
+        if not user:
+            return jsonify({"error": "User not found"}), 401
+            
         data = request.get_json()
         
         # Validate required fields
@@ -444,10 +482,11 @@ def log_interaction():
             interaction_timestamp = datetime.utcnow()
             current_app.logger.debug("No frontend timestamp provided, using current time")
         
-        # Create main interaction log
+        # Create main interaction log with user_id
         interaction_log = InteractionLog(
             session_id=data['session_id'],
             chat_session_id=data.get('chat_session_id'),
+            user_id=user.id,
             interaction_type=data['interaction_type'],
             user_agent=user_agent,
             ip_address=ip_address,
@@ -728,7 +767,7 @@ def log_interaction():
             current_app.logger.info(f"Started background upload thread for interaction {interaction_id}")
         
         # Update session summary (quick operation)
-        _update_session_summary(data['session_id'], data['interaction_type'], metadata_data)
+        _update_session_summary(data['session_id'], data['interaction_type'], metadata_data, user.id)
         
         # 🚨 RETURN IMMEDIATELY (don't wait for upload) 🚨
         return jsonify({
@@ -859,14 +898,23 @@ def get_interaction_sessions():
         return jsonify({"error": f"Failed to get sessions: {str(e)}"}), 500
 
 @api.route('/interaction-logs/session/<session_id>/start', methods=['POST'])
+@require_auth
 def start_interaction_session(session_id):
     """Start a new interaction session or resume existing one"""
     try:
+        # Get the current authenticated user
+        user = auth_service.get_current_user()
+        if not user:
+            return jsonify({"error": "User not found"}), 401
+            
         data = request.get_json() or {}
         chat_session_id = data.get('chat_session_id')
         
-        # Check if session already exists
-        existing_summary = InteractionSessionSummary.query.filter_by(session_id=session_id).first()
+        # Check if session already exists for this user
+        existing_summary = InteractionSessionSummary.query.filter_by(
+            session_id=session_id,
+            user_id=user.id
+        ).first()
         
         if existing_summary and not existing_summary.ended_at:
             # Session already active
@@ -894,10 +942,11 @@ def start_interaction_session(session_id):
             db.session.commit()
             session_summary = existing_summary
         else:
-            # Create new session summary
+            # Create new session summary with user_id
             session_summary = InteractionSessionSummary(
                 session_id=session_id,
                 chat_session_id=chat_session_id,
+                user_id=user.id,
                 started_at=datetime.utcnow()
             )
             
@@ -915,13 +964,22 @@ def start_interaction_session(session_id):
         return jsonify({"error": f"Failed to start session: {str(e)}"}), 500
 
 @api.route('/interaction-logs/session/<session_id>/end', methods=['POST'])
+@require_auth
 def end_interaction_session(session_id):
     """End an interaction session"""
     try:
-        session_summary = InteractionSessionSummary.query.filter_by(session_id=session_id).first()
+        # Get the current authenticated user
+        user = auth_service.get_current_user()
+        if not user:
+            return jsonify({"error": "User not found"}), 401
+            
+        session_summary = InteractionSessionSummary.query.filter_by(
+            session_id=session_id,
+            user_id=user.id
+        ).first()
         
         if not session_summary:
-            return jsonify({"error": "Session not found"}), 404
+            return jsonify({"error": "Session not found or unauthorized"}), 404
         
         if session_summary.ended_at:
             return jsonify({"message": "Session already ended"}), 200
@@ -941,7 +999,7 @@ def end_interaction_session(session_id):
         current_app.logger.error(f"Error ending session: {str(e)}")
         return jsonify({"error": f"Failed to end session: {str(e)}"}), 500
 
-def _update_session_summary(session_id, interaction_type, metadata):
+def _update_session_summary(session_id, interaction_type, metadata, user_id=None):
     """Helper function to update session summary statistics"""
     try:
         summary = InteractionSessionSummary.query.filter_by(session_id=session_id).first()
@@ -950,6 +1008,7 @@ def _update_session_summary(session_id, interaction_type, metadata):
             # Create if doesn't exist
             summary = InteractionSessionSummary(
                 session_id=session_id,
+                user_id=user_id,
                 started_at=datetime.utcnow()
             )
             db.session.add(summary)

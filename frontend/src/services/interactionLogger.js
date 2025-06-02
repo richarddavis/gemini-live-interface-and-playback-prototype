@@ -63,6 +63,7 @@ class InteractionLogger {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Include cookies for authentication
         body: JSON.stringify({
           chat_session_id: this.chatSessionId
         })
@@ -88,7 +89,8 @@ class InteractionLogger {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+        },
+        credentials: 'include' // Include cookies for authentication
       });
 
       if (!response.ok) {
@@ -238,6 +240,7 @@ class InteractionLogger {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Include cookies for authentication
         body: JSON.stringify(payload),
         signal: controller.signal
       });
@@ -424,7 +427,9 @@ class InteractionLogger {
   // Analytics methods
   async getSessionAnalytics() {
     try {
-      const response = await fetch(`${this.baseUrl}/interaction-logs/analytics/${this.sessionId}`);
+      const response = await fetch(`${this.baseUrl}/interaction-logs/analytics/${this.sessionId}`, {
+        credentials: 'include' // Include cookies for authentication
+      });
       if (response.ok) {
         return await response.json();
       }
@@ -442,7 +447,9 @@ class InteractionLogger {
       if (filters.offset) params.append('offset', filters.offset);
       if (filters.includeMedia) params.append('include_media', 'true');
 
-      const response = await fetch(`${this.baseUrl}/interaction-logs/${this.sessionId}?${params}`);
+      const response = await fetch(`${this.baseUrl}/interaction-logs/${this.sessionId}?${params}`, {
+        credentials: 'include' // Include cookies for authentication
+      });
       if (response.ok) {
         return await response.json();
       }
@@ -470,7 +477,9 @@ class InteractionLogger {
     const targetSessionId = sessionId || this.sessionId;
     console.log(`🎭 getReplayData called with sessionId: ${sessionId}, targetSessionId: ${targetSessionId}`);
     try {
-      const response = await fetch(`${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=1000`);
+      const response = await fetch(`${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=1000`, {
+        credentials: 'include' // Include cookies for authentication
+      });
       if (response.ok) {
         const data = await response.json();
         console.log(`🎭 getReplayData response for session ${targetSessionId}:`, {
@@ -499,16 +508,21 @@ class InteractionLogger {
     });
     
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        credentials: 'include' // Include cookies for authentication
+      });
+      console.log('🔍 getAllReplaySessions response:', response.status, response.statusText);
       if (response.ok) {
-        return await response.json();
+        const data = await response.json();
+        console.log('🔍 getAllReplaySessions data:', data);
+        return data.sessions || [];
+      } else {
+        console.error('🔍 getAllReplaySessions failed:', response.status, response.statusText);
       }
-      console.error('❌ getAllReplaySessions failed:', response.status, response.statusText);
-      return { sessions: [], total_count: 0 };
     } catch (error) {
-      console.error('❌ getAllReplaySessions error:', error);
-      return { sessions: [], total_count: 0 };
+      console.warn('Error fetching replay sessions:', error);
     }
+    return [];
   }
 
   // Cleanup method

@@ -214,7 +214,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         console.error('Video play() failed:', playError);
       });
     }
-  }, [isCameraOn, isConnected, startVideoFrameCapture]); // Added isConnected and startVideoFrameCapture dependencies
+  }, [isCameraOn, isConnected, startVideoFrameCapture]);
 
   // Add message to chat
   const addMessage = useCallback((type, message) => {
@@ -396,8 +396,18 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             },
             system_instruction: {
               parts: [{
-                text: 'You are a helpful AI assistant. Be conversational and friendly.'
+                text: 'You are a helpful AI assistant with multimodal capabilities. You can see video input when the user\'s camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via realtime input (when camera is active), you should have access to current video frames and can see what\'s happening right now\n- When you receive standard text messages (when camera is off), you won\'t have video context\n- Audio input always gives you access to both audio and any active video streams\n\nAlways acknowledge the type of input you\'re receiving and what you can currently perceive (video, audio, text only).'
               }]
+            },
+            // Configure realtime input to handle multimodal data
+            realtime_input_config: {
+              automatic_activity_detection: {
+                disabled: false,
+                start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
+                end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
+                prefix_padding_ms: 20,
+                silence_duration_ms: 100
+              }
             }
           }
         };
@@ -825,33 +835,65 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       return;
     }
 
-    const message = {
-      client_content: {
-        turns: [{
-          role: 'user',
-          parts: [{ text: textInput.trim() }]
-        }],
-        turn_complete: true
+    // If camera is on, send text as realtime input to ensure it sees current video
+    // This is needed because client_content doesn't automatically include realtime context
+    if (isCameraOn && cameraStreamRef.current) {
+      const realtimeMessage = {
+        realtimeInput: {
+          text: textInput.trim()
+        }
+      };
+      
+      console.log('📤 Sending text as realtime input (camera active):', realtimeMessage);
+      wsRef.current.send(JSON.stringify(realtimeMessage));
+      addMessage('user', textInput.trim());
+      
+      // Log text input with error handling
+      try {
+        interactionLogger.logTextInput(textInput.trim(), {
+          message_length: textInput.trim().length,
+          is_connected: isConnected,
+          camera_active: true,
+          input_type: 'realtime'
+        });
+      } catch (logError) {
+        console.warn('⚠️ Failed to log text input:', logError);
       }
-    };
+    } else {
+      // Standard text message when no camera
+      const message = {
+        client_content: {
+          turns: [{
+            role: 'user',
+            parts: [{ text: textInput.trim() }]
+          }],
+          turn_complete: true
+        }
+      };
 
-    console.log('📤 Sending text message:', message);
-    wsRef.current.send(JSON.stringify(message));
-    addMessage('user', textInput.trim());
-    
-    // Log text input with error handling
-    try {
-      interactionLogger.logTextInput(textInput.trim(), {
-        message_length: textInput.trim().length,
-        is_connected: isConnected
-      });
-    } catch (logError) {
-      console.warn('⚠️ Failed to log text input:', logError);
+      console.log('📤 Sending text message (no camera):', message);
+      wsRef.current.send(JSON.stringify(message));
+      addMessage('user', textInput.trim());
+      
+      // Log text input with error handling
+      try {
+        interactionLogger.logTextInput(textInput.trim(), {
+          message_length: textInput.trim().length,
+          is_connected: isConnected,
+          camera_active: false,
+          input_type: 'client_content'
+        });
+      } catch (logError) {
+        console.warn('⚠️ Failed to log text input:', logError);
+      }
     }
     
     setTextInput('');
-    logAnalytics('text_input', { message_length: textInput.trim().length });
-  }, [textInput, isConnected, addMessage, logAnalytics]);
+    logAnalytics('text_input', { 
+      message_length: textInput.trim().length,
+      camera_active: isCameraOn 
+    });
+  }, [textInput, isConnected, isCameraOn, addMessage, logAnalytics]);
 
   // Toggle microphone
   const toggleMicrophone = useCallback(async () => {

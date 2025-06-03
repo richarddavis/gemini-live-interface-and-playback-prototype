@@ -10,7 +10,7 @@ import { interactionLogger } from '../services/interactionLogger';
  * Architecture: Frontend ↔ WebSocket ↔ Google Gemini Live API
  * Backend is used only for analytics/logging.
  */
-const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal = false, chatSessionId = null }, ref) => {
+const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal = false, chatSessionId = null, apiKey }, ref) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
@@ -39,7 +39,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Available voices from Google's 2025 documentation
   const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
 
-  const API_KEY = process.env.REACT_APP_GOOGLE_AI_STUDIO_API_KEY;
+  // Use the passed API key prop instead of environment variable
+  const API_KEY = apiKey;
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
   const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
 
@@ -343,7 +344,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Update connectToGemini to track session start time
   const connectToGemini = useCallback(async () => {
     if (!API_KEY) {
-      addMessage('error', 'Google AI Studio API key is required. Please set REACT_APP_GOOGLE_AI_STUDIO_API_KEY.');
+      addMessage('error', 'API key is required. Please enter your Google AI Studio API key in the sidebar, or enter "DFRP" to use the default key.');
       return;
     }
 

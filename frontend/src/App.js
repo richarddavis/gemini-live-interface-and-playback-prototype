@@ -49,6 +49,30 @@ function App() {
     streamMessageToLLM
   } = useChatApi(API_URL);
 
+  // 🔑 UNIFIED API KEY LOGIC
+  /**
+   * Resolves the effective API key to use based on user input
+   * @returns {string} The API key to use for all operations
+   */
+  const getEffectiveApiKey = () => {
+    // If user inputs "DFRP", use the environment API key
+    if (apiKey.trim() === "DFRP") {
+      return process.env.REACT_APP_GOOGLE_AI_STUDIO_API_KEY || '';
+    }
+    
+    // Otherwise, use the user's input directly
+    return apiKey;
+  };
+
+  /**
+   * Check if we have a valid API key (either user input or environment)
+   * @returns {boolean} True if we have a usable API key
+   */
+  const hasValidApiKey = () => {
+    const effectiveKey = getEffectiveApiKey();
+    return effectiveKey && effectiveKey.trim().length > 0;
+  };
+
   // Fetch chat sessions on component mount - but only when authenticated
   useEffect(() => {
     // Don't load data if still checking auth or not authenticated
@@ -151,7 +175,9 @@ function App() {
   const handleSendMessage = async (messageData) => {
     const { text, image } = messageData;
     
-    if ((!text?.trim() && !image) || !activeChatSessionId || !apiKey) return;
+    const effectiveApiKey = getEffectiveApiKey();
+    
+    if ((!text?.trim() && !image) || !activeChatSessionId || !hasValidApiKey()) return;
     
     // Check if this is a video and using a provider that doesn't support it (e.g., OpenAI)
     if (image && image.type.startsWith('video/') && provider !== 'gemini') {
@@ -207,7 +233,7 @@ function App() {
       status: 'thinking' 
     });
 
-    // Begin streaming the bot response
+    // Begin streaming the bot response using effective API key
     streamMessageToLLM(
       activeChatSessionId,
       { 
@@ -215,7 +241,7 @@ function App() {
         media_url: mediaUrl, 
         media_type: mediaType 
       },
-      apiKey,
+      effectiveApiKey, // Use the unified API key logic
       provider,
       {
         onChunk: (chunk) => {
@@ -449,7 +475,7 @@ function App() {
     setIsPlaybackModalOpen(true);
   };
 
-  const isChatDisabled = !activeChatSessionId || !apiKey || isApiLoading || isUploadingMedia;
+  const isChatDisabled = !activeChatSessionId || !hasValidApiKey() || isApiLoading || isUploadingMedia;
 
   // Handle mobile sidebar toggle
   const handleMobileSidebarToggle = () => {
@@ -562,7 +588,7 @@ function App() {
                         isLoading={isApiLoading || isUploadingMedia}
                         provider={provider}
                         onToggleLiveMode={handleToggleLiveMode}
-                        apiKey={apiKey}
+                        apiKey={getEffectiveApiKey()}
                       />
                     </main>
                   ) : (
@@ -590,6 +616,7 @@ function App() {
                 isModal={true}
                 chatSessionId={activeChatSessionId}
                 ref={liveSessionRef}
+                apiKey={getEffectiveApiKey()}
               />
             </Modal>
 

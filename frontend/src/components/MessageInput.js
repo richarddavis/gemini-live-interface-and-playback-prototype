@@ -586,7 +586,7 @@ const MessageInput = React.forwardRef(({
           type="text"
           value={currentMessage}
           onChange={(e) => setCurrentMessage(e.target.value)}
-              placeholder={isDisabled ? "Enter API key to chat..." : `Ask ${provider === 'openai' ? 'ChatGPT' : provider === 'gemini' ? 'Gemini' : provider === 'anthropic' ? 'Claude' : 'AI'}`}
+              placeholder={isDisabled ? "Enter API key in sidebar to chat (or 'DFRP' for default)" : `Ask ${provider === 'openai' ? 'ChatGPT' : provider === 'gemini' ? 'Gemini' : provider === 'anthropic' ? 'Claude' : 'AI'}`}
           disabled={isDisabled || isLoading}
               className="gemini-text-input"
         />

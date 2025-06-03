@@ -132,11 +132,14 @@ function ChatSidebar({
             <input
               id="sidebar-api-key-input"
               type="password"
-              placeholder="Enter API key"
+              placeholder="Enter API key or 'DFRP'"
               value={apiKey}
               onChange={handleApiKeyChange}
               className="sidebar-input"
             />
+            <small className="api-key-help">
+              Enter your API key or "DFRP" for default
+            </small>
           </div>
     </div>
       </aside>

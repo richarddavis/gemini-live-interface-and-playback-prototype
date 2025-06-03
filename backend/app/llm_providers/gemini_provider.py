@@ -7,16 +7,15 @@ from flask import current_app
 
 class GeminiProvider(LLMProvider):
     MODEL_NAME = "gemini-1.5-flash-latest"  # Regular model for non-live interactions
-    LIVE_MODEL_NAME = "gemini-2.0-flash-live-preview-04-09"  # Model for Live API
 
     def _configure_client(self, api_key, for_live=False):
         # The google-genai package has changed, and genai.configure() is no longer available
         # Instead, we need to create a client instance with the API key
-        if not api_key and not os.getenv("GEMINI_API_KEY"):
-            raise ValueError("GEMINI_API_KEY not set and no API key provided to GeminiProvider.")
+        if not api_key and not os.getenv("REACT_APP_GEMINI_API_KEY"):
+            raise ValueError("REACT_APP_GEMINI_API_KEY not set and no API key provided to GeminiProvider.")
         
         # Use the API key from the parameter or environment
-        client_api_key = api_key or os.getenv("GEMINI_API_KEY")
+        client_api_key = api_key or os.getenv("REACT_APP_GEMINI_API_KEY")
         
         # For Live API, we need to specify the alpha API version
         if for_live:

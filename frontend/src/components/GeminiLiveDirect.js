@@ -344,7 +344,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Update connectToGemini to track session start time
   const connectToGemini = useCallback(async () => {
     if (!API_KEY) {
-      addMessage('error', 'API key is required. Please enter your Google AI Studio API key in the sidebar, or enter "DFRP" to use the default key.');
+      addMessage('error', 'API key is required. Please enter your Google AI Studio API key in the sidebar.');
       return;
     }
 

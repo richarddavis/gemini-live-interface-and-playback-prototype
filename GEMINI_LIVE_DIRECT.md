@@ -33,7 +33,7 @@ Create `.env` file in the root directory:
 
 ```bash
 # Frontend Environment Variables
-REACT_APP_GOOGLE_AI_STUDIO_API_KEY=your_api_key_here
+REACT_APP_GEMINI_API_KEY=your_api_key_here
 REACT_APP_API_URL=http://localhost:8080
 
 # Backend Environment Variables (for analytics)
@@ -115,7 +115,7 @@ The simplified backend provides these analytics endpoints:
 
 ### Common Issues
 
-1. **"Please set REACT_APP_GOOGLE_AI_STUDIO_API_KEY"**
+1. **"Please set REACT_APP_GEMINI_API_KEY"**
    - Solution: Add API key to `.env` file
 
 2. **WebSocket Connection Failed**

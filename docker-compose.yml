@@ -9,7 +9,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     env_file:
-      - .env  # Load environment variables from .env file (including REACT_APP_GOOGLE_AI_STUDIO_API_KEY)
+      - .env  # Load environment variables from .env file (including REACT_APP_GEMINI_API_KEY)
     environment:
       - REACT_APP_API_URL=http://localhost:8080/api
       - REACT_APP_OAUTH_ISSUER=http://localhost:5556

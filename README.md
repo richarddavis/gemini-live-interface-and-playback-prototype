@@ -53,7 +53,7 @@ ANTHROPIC_API_KEY=your_anthropic_key
 GOOGLE_API_KEY=your_google_key
 
 # Gemini Live API (for direct connection)
-REACT_APP_GOOGLE_AI_STUDIO_API_KEY=your_api_key_here
+REACT_APP_GEMINI_API_KEY=your_api_key_here
 REACT_APP_API_URL=http://localhost:8080
 
 # Development
@@ -135,8 +135,7 @@ webapp_starter_cursor/
 | `DATABASE_URL` | PostgreSQL connection string | Yes |
 | `OPENAI_API_KEY` | OpenAI API key | Optional |
 | `ANTHROPIC_API_KEY` | Anthropic API key | Optional |
-| `GOOGLE_API_KEY` | Google AI API key | Optional |
-| `REACT_APP_GOOGLE_AI_STUDIO_API_KEY` | Gemini Live API key | For Live API |
+| `REACT_APP_GEMINI_API_KEY` | Gemini Live API key | For Live API |
 | `REACT_APP_API_URL` | Backend URL | Yes |
 
 ### Google AI Studio Setup
@@ -145,7 +144,7 @@ webapp_starter_cursor/
 2. Create a new project
 3. Enable Gemini Live API
 4. Generate an API key
-5. Add to `REACT_APP_GOOGLE_AI_STUDIO_API_KEY`
+5. Add to `REACT_APP_GEMINI_API_KEY`
 
 ## 🛠️ Development
 

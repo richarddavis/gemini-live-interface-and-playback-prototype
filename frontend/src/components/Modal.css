@@ -44,6 +44,13 @@
   max-height: 85vh;
 }
 
+.modal-container.session-playback {
+  width: fit-content;
+  min-width: 900px; /* Minimum to accommodate the grid layout */
+  max-width: 95vw; /* Don't exceed viewport */
+  max-height: 90vh;
+}
+
 /* Modal Header */
 .modal-header {
   display: flex;
@@ -128,10 +135,12 @@
   
   .modal-container.large,
   .modal-container.medium,
-  .modal-container.live-session {
+  .modal-container.live-session,
+  .modal-container.session-playback {
     width: 95%;
     max-width: none;
     max-height: 95vh;
+    min-width: 0; /* Remove min-width constraint on mobile */
   }
   
   .modal-header {

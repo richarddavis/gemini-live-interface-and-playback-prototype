@@ -561,23 +561,38 @@ def log_interaction():
                                 json_data = json.loads(media_data_info['data'])
                                 if isinstance(json_data, dict) and 'data' in json_data:
                                     base64_data = json_data['data']
-                                    # Fix padding if needed
                                     missing_padding = len(base64_data) % 4
                                     if missing_padding != 0:
                                         base64_data += '=' * (4 - missing_padding)
                                     decoded_data = base64.b64decode(base64_data)
+                                    file_extension = 'pcm'
+                                    content_type = json_data.get('mimeType', 'audio/pcm')
                                 else:
                                     decoded_data = media_data_info['data'].encode('utf-8')
-                            except (json.JSONDecodeError, KeyError, Exception):
-                                # Fallback for non-JSON or decode errors
+                                    file_extension = 'json'
+                                    content_type = 'application/json'
+                            except Exception:
+                                # Check if this looks like base64 encoded audio data
                                 try:
                                     base64_data = media_data_info['data']
-                                    missing_padding = len(base64_data) % 4
-                                    if missing_padding != 0:
-                                        base64_data += '=' * (4 - missing_padding)
-                                    decoded_data = base64.b64decode(base64_data)
+                                    # If it's very long and looks like base64, it's probably audio
+                                    if len(base64_data) > 1000 and all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=' for c in base64_data[:100]):
+                                        missing_padding = len(base64_data) % 4
+                                        if missing_padding != 0:
+                                            base64_data += '=' * (4 - missing_padding)
+                                        decoded_data = base64.b64decode(base64_data)
+                                        file_extension = 'pcm'
+                                        content_type = 'audio/pcm'
+                                    else:
+                                        # Short content or not base64-like, treat as text
+                                        decoded_data = media_data_info['data'].encode('utf-8')
+                                        file_extension = 'txt'
+                                        content_type = 'text/plain'
                                 except Exception:
+                                    # Final fallback: treat as text
                                     decoded_data = media_data_info['data'].encode('utf-8')
+                                    file_extension = 'txt'
+                                    content_type = 'text/plain'
                         else:
                             # For audio/video chunks
                             try:
@@ -685,18 +700,32 @@ def log_interaction():
                                     file_extension = 'json'
                                     content_type = 'application/json'
                             except Exception:
+                                # Check if this looks like base64 encoded audio data
                                 try:
                                     base64_data = media_data_info['data']
-                                    missing_padding = len(base64_data) % 4
-                                    if missing_padding != 0:
-                                        base64_data += '=' * (4 - missing_padding)
-                                    decoded_data = base64.b64decode(base64_data)
-                                    file_extension = 'json'
-                                    content_type = 'application/json'
+                                    # If it's very long and looks like base64, it's probably audio
+                                    if len(base64_data) > 1000 and all(c in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=' for c in base64_data[:100]):
+                                        missing_padding = len(base64_data) % 4
+                                        if missing_padding != 0:
+                                            base64_data += '=' * (4 - missing_padding)
+                                        decoded_data = base64.b64decode(base64_data)
+                                        file_extension = 'pcm'
+                                        content_type = 'audio/pcm'
+                                    else:
+                                        # Short content or not base64-like, treat as text
+                                        decoded_data = media_data_info['data'].encode('utf-8')
+                                        file_extension = 'txt'
+                                        content_type = 'text/plain'
                                 except Exception:
+                                    # Final fallback: treat as text
                                     decoded_data = media_data_info['data'].encode('utf-8')
                                     file_extension = 'txt'
                                     content_type = 'text/plain'
+                        elif interaction_type == 'text_input':
+                            # Text input is always plain text - don't try to base64 decode
+                            decoded_data = media_data_info['data'].encode('utf-8')
+                            file_extension = 'txt'
+                            content_type = 'text/plain'
                         else:
                             try:
                                 base64_data = media_data_info['data']
@@ -1085,16 +1114,24 @@ def get_interaction_media(interaction_id):
                         content_type = 'audio/pcm'
                     elif interaction_log.interaction_type == 'video_frame':
                         content_type = 'image/jpeg'
+                    elif interaction_log.interaction_type == 'text_input':
+                        # Text input should always be text/plain
+                        content_type = 'text/plain; charset=utf-8'
                     elif interaction_log.interaction_type == 'api_response':
-                        # Check if it's audio or text
+                        # Check if it's audio, JSON, or text
                         if media_data.cloud_storage_url.endswith('.pcm'):
                             content_type = 'audio/pcm'
                         elif media_data.cloud_storage_url.endswith('.json'):
                             content_type = 'application/json'
+                        elif media_data.cloud_storage_url.endswith('.txt'):
+                            content_type = 'text/plain; charset=utf-8'
                         else:
                             # For API responses, check if it looks like audio data
                             if len(gcs_response.content) > 1000 and interaction_log.interaction_metadata and interaction_log.interaction_metadata.api_endpoint == 'gemini_live_api':
                                 content_type = 'audio/pcm'
+                            else:
+                                # Default for small API responses is likely text
+                                content_type = 'text/plain; charset=utf-8'
                     
                     # Return the file content with proper headers
                     response = Response(
@@ -1137,14 +1174,21 @@ def get_interaction_media(interaction_id):
                                 content_type = 'audio/pcm'
                             elif interaction_log.interaction_type == 'video_frame':
                                 content_type = 'image/jpeg'
+                            elif interaction_log.interaction_type == 'text_input':
+                                content_type = 'text/plain; charset=utf-8'
                             elif interaction_log.interaction_type == 'api_response':
                                 if blob_path.endswith('.pcm'):
                                     content_type = 'audio/pcm'
                                 elif blob_path.endswith('.json'):
                                     content_type = 'application/json'
+                                elif blob_path.endswith('.txt'):
+                                    content_type = 'text/plain; charset=utf-8'
                                 else:
                                     if len(gcs_response.content) > 1000 and interaction_log.interaction_metadata and interaction_log.interaction_metadata.api_endpoint == 'gemini_live_api':
                                         content_type = 'audio/pcm'
+                                    else:
+                                        # Default for small API responses is likely text
+                                        content_type = 'text/plain; charset=utf-8'
                             
                             response = Response(
                                 gcs_response.content,
@@ -1179,6 +1223,14 @@ def get_interaction_media(interaction_id):
                 content_type = 'audio/pcm'
             elif interaction_log.interaction_type == 'video_frame':
                 content_type = 'image/jpeg'
+            elif interaction_log.interaction_type == 'text_input':
+                content_type = 'text/plain; charset=utf-8'
+            elif interaction_log.interaction_type == 'api_response':
+                # For inline API responses, assume text unless it's clearly audio
+                if len(media_data.data_inline) > 1000:
+                    content_type = 'audio/pcm'  # Large responses likely audio
+                else:
+                    content_type = 'text/plain; charset=utf-8'  # Small responses likely text
             
             response = Response(
                 media_data.data_inline,

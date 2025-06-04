@@ -625,7 +625,7 @@ function App() {
               isOpen={isPlaybackModalOpen}
               onClose={handleClosePlaybackModal}
               title="Session Playback"
-              size="large"
+              size="session-playback"
             >
               <InteractionReplay 
                 onExitReplayMode={handleClosePlaybackModal}

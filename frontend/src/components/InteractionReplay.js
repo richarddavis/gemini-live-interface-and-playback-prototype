@@ -281,6 +281,30 @@ const useConversationSegments = (updateState) => {
     console.log('🚨🚨🚨 UPDATED INTERACTIONREPLAY CODE IS RUNNING! 🚨🚨🚨');
     console.log('🎭 Processing', logs.length, 'logs into conversation segments...');
     
+    // 🐛 DEBUG: Log all text_input and api_response logs to see what content is available
+    const textInputLogs = logs.filter(log => log.interaction_type === 'text_input');
+    const apiResponseLogs = logs.filter(log => log.interaction_type === 'api_response');
+    
+    console.log(`🐛 DEBUG processIntoSegments - found ${textInputLogs.length} text_input logs:`);
+    textInputLogs.forEach((log, index) => {
+      console.log(`🐛 DEBUG text_input ${index + 1}:`, {
+        id: log.id,
+        timestamp: log.timestamp,
+        interaction_metadata: log.interaction_metadata,
+        media_data: log.media_data
+      });
+    });
+    
+    console.log(`🐛 DEBUG processIntoSegments - found ${apiResponseLogs.length} api_response logs:`);
+    apiResponseLogs.forEach((log, index) => {
+      console.log(`🐛 DEBUG api_response ${index + 1}:`, {
+        id: log.id,
+        timestamp: log.timestamp,
+        interaction_metadata: log.interaction_metadata,
+        media_data: log.media_data
+      });
+    });
+    
     // Debug: Check audio chunk distribution
     const audioChunks = logs.filter(log => log.interaction_type === 'audio_chunk');
     const userAudioCount = audioChunks.filter(log => log.interaction_metadata?.microphone_on === true).length;
@@ -298,14 +322,14 @@ const useConversationSegments = (updateState) => {
     
     console.log(`🎭 Content analysis: ${userAudioCount} user audio_chunks, ${userAudioChunkCount} other audio_chunks, ${apiAudioResponseCount} API audio responses, ${videoFrames.length} video frames`);
     
-    // Show video frame distribution by timestamp
-    if (videoFrames.length > 0) {
-      console.log(`🎭 Video frame timestamps:`, videoFrames.map(f => ({ 
-        id: f.id, 
-        timestamp: f.timestamp, 
-        microphone_on: f.interaction_metadata?.microphone_on 
-      })));
-    }
+    // Show video frame distribution by timestamp (REMOVED VERBOSE LOG)
+    // if (videoFrames.length > 0) {
+    //   console.log(`🎭 Video frame timestamps:`, videoFrames.map(f => ({ 
+    //     id: f.id, 
+    //     timestamp: f.timestamp, 
+    //     microphone_on: f.interaction_metadata?.microphone_on 
+    //   })));
+    // }
     
     const segments = [];
     let currentSegment = null;
@@ -333,11 +357,11 @@ const useConversationSegments = (updateState) => {
 
       // Debug segment detection
       if (interaction_type === 'audio_chunk') {
-        console.log(`🎭 Audio chunk ${id}: microphone_on=${interaction_metadata?.microphone_on}, isUserAudio=${isUserAudio}`);
+        // console.log(`🎭 Audio chunk ${id}: microphone_on=${interaction_metadata?.microphone_on}, isUserAudio=${isUserAudio}`);
       } else if (isApiAudioResponse) {
-        console.log(`🎭 API audio response ${id}: detected as audio response`);
+        // console.log(`🎭 API audio response ${id}: detected as audio response`);
       } else if (isVideoFrame) {
-        console.log(`🎭 Video frame ${id}: timestamp=${timestamp}, microphone_on=${interaction_metadata?.microphone_on}`);
+        // console.log(`🎭 Video frame ${id}: timestamp=${timestamp}, microphone_on=${interaction_metadata?.microphone_on}`);
       }
 
       // Look ahead to see if this is a trailing single audio chunk (likely noise)
@@ -359,7 +383,7 @@ const useConversationSegments = (updateState) => {
 
       // Handle trailing audio chunks by adding them to current API response segment
       if (isTrailingSingleAudioChunk) {
-        console.log(`🎭 ⚠️  Detected trailing single audio chunk ${id} after API response - adding to current segment instead of creating new segment`);
+        // console.log(`🎭 ⚠️  Detected trailing single audio chunk ${id} after API response - adding to current segment instead of creating new segment`);
         currentSegment.logs.push(log);
         currentSegment.audioChunks.push(log);
         currentSegment.endTime = timestamp;
@@ -367,7 +391,7 @@ const useConversationSegments = (updateState) => {
         if (log.media_data?.data_size_bytes) {
           currentSegment.metadata.totalBytes += log.media_data.data_size_bytes;
         }
-        console.log(`🎭 Added trailing audio to segment ${currentSegment.id}: ${currentSegment.audioChunks.length} chunks`);
+        // console.log(`🎭 Added trailing audio to segment ${currentSegment.id}: ${currentSegment.audioChunks.length} chunks`);
         return; // Skip the rest of the processing for this log
       }
 
@@ -377,7 +401,7 @@ const useConversationSegments = (updateState) => {
         if (currentSegment) {
           currentSegment.endTime = currentSegment.logs[currentSegment.logs.length - 1].timestamp;
           currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
-          console.log(`🎭 Finalized segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.audioChunks.length} audio, ${currentSegment.videoFrames.length} video, ${currentSegment.duration}ms`);
+          // console.log(`🎭 Finalized segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.audioChunks.length} audio, ${currentSegment.videoFrames.length} video, ${currentSegment.duration}ms`);
         }
 
         // Determine segment type
@@ -403,7 +427,7 @@ const useConversationSegments = (updateState) => {
           }
         };
         segments.push(currentSegment);
-        console.log(`🎭 Created new segment ${segmentId} (${segmentType}) starting at ${timestamp}`);
+        // console.log(`🎭 Created new segment ${segmentId} (${segmentType}) starting at ${timestamp}`);
       }
 
       // Add log to current segment
@@ -417,17 +441,17 @@ const useConversationSegments = (updateState) => {
         if (log.media_data?.data_size_bytes) {
           currentSegment.metadata.totalBytes += log.media_data.data_size_bytes;
         }
-        console.log(`🎭 Added audio to segment ${currentSegment.id}: ${currentSegment.audioChunks.length} chunks`);
+        // console.log(`🎭 Added audio to segment ${currentSegment.id}: ${currentSegment.audioChunks.length} chunks`);
       } else if (isVideoFrame) {
         currentSegment.videoFrames.push(log);
-        console.log(`🎭 Added video frame to segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.videoFrames.length} frames, frame timestamp=${timestamp}`);
+        // console.log(`🎭 Added video frame to segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.videoFrames.length} frames, frame timestamp=${timestamp}`);
       }
     });
 
     // Finalize last segment
     if (currentSegment) {
       currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
-      console.log(`🎭 Finalized final segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.audioChunks.length} audio, ${currentSegment.videoFrames.length} video, ${currentSegment.duration}ms`);
+      // console.log(`🎭 Finalized final segment ${currentSegment.id} (${currentSegment.type}): ${currentSegment.audioChunks.length} audio, ${currentSegment.videoFrames.length} video, ${currentSegment.duration}ms`);
     }
 
     // ============================================
@@ -447,7 +471,7 @@ const useConversationSegments = (updateState) => {
       if (segment.type === 'api_response') {
         if (currentMergedSegment && currentMergedSegment.type === 'api_response') {
           // Merge this API response with the previous one
-          console.log(`🎭 🔗 Merging API response segment ${segment.id} into merged segment ${currentMergedSegment.id}`);
+          // console.log(`🎭 🔗 Merging API response segment ${segment.id} into merged segment ${currentMergedSegment.id}`);
           
           // Extend the merged segment
           currentMergedSegment.logs.push(...segment.logs);
@@ -474,60 +498,60 @@ const useConversationSegments = (updateState) => {
             mergedSegmentIds: []
           };
           mergedSegments.push(currentMergedSegment);
-          console.log(`🎭 🔗 Started new merged API response segment: ${currentMergedSegment.id}`);
+          // console.log(`🎭 🔗 Started new merged API response segment: ${currentMergedSegment.id}`);
         }
       } else {
         // Non-API response segment - add as-is and reset merge tracking
         mergedSegments.push(segment);
         currentMergedSegment = null;
-        console.log(`🎭 🔗 Added non-API segment: ${segment.type} ${segment.id}`);
+        // console.log(`🎭 🔗 Added non-API segment: ${segment.type} ${segment.id}`);
       }
     });
     
     console.log(`🎭 🔗 Merging complete: ${filteredSegments.length} segments → ${mergedSegments.length} segments`);
-    console.log(`🎭 🔗 Merged segments:`, mergedSegments.map(s => {
-      if (s.mergedSegmentIds && s.mergedSegmentIds.length > 0) {
-        return `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms) [merged: ${s.mergedSegmentIds.join(',')}]`;
-      } else {
-        return `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`;
-      }
-    }));
+    // console.log(`🎭 🔗 Merged segments:`, mergedSegments.map(s => {
+    //   if (s.mergedSegmentIds && s.mergedSegmentIds.length > 0) {
+    //     return `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms) [merged: ${s.mergedSegmentIds.join(',')}]`;
+    //   } else {
+    //     return `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`;
+    //   }
+    // }));
 
     console.log('🎭 Created', mergedSegments.length, 'conversation segments (after filtering and merging):', 
       mergedSegments.map(s => `${s.type}(${s.audioChunks.length}a,${s.videoFrames.length}v,${s.duration}ms)`));
       
-    // DETAILED DEBUG: Show exact segment breakdown for troubleshooting
-    console.log('🎭 🔍 DETAILED SEGMENT BREAKDOWN:');
-    mergedSegments.forEach((segment, index) => {
-      const durationSec = (segment.duration / 1000).toFixed(2);
-      const startTime = new Date(segment.startTime).toLocaleTimeString();
-      const endTime = new Date(segment.endTime).toLocaleTimeString();
-      
-      console.log(`🎭 📋 Segment ${index + 1}/${mergedSegments.length}: ${segment.type.toUpperCase()}`);
-      console.log(`     ⏱️  Duration: ${durationSec}s (${segment.duration}ms)`);
-      console.log(`     🕐 Time: ${startTime} → ${endTime}`);
-      console.log(`     🎵 Audio chunks: ${segment.audioChunks.length}`);
-      console.log(`     📹 Video frames: ${segment.videoFrames.length}`);
-      console.log(`     🆔 ID: ${segment.id} ${segment.mergedSegmentIds ? `[merged: ${segment.mergedSegmentIds.join(',')}]` : ''}`);
-      
-      if (segment.type === 'user_speech' && segment.audioChunks.length > 0) {
-        const firstChunk = segment.audioChunks[0];
-        const lastChunk = segment.audioChunks[segment.audioChunks.length - 1];
-        console.log(`     🎤 User speech: ${firstChunk.id} → ${lastChunk.id} (${segment.audioChunks.length} chunks)`);
-      }
-      
-      if (segment.type === 'api_response' && segment.audioChunks.length > 0) {
-        const firstChunk = segment.audioChunks[0];
-        const lastChunk = segment.audioChunks[segment.audioChunks.length - 1];
-        console.log(`     🤖 API response: ${firstChunk.id} → ${lastChunk.id} (${segment.audioChunks.length} chunks)`);
-      }
-    });
-      
-    // Additional debug: show which segments have video
-    const segmentsWithVideo = mergedSegments.filter(s => s.videoFrames.length > 0);
-    console.log(`🎭 Merged segments with video (${segmentsWithVideo.length}/${mergedSegments.length}):`, segmentsWithVideo.map(s => `Segment ${s.id} (${s.type}): ${s.videoFrames.length} frames`));
+      // DETAILED DEBUG: Show exact segment breakdown for troubleshooting (REMOVED)
+      // console.log('🎭 🔍 DETAILED SEGMENT BREAKDOWN:');
+      // mergedSegments.forEach((segment, index) => {
+      //   const durationSec = (segment.duration / 1000).toFixed(2);
+      //   const startTime = new Date(segment.startTime).toLocaleTimeString();
+      //   const endTime = new Date(segment.endTime).toLocaleTimeString();
+      //   
+      //   console.log(`🎭 📋 Segment ${index + 1}/${mergedSegments.length}: ${segment.type.toUpperCase()}`);
+      //   console.log(`     ⏱️  Duration: ${durationSec}s (${segment.duration}ms)`);
+      //   console.log(`     🕐 Time: ${startTime} → ${endTime}`);
+      //   console.log(`     🎵 Audio chunks: ${segment.audioChunks.length}`);
+      //   console.log(`     📹 Video frames: ${segment.videoFrames.length}`);
+      //   console.log(`     🆔 ID: ${segment.id} ${segment.mergedSegmentIds ? `[merged: ${segment.mergedSegmentIds.join(',')}]` : ''}`);
+      //   
+      //   if (segment.type === 'user_speech' && segment.audioChunks.length > 0) {
+      //     const firstChunk = segment.audioChunks[0];
+      //     const lastChunk = segment.audioChunks[segment.audioChunks.length - 1];
+      //     console.log(`     🎤 User speech: ${firstChunk.id} → ${lastChunk.id} (${segment.audioChunks.length} chunks)`);
+      //   }
+      //   
+      //   if (segment.type === 'api_response' && segment.audioChunks.length > 0) {
+      //     const firstChunk = segment.audioChunks[0];
+      //     const lastChunk = segment.audioChunks[segment.audioChunks.length - 1];
+      //     console.log(`     🤖 API response: ${firstChunk.id} → ${lastChunk.id} (${segment.audioChunks.length} chunks)`);
+      //   }
+      // });
+        
+      // Additional debug: show which segments have video
+      const segmentsWithVideo = mergedSegments.filter(s => s.videoFrames.length > 0);
+      console.log(`🎭 Merged segments with video (${segmentsWithVideo.length}/${mergedSegments.length}):`, segmentsWithVideo.map(s => `Segment ${s.id} (${s.type}): ${s.videoFrames.length} frames`));
 
-    return mergedSegments;
+      return mergedSegments;
   }, []);
 
   const concatenateAudioBuffers = useCallback(async (audioBuffers, sampleRate, segmentType = 'unknown') => {
@@ -689,6 +713,14 @@ const calculatePlaybackDelay = (currentLog, nextLog, playbackSpeed, isStreamingA
     return Math.min(CONSTANTS.TIMING.AUDIO_STREAM_DELAY, Math.max(30, timeDiff / playbackSpeed));
   }
 
+  // Text input messages - give them adequate display time
+  if (currentType === 'text_input') {
+    const textLength = currentLog.interaction_metadata?.text?.length || 0;
+    // Base time of 1.5 seconds + reading time (assuming 200 words per minute)
+    const readingTime = Math.max(1500, Math.min(5000, textLength * 50)); // 50ms per character, max 5 seconds
+    return Math.max(readingTime, Math.min(2000, timeDiff / playbackSpeed));
+  }
+
   // Consecutive audio chunks
   if (currentType === 'audio_chunk' && nextType === 'audio_chunk') {
     const currentIsUser = currentLog.interaction_metadata?.microphone_on === true;
@@ -709,8 +741,17 @@ const calculatePlaybackDelay = (currentLog, nextLog, playbackSpeed, isStreamingA
     return Math.min(CONSTANTS.VIDEO.MAX_FRAME_DELAY, frameDelay);
   }
 
-  // API responses
+  // API responses - distinguish between text and audio responses
   if (currentType === 'api_response' || nextType === 'api_response') {
+    // If it's a text-based API response, give it more display time
+    if (currentType === 'api_response' && 
+        (!currentLog.media_data || !currentLog.media_data.cloud_storage_url)) {
+      const responseLength = currentLog.interaction_metadata?.response_text?.length || 
+                           currentLog.interaction_metadata?.text?.length || 0;
+      // Base time of 2 seconds + reading time for API responses
+      const readingTime = Math.max(2000, Math.min(6000, responseLength * 60)); // 60ms per character, max 6 seconds
+      return Math.max(readingTime, Math.min(3000, timeDiff / playbackSpeed));
+    }
     return Math.min(1000, Math.max(CONSTANTS.TIMING.API_RESPONSE_MIN_DELAY, timeDiff / playbackSpeed));
   }
 
@@ -1377,6 +1418,15 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
   };
 
   const displayFrameAsImage = useCallback((imageUrl, logId, isSegmentFrame = false, frameIndex = 0, totalFrames = 0) => {
+    console.log(`🐛 DEBUG displayFrameAsImage - called with:`, {
+      imageUrl: imageUrl?.substring(0, 50) + '...',
+      logId,
+      isSegmentFrame,
+      frameIndex,
+      totalFrames,
+      hasVideoRef: !!videoRef.current
+    });
+    
     if (videoRef.current) {
       // Clear any existing video streams
       if (videoRef.current.srcObject) {
@@ -1387,6 +1437,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       
       // Hide the video element and show image instead
       videoRef.current.style.display = 'none';
+      console.log(`🐛 DEBUG displayFrameAsImage - video element hidden`);
       
       // Find or create image element next to video
       let imgElement = videoRef.current.parentElement.querySelector('img.replay-frame');
@@ -1404,9 +1455,9 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         
         // Insert after the video element
         videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-        console.log(`🎬 Created new image element for ${isSegmentFrame ? 'segment ' : ''}frame`);
+        console.log(`🐛 DEBUG displayFrameAsImage - created new image element`);
       } else {
-        console.log(`📹 Using existing image element`);
+        console.log(`🐛 DEBUG displayFrameAsImage - using existing image element`);
       }
       
       // Smart blob URL cleanup - only revoke if not in cache
@@ -1431,15 +1482,20 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         console.log(`🎬 Tracking new blob URL: ${imageUrl.substring(0, 50)}...`);
       }
       
+      console.log(`🐛 DEBUG displayFrameAsImage - setting imgElement.src to: ${imageUrl?.substring(0, 50)}...`);
       imgElement.src = imageUrl;
       imgElement.onload = () => {
         console.log(`🎬 ${isSegmentFrame ? `Segment frame ${frameIndex + 1}/${totalFrames}` : 'Cached video frame'} displayed successfully: ${imgElement.naturalWidth}x${imgElement.naturalHeight}`);
+        console.log(`🐛 DEBUG displayFrameAsImage - image loaded successfully, size: ${imgElement.naturalWidth}x${imgElement.naturalHeight}`);
       };
       imgElement.onerror = (error) => {
         console.error(`🎬 ${isSegmentFrame ? `Segment frame ${frameIndex + 1}/${totalFrames}` : 'Image'} failed to load:`, error);
+        console.error(`🐛 DEBUG displayFrameAsImage - image load error:`, error);
       };
       
       console.log(`🎬 ${isSegmentFrame ? 'Segment v' : 'V'}ideo frame displayed as image`);
+    } else {
+      console.error(`🐛 DEBUG displayFrameAsImage - videoRef.current is null!`);
     }
     updateState({ currentVideoFrame: `${isSegmentFrame ? `Segment Frame ${frameIndex + 1}/${totalFrames}` : `Frame ${logId}`} loaded at ${new Date().toLocaleTimeString()}` });
   }, [updateState]);
@@ -1842,12 +1898,12 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     const actualIsPlaying = isPlaying !== null ? isPlaying : state.isPlaying;
     const actualSegments = segments || state.conversationSegments;
     
-    console.log(`\n🎭 ===== PLAY NEXT SEGMENT ${segmentIndex} =====`);
-    console.log(`🎭 isPlaying parameter: ${isPlaying}`);
-    console.log(`🎭 actualIsPlaying: ${actualIsPlaying}`);
-    console.log(`🎭 state.isPlaying: ${state.isPlaying}`);
-    console.log(`🎭 segments.length: ${actualSegments?.length || 0}`);
-    console.log(`🎭 segmentTimeoutRef.current:`, segmentTimeoutRef.current);
+    // console.log(`\n🎭 ===== PLAY NEXT SEGMENT ${segmentIndex} =====`);
+    // console.log(`🎭 isPlaying parameter: ${isPlaying}`);
+    // console.log(`🎭 actualIsPlaying: ${actualIsPlaying}`);
+    // console.log(`🎭 state.isPlaying: ${state.isPlaying}`);
+    // console.log(`🎭 segments.length: ${actualSegments?.length || 0}`);
+    // console.log(`🎭 segmentTimeoutRef.current:`, segmentTimeoutRef.current);
     
     if (!actualIsPlaying || segmentIndex >= actualSegments.length) {
       console.log(`🎭 ⏹ Segment replay stopping - isPlaying: ${actualIsPlaying}, segmentIndex: ${segmentIndex}/${actualSegments.length}`);
@@ -1867,50 +1923,50 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       } else if (segment.type === 'api_response') {
         await playApiResponseSegment(segment);
       } else if (segment.type === 'user_text') {
-        playTextSegment(segment);
+        await playTextSegment(segment);
       } else {
         playActionSegment(segment);
       }
 
       // Add a small delay between segments for natural pacing
       const delay = Math.max(200, Math.min(1000, segment.duration * 0.1 / state.playbackSpeed));
-      console.log(`🎭 Segment ${segmentIndex} completed, scheduling next in ${delay}ms`);
+      // console.log(`🎭 Segment ${segmentIndex} completed, scheduling next in ${delay}ms`);
       
       segmentTimeoutRef.current = setTimeout(() => {
-        console.log(`🎭 ⏰ Timeout callback executing for segment ${segmentIndex + 1}`);
-        console.log(`🎭 ⏰ Current state.isPlaying: ${state.isPlaying}`);
-        console.log(`🎭 ⏰ isPlayingRef.current: ${isPlayingRef.current}`);
-        console.log(`🎭 ⏰ actualIsPlaying: ${actualIsPlaying}`);
-        console.log(`🎭 ⏰ segmentTimeoutRef.current:`, segmentTimeoutRef.current);
+        // console.log(`🎭 ⏰ Timeout callback executing for segment ${segmentIndex + 1}`);
+        // console.log(`🎭 ⏰ Current state.isPlaying: ${state.isPlaying}`);
+        // console.log(`🎭 ⏰ isPlayingRef.current: ${isPlayingRef.current}`);
+        // console.log(`🎭 ⏰ actualIsPlaying: ${actualIsPlaying}`);
+        // console.log(`🎭 ⏰ segmentTimeoutRef.current:`, segmentTimeoutRef.current);
         
         // CRITICAL FIX: Use ref instead of state to avoid closure issues
         if (isPlayingRef.current) {
-          console.log(`🎭 ⏰ Proceeding to next segment`);
+          // console.log(`🎭 ⏰ Proceeding to next segment`);
           playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments);
         } else {
-          console.log(`🎭 ⏰ Skipping next segment - isPlayingRef.current is false`);
+          // console.log(`🎭 ⏰ Skipping next segment - isPlayingRef.current is false`);
         }
       }, delay);
       
-      console.log(`🎭 Scheduled timeout ID:`, segmentTimeoutRef.current);
+      // console.log(`🎭 Scheduled timeout ID:`, segmentTimeoutRef.current);
 
     } catch (error) {
       console.error('🚨 Segment playback failed:', error);
       updateState({ replayStatus: `❌ Segment ${segmentIndex + 1} failed: ${error.message}` });
       // Continue to next segment after brief delay, maintaining state
       segmentTimeoutRef.current = setTimeout(() => {
-        console.log(`🎭 ⏰ Error recovery timeout executing for segment ${segmentIndex + 1}`);
-        console.log(`🎭 ⏰ Current state.isPlaying: ${state.isPlaying}`);
-        console.log(`🎭 ⏰ isPlayingRef.current: ${isPlayingRef.current}`);
+        // console.log(`🎭 ⏰ Error recovery timeout executing for segment ${segmentIndex + 1}`);
+        // console.log(`🎭 ⏰ Current state.isPlaying: ${state.isPlaying}`);
+        // console.log(`🎭 ⏰ isPlayingRef.current: ${isPlayingRef.current}`);
         if (isPlayingRef.current) {
           playNextSegment(segmentIndex + 1, actualIsPlaying, actualSegments);
         } else {
-          console.log(`🎭 ⏰ Skipping error recovery - isPlayingRef.current is false`);
+          // console.log(`🎭 ⏰ Skipping error recovery - isPlayingRef.current is false`);
         }
       }, 500);
     }
     
-    console.log(`🎭 ===== SEGMENT ${segmentIndex} SCHEDULED =====\n`);
+    // console.log(`🎭 ===== SEGMENT ${segmentIndex} SCHEDULED =====\n`);
   };
 
   const playUserSpeechSegment = async (segment, isPlaying = true) => {
@@ -1989,10 +2045,15 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
   };
 
   const playApiResponseSegment = async (segment) => {
+    console.log(`🐛 DEBUG playApiResponseSegment - segment:`, segment);
+    console.log(`🐛 DEBUG playApiResponseSegment - segment.logs:`, segment.logs);
+    
     updateState({ replayStatus: `🤖 Playing API response (${(segment.duration / 1000).toFixed(1)}s)` });
     
     // Play unified audio and wait for completion
     const segmentAudio = state.processedSegments.get(`${segment.id}_audio`);
+    console.log(`🐛 DEBUG playApiResponseSegment - segmentAudio:`, segmentAudio);
+    
     if (segmentAudio) {
       const { audioContext, audioBuffer } = segmentAudio;
       
@@ -2023,21 +2084,137 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       });
     }
 
-    // Show API response text if available
+    // Handle text-only API responses
     const textLog = segment.logs.find(log => log.interaction_type === 'api_response');
+    console.log(`🐛 DEBUG playApiResponseSegment - textLog:`, textLog);
+    
     if (textLog) {
-      updateState({ currentApiResponse: `API responded with ${segment.audioChunks.length} audio chunks` });
+      // Check if this is a text response (no audio data)
+      const hasAudioData = textLog.media_data && textLog.media_data.cloud_storage_url;
+      console.log(`🐛 DEBUG playApiResponseSegment - hasAudioData:`, hasAudioData);
+      console.log(`🐛 DEBUG playApiResponseSegment - textLog.media_data:`, textLog.media_data);
+      console.log(`🐛 DEBUG playApiResponseSegment - textLog.interaction_metadata:`, textLog.interaction_metadata);
+      
+      let responseText = 'API text response'; // fallback
+      
+      // 🔧 FIX: Fetch actual API response text from GCS if available
+      if (hasAudioData && textLog.media_data.cloud_storage_url.includes('.txt')) {
+        try {
+          console.log(`🐛 DEBUG playApiResponseSegment - fetching API response text from GCS:`, textLog.media_data.cloud_storage_url);
+          const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${textLog.id}`;
+          const response = await fetch(proxyUrl);
+          
+          if (response.ok) {
+            const fetchedText = await response.text();
+            responseText = fetchedText.trim();
+            console.log(`🐛 DEBUG playApiResponseSegment - fetched API response text: "${responseText}"`);
+          } else {
+            console.warn(`🐛 DEBUG playApiResponseSegment - failed to fetch API response text (HTTP ${response.status}), using fallback`);
+          }
+        } catch (error) {
+          console.warn(`🐛 DEBUG playApiResponseSegment - error fetching API response text:`, error.message);
+        }
+      } else if (textLog.interaction_metadata?.response_text || textLog.interaction_metadata?.text) {
+        // Fallback to metadata if no GCS URL or not a text file
+        responseText = textLog.interaction_metadata.response_text || textLog.interaction_metadata.text;
+        console.log(`🐛 DEBUG playApiResponseSegment - using metadata responseText: "${responseText}"`);
+      }
+      
+      console.log(`🐛 DEBUG playApiResponseSegment - final responseText: "${responseText}"`);
+      
+      const responseLength = responseText.length;
+      
+      console.log(`🐛 DEBUG playApiResponseSegment - extracted responseText: "${responseText}"`);
+      console.log(`🐛 DEBUG playApiResponseSegment - responseLength: ${responseLength}`);
+      
+      if (!hasAudioData || (hasAudioData && textLog.media_data.cloud_storage_url.includes('.txt')) && responseText !== 'API text response') {
+        // This is a text-only response or fetched text response, give it proper display time
+        const readingTime = Math.max(2000, Math.min(6000, responseLength * 60)); // 60ms per character, 2-6 seconds
+        
+        console.log(`🐛 DEBUG playApiResponseSegment - text-only response detected, readingTime: ${readingTime}ms`);
+        
+        updateState({ 
+          currentApiResponse: responseText,
+          replayStatus: `🤖 Displaying API text response (${(readingTime / 1000).toFixed(1)}s)...`
+        });
+        
+        console.log(`🤖 Displaying text API response: "${responseText.substring(0, 50)}${responseText.length > 50 ? '...' : ''}" for ${readingTime}ms`);
+        console.log(`🐛 DEBUG playApiResponseSegment - state updated with currentApiResponse: "${responseText}"`);
+        
+        return new Promise(resolve => {
+          setTimeout(() => {
+            console.log(`🤖 API text response display completed`);
+            resolve();
+          }, readingTime / state.playbackSpeed);
+        });
+      } else {
+        // Has audio or is generic response
+        console.log(`🐛 DEBUG playApiResponseSegment - audio response or generic response`);
+        updateState({ currentApiResponse: `API responded with ${segment.audioChunks.length} audio chunks` });
+      }
+    } else {
+      console.log(`🐛 DEBUG playApiResponseSegment - no textLog found in segment`);
     }
     
-    // If no audio, just wait a short time
+    // If no audio and no text response, just wait a short time
     return new Promise(resolve => setTimeout(resolve, 100));
   };
 
-  const playTextSegment = (segment) => {
+  const playTextSegment = async (segment) => {
     const textLog = segment.logs[0];
+    console.log(`🐛 DEBUG playTextSegment - textLog:`, textLog);
+    console.log(`🐛 DEBUG playTextSegment - interaction_metadata:`, textLog.interaction_metadata);
+    console.log(`🐛 DEBUG playTextSegment - media_data:`, textLog.media_data);
+    
+    let textContent = 'Text input detected'; // fallback
+    
+    // 🔧 FIX: Fetch actual text content from GCS if available
+    if (textLog.media_data && textLog.media_data.cloud_storage_url) {
+      try {
+        console.log(`🐛 DEBUG playTextSegment - fetching text from GCS:`, textLog.media_data.cloud_storage_url);
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${textLog.id}`;
+        const response = await fetch(proxyUrl);
+        
+        if (response.ok) {
+          const fetchedText = await response.text();
+          textContent = fetchedText.trim();
+          console.log(`🐛 DEBUG playTextSegment - fetched text content: "${textContent}"`);
+        } else {
+          console.warn(`🐛 DEBUG playTextSegment - failed to fetch text (HTTP ${response.status}), using fallback`);
+        }
+      } catch (error) {
+        console.warn(`🐛 DEBUG playTextSegment - error fetching text:`, error.message);
+      }
+    } else if (textLog.interaction_metadata?.text) {
+      // Fallback to metadata if no GCS URL
+      textContent = textLog.interaction_metadata.text;
+      console.log(`🐛 DEBUG playTextSegment - using metadata text: "${textContent}"`);
+    }
+    
+    const textLength = textContent.length;
+    
+    console.log(`🐛 DEBUG playTextSegment - final textContent: "${textContent}"`);
+    console.log(`🐛 DEBUG playTextSegment - textLength: ${textLength}`);
+    
+    // Calculate display time based on text length
+    const readingTime = Math.max(1500, Math.min(5000, textLength * 50)); // 50ms per character, 1.5-5 seconds
+    
+    console.log(`🐛 DEBUG playTextSegment - calculated readingTime: ${readingTime}ms`);
+    
     updateState({ 
-      replayStatus: `📝 Processing text input...`,
-      currentTextInput: textLog.interaction_metadata?.text || 'Text input detected'
+      replayStatus: `📝 Processing text input (${(readingTime / 1000).toFixed(1)}s)...`,
+      currentTextInput: textContent
+    });
+    
+    console.log(`📝 Displaying text input: "${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}" for ${readingTime}ms`);
+    console.log(`🐛 DEBUG playTextSegment - state updated with currentTextInput: "${textContent}"`);
+    
+    // Return a Promise that resolves after the reading time
+    return new Promise(resolve => {
+      setTimeout(() => {
+        console.log(`📝 Text input display completed`);
+        resolve();
+      }, readingTime / state.playbackSpeed);
     });
   };
 
@@ -2275,6 +2452,16 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
 
               <div className="conversation-timeline">
                 <h4>📝 Conversation Timeline</h4>
+                {/* 🐛 DEBUG: Show current state values */}
+                <div style={{ backgroundColor: '#f0f0f0', padding: '10px', margin: '10px 0', fontSize: '12px' }}>
+                  <strong>🐛 DEBUG - Current UI State:</strong><br/>
+                  <strong>currentTextInput:</strong> "{state.currentTextInput}"<br/>
+                  <strong>currentApiResponse:</strong> "{state.currentApiResponse}"<br/>
+                  <strong>currentVideoFrame:</strong> "{state.currentVideoFrame}"<br/>
+                  <strong>replayStatus:</strong> "{state.replayStatus}"<br/>
+                  <strong>isPlaying:</strong> {state.isPlaying ? 'true' : 'false'}<br/>
+                  <strong>currentSegmentIndex:</strong> {state.currentSegmentIndex}
+                </div>
                 <div className="timeline-container">
                   {state.conversationSegments && state.conversationSegments.length > 0 ? (
                     state.conversationSegments.map((segment, index) => {

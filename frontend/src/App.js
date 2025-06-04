@@ -57,7 +57,7 @@ function App() {
   const getEffectiveApiKey = () => {
     // If user inputs "DFRP", use the environment API key
     if (apiKey.trim() === "DFRP") {
-      return process.env.REACT_APP_GOOGLE_AI_STUDIO_API_KEY || '';
+      return process.env.REACT_APP_GEMINI_API_KEY || '';
     }
     
     // Otherwise, use the user's input directly

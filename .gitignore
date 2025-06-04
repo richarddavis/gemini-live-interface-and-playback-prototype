@@ -33,6 +33,9 @@ ENV/
 *key.json
 gcp-key.json
 service-account*.json
+# Google Cloud Service Account files
+generative-fashion-*.json
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
 
 # Test results
 *.test.log

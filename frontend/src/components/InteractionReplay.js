@@ -62,8 +62,7 @@ const useReplayState = () => {
     
     // Content display
     currentVideoFrame: null,
-    currentTextInput: '',
-    currentApiResponse: '',
+    chatMessages: [], // Replace currentTextInput and currentApiResponse with chat history
     currentUserAction: '',
     replayStatus: 'Ready to replay...',
     
@@ -84,8 +83,7 @@ const useReplayState = () => {
       isPlaying: false,
       currentIndex: 0,
       currentVideoFrame: null,
-      currentTextInput: '',
-      currentApiResponse: '',
+      chatMessages: [], // Clear chat history on reset
       currentUserAction: '',
       replayStatus: 'Replay stopped',
       isStreamingAudio: false
@@ -319,6 +317,26 @@ const useConversationSegments = (updateState) => {
              (log.media_data.cloud_storage_url.includes('.pcm') || 
               (log.interaction_metadata && log.interaction_metadata.response_type === 'audio'));
     }).length;
+    
+    console.log(`🎭 Found ${audioChunks.length} audio chunks, ${apiAudioResponseCount} API audio responses, ${videoFrames.length} video frames`);
+    
+    // 🐛 DEBUG: Log all interaction types in this session
+    const interactionTypes = {};
+    logs.forEach(log => {
+      interactionTypes[log.interaction_type] = (interactionTypes[log.interaction_type] || 0) + 1;
+    });
+    console.log(`🎭 DEBUG: Interaction type breakdown:`, interactionTypes);
+    
+    // 🐛 DEBUG: Log video frame details if any exist
+    if (videoFrames.length > 0) {
+      console.log(`🎭 DEBUG: Video frame details:`, videoFrames.map(f => ({
+        id: f.id,
+        timestamp: f.timestamp,
+        hasMediaData: !!f.media_data,
+        cacheId: f.id
+      })));
+      // Note: videoCache is not available in this scope, but will be logged later during processing
+    }
     
     console.log(`🎭 Content analysis: ${userAudioCount} user audio_chunks, ${userAudioChunkCount} other audio_chunks, ${apiAudioResponseCount} API audio responses, ${videoFrames.length} video frames`);
     
@@ -772,6 +790,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
   
   // Refs
   const videoRef = useRef(null);
+  const chatContainerRef = useRef(null); // Add ref for auto-scrolling chat
   const playbackTimeoutRef = useRef(null);
   const segmentTimeoutRef = useRef(null); // Add ref to track segment timeouts
   const videoPlaybackRef = useRef(null);
@@ -872,6 +891,114 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       }
     };
   }, [state.isPlaying]);
+
+  // Auto-scroll chat to bottom when new messages are added
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      // Only auto-scroll if user is already near the bottom (within 50px)
+      const container = chatContainerRef.current;
+      const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 50;
+      
+      if (isNearBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+  }, [state.chatMessages]);
+
+  // Fetch text content for conversation segments
+  useEffect(() => {
+    const fetchSegmentTextContent = async () => {
+      if (!state.conversationSegments || state.conversationSegments.length === 0) return;
+      
+      console.log('🔍 Fetching text content for conversation segments...');
+      
+      let hasUpdates = false;
+      const updatedSegments = await Promise.all(
+        state.conversationSegments.map(async (segment) => {
+          // Skip if already has text content
+          if (segment.fullTextContent) return segment;
+          
+          let textContent = null;
+          
+          if (segment.type === 'user_text') {
+            const textLog = segment.logs.find(log => log.interaction_type === 'text_input');
+            
+            if (textLog?.interaction_metadata?.text) {
+              textContent = textLog.interaction_metadata.text;
+              console.log(`🔍 Using metadata text for segment ${segment.id}: "${textContent.substring(0, 50)}..."`);
+            } else if (textLog?.media_data?.cloud_storage_url) {
+              try {
+                const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${textLog.id}`;
+                const response = await fetch(proxyUrl);
+                if (response.ok) {
+                  const text = await response.text();
+                  if (text.trim()) {
+                    textContent = text.trim();
+                    console.log(`🔍 Fetched user text for segment ${segment.id}: "${textContent.substring(0, 50)}..."`);
+                  }
+                }
+              } catch (error) {
+                console.warn(`Failed to fetch user text for segment ${segment.id}:`, error);
+              }
+            }
+          } else if (segment.type === 'api_response') {
+            const apiResponseLogs = segment.logs.filter(log => log.interaction_type === 'api_response');
+            const hasTextContent = apiResponseLogs.some(log => 
+              log.media_data && 
+              log.media_data.cloud_storage_url && 
+              log.media_data.cloud_storage_url.includes('.txt')
+            );
+            
+            if (hasTextContent) {
+              try {
+                const textChunks = [];
+                for (const log of apiResponseLogs) {
+                  if (log.media_data && log.media_data.cloud_storage_url && log.media_data.cloud_storage_url.includes('.txt')) {
+                    const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${log.id}`;
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                      const text = await response.text();
+                      if (text.trim()) {
+                        textChunks.push(text.trim());
+                      }
+                    }
+                  }
+                }
+                
+                if (textChunks.length > 0) {
+                  textContent = textChunks.join(' ').trim();
+                  console.log(`🔍 Fetched API response text for segment ${segment.id}: "${textContent.substring(0, 50)}..."`);
+                }
+              } catch (error) {
+                console.warn(`Failed to fetch API response text for segment ${segment.id}:`, error);
+              }
+            }
+          }
+          
+          if (textContent) {
+            hasUpdates = true;
+            const truncatedText = textContent.length > 60 ? 
+              textContent.substring(0, 60) + '...' : 
+              textContent;
+            return {
+              ...segment,
+              fullTextContent: textContent,
+              timelineDisplayText: `"${truncatedText}"`
+            };
+          }
+          
+          return segment;
+        })
+      );
+      
+      if (hasUpdates) {
+        console.log('🔍 Updating segments with fetched text content');
+        updateState({ conversationSegments: updatedSegments });
+      }
+    };
+    
+    fetchSegmentTextContent();
+  }, [state.conversationSegments?.length]); // Only run when segments are first loaded or count changes
 
   const loadSessions = async () => {
     updateState({ loading: true });
@@ -1185,8 +1312,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     updateState({ isPlaying: false });
     updateState({ currentIndex: 0 });
     updateState({ currentVideoFrame: null });
-    updateState({ currentTextInput: '' });
-    updateState({ currentApiResponse: '' });
+    updateState({ chatMessages: [] }); // Clear chat history on stop
     updateState({ currentUserAction: '' });
     updateState({ replayStatus: 'Replay stopped' });
     
@@ -1781,7 +1907,13 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     }
     
     console.log('🎬 User typed:', textContent);
-    updateState({ currentTextInput: textContent });
+    updateState({ 
+      chatMessages: [...state.chatMessages, { 
+        type: 'user', 
+        content: textContent,
+        timestamp: new Date().toLocaleTimeString()
+      }] 
+    });
     updateState({ replayStatus: `Processing text input...` });
   };
 
@@ -1836,7 +1968,13 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     }
     
     console.log('🎬 Gemini responded:', responseText);
-    updateState({ currentApiResponse: responseText });
+    updateState({ 
+      chatMessages: [...state.chatMessages, { 
+        type: 'bot', 
+        content: responseText,
+        timestamp: new Date().toLocaleTimeString()
+      }] 
+    });
     updateState({ replayStatus: `Processing API response...` });
   };
 
@@ -2084,62 +2222,76 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       });
     }
 
-    // Handle text-only API responses
-    const textLog = segment.logs.find(log => log.interaction_type === 'api_response');
-    console.log(`🐛 DEBUG playApiResponseSegment - textLog:`, textLog);
+    // Handle text-only API responses - FIXED: Process ALL api_response logs
+    const textLogs = segment.logs.filter(log => log.interaction_type === 'api_response');
+    console.log(`🐛 DEBUG playApiResponseSegment - found ${textLogs.length} api_response logs:`, textLogs.map(log => ({ id: log.id, hasMediaData: !!log.media_data })));
     
-    if (textLog) {
-      // Check if this is a text response (no audio data)
-      const hasAudioData = textLog.media_data && textLog.media_data.cloud_storage_url;
-      console.log(`🐛 DEBUG playApiResponseSegment - hasAudioData:`, hasAudioData);
-      console.log(`🐛 DEBUG playApiResponseSegment - textLog.media_data:`, textLog.media_data);
-      console.log(`🐛 DEBUG playApiResponseSegment - textLog.interaction_metadata:`, textLog.interaction_metadata);
+    if (textLogs.length > 0) {
+      // Process all text chunks and concatenate them
+      const textChunks = [];
       
-      let responseText = 'API text response'; // fallback
-      
-      // 🔧 FIX: Fetch actual API response text from GCS if available
-      if (hasAudioData && textLog.media_data.cloud_storage_url.includes('.txt')) {
-        try {
-          console.log(`🐛 DEBUG playApiResponseSegment - fetching API response text from GCS:`, textLog.media_data.cloud_storage_url);
-          const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${textLog.id}`;
-          const response = await fetch(proxyUrl);
-          
-          if (response.ok) {
-            const fetchedText = await response.text();
-            responseText = fetchedText.trim();
-            console.log(`🐛 DEBUG playApiResponseSegment - fetched API response text: "${responseText}"`);
-          } else {
-            console.warn(`🐛 DEBUG playApiResponseSegment - failed to fetch API response text (HTTP ${response.status}), using fallback`);
+      for (const textLog of textLogs) {
+        console.log(`🐛 DEBUG playApiResponseSegment - processing textLog:`, textLog);
+        
+        // Check if this is a text response (no audio data or .txt file)
+        const hasAudioData = textLog.media_data && textLog.media_data.cloud_storage_url;
+        console.log(`🐛 DEBUG playApiResponseSegment - hasAudioData:`, hasAudioData);
+        console.log(`🐛 DEBUG playApiResponseSegment - textLog.media_data:`, textLog.media_data);
+        
+        let responseText = ''; // Initialize empty for this chunk
+        
+        // 🔧 FIX: Fetch actual API response text from GCS if available
+        if (hasAudioData && textLog.media_data.cloud_storage_url.includes('.txt')) {
+          try {
+            console.log(`🐛 DEBUG playApiResponseSegment - fetching API response text chunk from GCS:`, textLog.media_data.cloud_storage_url);
+            const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${textLog.id}`;
+            const response = await fetch(proxyUrl);
+            
+            if (response.ok) {
+              const fetchedText = await response.text();
+              responseText = fetchedText.trim();
+              console.log(`🐛 DEBUG playApiResponseSegment - fetched API response text chunk: "${responseText}"`);
+            } else {
+              console.warn(`🐛 DEBUG playApiResponseSegment - failed to fetch API response text chunk (HTTP ${response.status}), skipping`);
+            }
+          } catch (error) {
+            console.warn(`🐛 DEBUG playApiResponseSegment - error fetching API response text chunk:`, error.message);
           }
-        } catch (error) {
-          console.warn(`🐛 DEBUG playApiResponseSegment - error fetching API response text:`, error.message);
+        } else if (textLog.interaction_metadata?.response_text || textLog.interaction_metadata?.text) {
+          // Fallback to metadata if no GCS URL or not a text file
+          responseText = textLog.interaction_metadata.response_text || textLog.interaction_metadata.text;
+          console.log(`🐛 DEBUG playApiResponseSegment - using metadata responseText: "${responseText}"`);
         }
-      } else if (textLog.interaction_metadata?.response_text || textLog.interaction_metadata?.text) {
-        // Fallback to metadata if no GCS URL or not a text file
-        responseText = textLog.interaction_metadata.response_text || textLog.interaction_metadata.text;
-        console.log(`🐛 DEBUG playApiResponseSegment - using metadata responseText: "${responseText}"`);
+        
+        // Add non-empty chunks to the array
+        if (responseText && responseText.trim()) {
+          textChunks.push(responseText.trim());
+          console.log(`🐛 DEBUG playApiResponseSegment - added text chunk: "${responseText.trim()}"`);
+        }
       }
       
-      console.log(`🐛 DEBUG playApiResponseSegment - final responseText: "${responseText}"`);
+      // Concatenate all text chunks
+      const completeResponse = textChunks.join(' ').trim();
+      console.log(`🐛 DEBUG playApiResponseSegment - complete response (${textChunks.length} chunks): "${completeResponse}"`);
       
-      const responseLength = responseText.length;
-      
-      console.log(`🐛 DEBUG playApiResponseSegment - extracted responseText: "${responseText}"`);
-      console.log(`🐛 DEBUG playApiResponseSegment - responseLength: ${responseLength}`);
-      
-      if (!hasAudioData || (hasAudioData && textLog.media_data.cloud_storage_url.includes('.txt')) && responseText !== 'API text response') {
-        // This is a text-only response or fetched text response, give it proper display time
+      if (completeResponse && completeResponse !== '') {
+        // This is a text response, give it proper display time
+        const responseLength = completeResponse.length;
         const readingTime = Math.max(2000, Math.min(6000, responseLength * 60)); // 60ms per character, 2-6 seconds
         
-        console.log(`🐛 DEBUG playApiResponseSegment - text-only response detected, readingTime: ${readingTime}ms`);
+        console.log(`🐛 DEBUG playApiResponseSegment - text response detected, readingTime: ${readingTime}ms`);
         
         updateState({ 
-          currentApiResponse: responseText,
+          chatMessages: [...state.chatMessages, { 
+            type: 'bot', 
+            content: completeResponse,
+            timestamp: new Date().toLocaleTimeString()
+          }],
           replayStatus: `🤖 Displaying API text response (${(readingTime / 1000).toFixed(1)}s)...`
         });
         
-        console.log(`🤖 Displaying text API response: "${responseText.substring(0, 50)}${responseText.length > 50 ? '...' : ''}" for ${readingTime}ms`);
-        console.log(`🐛 DEBUG playApiResponseSegment - state updated with currentApiResponse: "${responseText}"`);
+        console.log(`🤖 Displaying complete text API response: "${completeResponse.substring(0, 50)}${completeResponse.length > 50 ? '...' : ''}" for ${readingTime}ms`);
+        console.log(`🐛 DEBUG playApiResponseSegment - state updated with complete response: "${completeResponse}"`);
         
         return new Promise(resolve => {
           setTimeout(() => {
@@ -2148,12 +2300,18 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
           }, readingTime / state.playbackSpeed);
         });
       } else {
-        // Has audio or is generic response
-        console.log(`🐛 DEBUG playApiResponseSegment - audio response or generic response`);
-        updateState({ currentApiResponse: `API responded with ${segment.audioChunks.length} audio chunks` });
+        // No text content found or is audio-only response
+        console.log(`🐛 DEBUG playApiResponseSegment - no text content found, treating as audio-only response`);
+        updateState({ 
+          chatMessages: [...state.chatMessages, { 
+            type: 'bot', 
+            content: `API responded with ${segment.audioChunks.length} audio chunks`,
+            timestamp: new Date().toLocaleTimeString()
+          }] 
+        });
       }
     } else {
-      console.log(`🐛 DEBUG playApiResponseSegment - no textLog found in segment`);
+      console.log(`🐛 DEBUG playApiResponseSegment - no api_response logs found in segment`);
     }
     
     // If no audio and no text response, just wait a short time
@@ -2202,8 +2360,12 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     console.log(`🐛 DEBUG playTextSegment - calculated readingTime: ${readingTime}ms`);
     
     updateState({ 
-      replayStatus: `📝 Processing text input (${(readingTime / 1000).toFixed(1)}s)...`,
-      currentTextInput: textContent
+      chatMessages: [...state.chatMessages, { 
+        type: 'user', 
+        content: textContent,
+        timestamp: new Date().toLocaleTimeString()
+      }],
+      replayStatus: `📝 Processing text input (${(readingTime / 1000).toFixed(1)}s)...`
     });
     
     console.log(`📝 Displaying text input: "${textContent.substring(0, 50)}${textContent.length > 50 ? '...' : ''}" for ${readingTime}ms`);
@@ -2359,6 +2521,26 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
           <div className="replay-display">
             <div className="replay-display-content">
               <div className="video-player-container">
+                {/* Add Text Display Area */}
+                <div className="text-display-area" ref={chatContainerRef}>
+                  {state.chatMessages.map((message, index) => (
+                    <div key={index} className={`message ${message.type === 'user' ? 'user-message' : 'bot-message'}`}>
+                      <div className="message-content">{message.content}</div>
+                      {message.timestamp && (
+                        <div className="message-timestamp">{message.timestamp}</div>
+                      )}
+                    </div>
+                  ))}
+                  {state.chatMessages.length === 0 && (
+                    <div className="no-text-display">
+                      <div className="text-label">💬 Conversation</div>
+                      <div className="text-content">
+                        {state.isPlaying ? 'Waiting for chat messages...' : 'Start replay to see the conversation'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
                 <div className="video-player-wrapper">
                   <video
                     ref={videoRef}
@@ -2455,8 +2637,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                 {/* 🐛 DEBUG: Show current state values */}
                 <div style={{ backgroundColor: '#f0f0f0', padding: '10px', margin: '10px 0', fontSize: '12px' }}>
                   <strong>🐛 DEBUG - Current UI State:</strong><br/>
-                  <strong>currentTextInput:</strong> "{state.currentTextInput}"<br/>
-                  <strong>currentApiResponse:</strong> "{state.currentApiResponse}"<br/>
+                  <strong>chatMessages:</strong> {JSON.stringify(state.chatMessages)}<br/>
                   <strong>currentVideoFrame:</strong> "{state.currentVideoFrame}"<br/>
                   <strong>replayStatus:</strong> "{state.replayStatus}"<br/>
                   <strong>isPlaying:</strong> {state.isPlaying ? 'true' : 'false'}<br/>
@@ -2484,7 +2665,23 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                         case 'api_response':
                           segmentIcon = '🤖';
                           segmentLabel = 'Gemini responded';
-                          segmentContent = `Voice response (${durationSec}s, ${segment.audioChunks.length} chunks)`;
+                          
+                          // 🔧 FIX: Detect if this is a text response or voice response
+                          const apiResponseLogs = segment.logs.filter(log => log.interaction_type === 'api_response');
+                          const hasTextContent = apiResponseLogs.some(log => 
+                            log.media_data && 
+                            log.media_data.cloud_storage_url && 
+                            log.media_data.cloud_storage_url.includes('.txt')
+                          );
+                          
+                          if (hasTextContent) {
+                            // Use the fetched text if available, otherwise fallback
+                            segmentContent = segment.timelineDisplayText || `Text response (${durationSec}s)`;
+                          } else {
+                            // This is a voice response
+                            segmentContent = `Voice response (${durationSec}s, ${segment.audioChunks.length} chunks)`;
+                          }
+                          
                           if (segment.mergedSegmentIds && segment.mergedSegmentIds.length > 0) {
                             segmentContent += ` [merged response]`;
                           }
@@ -2492,8 +2689,24 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                         case 'user_text':
                           segmentIcon = '💬';
                           segmentLabel = 'You typed';
+                          
+                          // 🔧 FIX: Display actual text content instead of "Text message"
                           const textLog = segment.logs.find(log => log.interaction_type === 'text_input');
-                          segmentContent = textLog?.interaction_metadata?.text || 'Text message';
+                          
+                          // Try to get actual text content
+                          let userTextContent = 'Text message'; // Fallback
+                          
+                          if (textLog?.interaction_metadata?.text) {
+                            // Use metadata if available
+                            const metadataText = textLog.interaction_metadata.text;
+                            const truncatedText = metadataText.length > 40 ? 
+                              metadataText.substring(0, 40) + '...' : 
+                              metadataText;
+                            segmentContent = `"${truncatedText}"`;
+                          } else {
+                            // Use the fetched text if available, otherwise fallback
+                            segmentContent = segment.timelineDisplayText || userTextContent;
+                          }
                           break;
                         case 'user_action':
                           segmentIcon = '⚡';
@@ -2522,6 +2735,16 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                             <div className="turn-description">
                               {segmentContent}
                             </div>
+                            
+                            {/* Add actual text content display */}
+                            <div className="turn-text-content">
+                              {segment.fullTextContent && (
+                                <div className="text-content-display">
+                                  {segment.fullTextContent}
+                                </div>
+                              )}
+                            </div>
+                            
                             {isCurrentSegment && (
                               <div className="current-status">
                                 <div className="status-indicator">▶ Playing</div>

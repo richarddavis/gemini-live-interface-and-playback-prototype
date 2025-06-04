@@ -2188,6 +2188,11 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     
     updateState({ replayStatus: `🤖 Playing API response (${(segment.duration / 1000).toFixed(1)}s)` });
     
+    // Display video frames during API response if available (for text responses)
+    const segmentVideo = state.processedSegments.get(`${segment.id}_video`);
+    console.log(`🤖 API response segment ${segment.id}: looking for video segment "${segment.id}_video"`);
+    console.log(`🤖 Video frames in segment:`, segment.videoFrames?.length || 0);
+    
     // Play unified audio and wait for completion
     const segmentAudio = state.processedSegments.get(`${segment.id}_audio`);
     console.log(`🐛 DEBUG playApiResponseSegment - segmentAudio:`, segmentAudio);
@@ -2227,6 +2232,13 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     console.log(`🐛 DEBUG playApiResponseSegment - found ${textLogs.length} api_response logs:`, textLogs.map(log => ({ id: log.id, hasMediaData: !!log.media_data })));
     
     if (textLogs.length > 0) {
+      // For text-only responses, display video frames if available
+      if (segmentVideo && !segmentAudio) {
+        console.log(`🤖 Found video segment for text API response:`, segmentVideo);
+        console.log(`🤖 Video segment has ${segmentVideo.frames?.length || 0} frames with average interval ${segmentVideo.averageInterval}ms`);
+        playSegmentVideo(segmentVideo, true);
+      }
+      
       // Process all text chunks and concatenate them
       const textChunks = [];
       
@@ -2296,6 +2308,11 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         return new Promise(resolve => {
           setTimeout(() => {
             console.log(`🤖 API text response display completed`);
+            // Stop any ongoing video playback for this segment when text display ends
+            if (videoPlaybackRef.current && segmentVideo) {
+              console.log(`🤖 Stopping video playback as API text response completed`);
+              videoPlaybackRef.current.stop = true;
+            }
             resolve();
           }, readingTime / state.playbackSpeed);
         });
@@ -2325,6 +2342,30 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     console.log(`🐛 DEBUG playTextSegment - media_data:`, textLog.media_data);
     
     let textContent = 'Text input detected'; // fallback
+    
+    // Display video frames during text input if available
+    const segmentVideo = state.processedSegments.get(`${segment.id}_video`);
+    console.log(`📝 Text segment ${segment.id}: looking for video segment "${segment.id}_video"`);
+    console.log(`📝 Available processed segments:`, Array.from(state.processedSegments.keys()));
+    console.log(`📝 Video frames in segment:`, segment.videoFrames?.length || 0);
+    
+    if (segmentVideo) {
+      console.log(`📝 Found video segment for text input:`, segmentVideo);
+      console.log(`📝 Video segment has ${segmentVideo.frames?.length || 0} frames with average interval ${segmentVideo.averageInterval}ms`);
+      playSegmentVideo(segmentVideo, true);
+    } else {
+      // Check if this is expected (short segments often don't have video)
+      const hasVideoFramesInSegment = segment.videoFrames && segment.videoFrames.length > 0;
+      
+      if (hasVideoFramesInSegment) {
+        // This is unexpected - segment has video frames but no processed video
+        console.warn(`📝 ⚠️  Text segment ${segment.id} has ${segment.videoFrames.length} video frames but no processed video segment!`);
+        console.warn(`📝 Video frames:`, segment.videoFrames.map(f => ({ id: f.id, timestamp: f.timestamp })));
+      } else {
+        // No video frames in this text segment
+        console.log(`📝 📹 No video frames found for text segment ${segment.id}`);
+      }
+    }
     
     // 🔧 FIX: Fetch actual text content from GCS if available
     if (textLog.media_data && textLog.media_data.cloud_storage_url) {
@@ -2375,6 +2416,11 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     return new Promise(resolve => {
       setTimeout(() => {
         console.log(`📝 Text input display completed`);
+        // Stop any ongoing video playback for this segment when text display ends
+        if (videoPlaybackRef.current && segmentVideo) {
+          console.log(`📝 Stopping video playback as text display completed`);
+          videoPlaybackRef.current.stop = true;
+        }
         resolve();
       }, readingTime / state.playbackSpeed);
     });

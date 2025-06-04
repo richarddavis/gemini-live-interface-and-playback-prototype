@@ -790,7 +790,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
   
   // Refs
   const videoRef = useRef(null);
-  const chatContainerRef = useRef(null); // Add ref for auto-scrolling chat
+  const timelineContainerRef = useRef(null); // Add ref for auto-scrolling timeline
   const playbackTimeoutRef = useRef(null);
   const segmentTimeoutRef = useRef(null); // Add ref to track segment timeouts
   const videoPlaybackRef = useRef(null);
@@ -892,18 +892,27 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     };
   }, [state.isPlaying]);
 
-  // Auto-scroll chat to bottom when new messages are added
+  // Auto-scroll timeline to keep current segment visible
   useEffect(() => {
-    if (chatContainerRef.current) {
-      // Only auto-scroll if user is already near the bottom (within 50px)
-      const container = chatContainerRef.current;
-      const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 50;
+    if (timelineContainerRef.current && state.currentSegmentIndex !== undefined) {
+      // Find the current turn element
+      const currentTurnElement = timelineContainerRef.current.querySelector('.current-turn');
       
-      if (isNearBottom) {
-        container.scrollTop = container.scrollHeight;
+      if (currentTurnElement) {
+        const isMobile = window.innerWidth <= 768;
+        
+        // Scroll the current turn into view with smooth behavior
+        // On mobile, use 'start' to keep the active segment at the top for better visibility
+        currentTurnElement.scrollIntoView({
+          behavior: 'smooth',
+          block: isMobile ? 'start' : 'center', // On mobile, scroll to top of timeline
+          inline: 'nearest'
+        });
+        
+        console.log(`📜 Auto-scrolled timeline to segment ${state.currentSegmentIndex + 1} (mobile: ${isMobile})`);
       }
     }
-  }, [state.chatMessages]);
+  }, [state.currentSegmentIndex]);
 
   // Fetch text content for conversation segments
   useEffect(() => {
@@ -1570,9 +1579,9 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       if (!imgElement) {
         imgElement = document.createElement('img');
         imgElement.className = 'replay-frame';
-        // Original fixed sizing for the image frame
-        imgElement.style.width = '320px';
-        imgElement.style.height = '240px';
+        // Responsive sizing - use CSS to handle mobile vs desktop sizing
+        imgElement.style.width = '100%';
+        imgElement.style.height = '100%';
         imgElement.style.backgroundColor = '#000';
         imgElement.style.border = '1px solid #ccc';
         imgElement.style.objectFit = 'contain';
@@ -1581,7 +1590,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         
         // Insert after the video element
         videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
-        console.log(`🐛 DEBUG displayFrameAsImage - created new image element`);
+        console.log(`🐛 DEBUG displayFrameAsImage - created new image element with responsive sizing`);
       } else {
         console.log(`🐛 DEBUG displayFrameAsImage - using existing image element`);
       }
@@ -1633,9 +1642,9 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       if (!imgElement) {
         imgElement = document.createElement('img');
         imgElement.className = 'replay-frame';
-        // Original fixed sizing for the placeholder image
-        imgElement.style.width = '320px';
-        imgElement.style.height = '240px';
+        // Responsive sizing - use CSS to handle mobile vs desktop sizing
+        imgElement.style.width = '100%';
+        imgElement.style.height = '100%';
         imgElement.style.backgroundColor = '#333';
         imgElement.style.border = '1px solid #ccc';
         imgElement.style.objectFit = 'contain';
@@ -1650,9 +1659,16 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         videoRef.current.parentElement.insertBefore(imgElement, videoRef.current.nextSibling);
       }
       
+      // Get container dimensions for responsive canvas sizing
+      const container = videoRef.current.parentElement;
+      const containerRect = container.getBoundingClientRect();
+      const canvasWidth = Math.min(400, containerRect.width || 400);
+      const canvasHeight = Math.min(300, (containerRect.width || 400) * 0.75); // Maintain 4:3 aspect ratio
+      
       const canvas = document.createElement('canvas');
-      canvas.width = 320; // Reverted to original canvas size
-      canvas.height = 240; // Reverted to original canvas size
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+      
       const ctx = canvas.getContext('2d');
       
       ctx.fillStyle = '#333';
@@ -2567,25 +2583,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
           <div className="replay-display">
             <div className="replay-display-content">
               <div className="video-player-container">
-                {/* Add Text Display Area */}
-                <div className="text-display-area" ref={chatContainerRef}>
-                  {state.chatMessages.map((message, index) => (
-                    <div key={index} className={`message ${message.type === 'user' ? 'user-message' : 'bot-message'}`}>
-                      <div className="message-content">{message.content}</div>
-                      {message.timestamp && (
-                        <div className="message-timestamp">{message.timestamp}</div>
-                      )}
-                    </div>
-                  ))}
-                  {state.chatMessages.length === 0 && (
-                    <div className="no-text-display">
-                      <div className="text-label">💬 Conversation</div>
-                      <div className="text-content">
-                        {state.isPlaying ? 'Waiting for chat messages...' : 'Start replay to see the conversation'}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                {/* REMOVED: Text Display Area - now redundant with conversation timeline */}
                 
                 <div className="video-player-wrapper">
                   <video
@@ -2644,52 +2642,29 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                 </div>
                 
                 {/* Status and Progress Info */}
-                <div className="player-status">
-                  <div className="status-text">
-                    <strong>Status:</strong> {state.replayStatus}
+                {/* REMOVED: player-status div - redundant with conversation timeline */}
+                
+                {/* Expired URLs Alert - moved inside video player container */}
+                {hasExpiredUrls && (
+                  <div className="expired-urls-alert">
+                    <div className="alert-content">
+                      <span className="alert-icon">⚠️</span>
+                      <span className="alert-text">Some media URLs have expired</span>
+                      <button 
+                        onClick={regenerateUrls} 
+                        disabled={state.isRegeneratingUrls}
+                        className="regenerate-alert-btn"
+                      >
+                        {state.isRegeneratingUrls ? '🔄 Fixing...' : '🔄 Fix URLs'}
+                      </button>
+                    </div>
                   </div>
-                  
-                  {hasExpiredUrls && (
-                    <button 
-                      onClick={regenerateUrls} 
-                      disabled={state.isRegeneratingUrls}
-                      className="regenerate-urls-btn"
-                    >
-                      {state.isRegeneratingUrls ? '🔄 Regenerating...' : '🔄 Fix Expired URLs'}
-                    </button>
-                  )}
-
-                  {state.replayData && (
-                    <div className="progress-info">
-                      <p>
-                        Interaction {state.currentIndex + 1} of {state.replayData.logs.length}
-                        {state.replayData.logs[state.currentIndex] && (
-                          <span> - {state.replayData.logs[state.currentIndex].interaction_type} at {formatTimestamp(state.replayData.logs[state.currentIndex].timestamp)}</span>
-                        )}
-                      </p>
-                    </div>
-                  )}
-                  
-                  {state.currentVideoFrame && (
-                    <div className="current-frame-info">
-                      <small>Current frame: {state.currentVideoFrame}</small>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
 
               <div className="conversation-timeline">
                 <h4>📝 Conversation Timeline</h4>
-                {/* 🐛 DEBUG: Show current state values */}
-                <div style={{ backgroundColor: '#f0f0f0', padding: '10px', margin: '10px 0', fontSize: '12px' }}>
-                  <strong>🐛 DEBUG - Current UI State:</strong><br/>
-                  <strong>chatMessages:</strong> {JSON.stringify(state.chatMessages)}<br/>
-                  <strong>currentVideoFrame:</strong> "{state.currentVideoFrame}"<br/>
-                  <strong>replayStatus:</strong> "{state.replayStatus}"<br/>
-                  <strong>isPlaying:</strong> {state.isPlaying ? 'true' : 'false'}<br/>
-                  <strong>currentSegmentIndex:</strong> {state.currentSegmentIndex}
-                </div>
-                <div className="timeline-container">
+                <div className="timeline-container" ref={timelineContainerRef}>
                   {state.conversationSegments && state.conversationSegments.length > 0 ? (
                     state.conversationSegments.map((segment, index) => {
                       const isCurrentSegment = state.currentSegmentIndex === index;

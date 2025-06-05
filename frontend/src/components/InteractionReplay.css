@@ -69,12 +69,12 @@
 .current-frame-info {
   margin-top: 8px;
   text-align: center;
-  color: #6c757d;
+  color: var(--color-muted);
 }
 
 .replay-status {
-  background: #f8f9fa;
-  border: 1px solid #dee2e6;
+  background: var(--color-light);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 12px;
   margin-bottom: 15px;
@@ -82,7 +82,7 @@
 }
 
 .replay-status strong {
-  color: #495057;
+  color: var(--color-text);
 }
 
 .status-playing {
@@ -91,7 +91,7 @@
 }
 
 .status-stopped {
-  color: #757575;
+  color: var(--color-muted);
 }
 
 .replay-mode-notice {

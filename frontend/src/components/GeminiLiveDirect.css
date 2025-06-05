@@ -76,7 +76,7 @@
 }
 
 .exit-live-btn {
-  background: #6c757d;
+  background: var(--color-muted);
   color: white;
   border: none;
   border-radius: 6px;
@@ -112,7 +112,7 @@
 }
 
 .exit-live-btn:hover {
-  background: #5a6268;
+  background: var(--color-secondary-hover);
   transform: translateY(-1px);
 }
 
@@ -127,7 +127,7 @@
 }
 
 .header h2 {
-  color: #333;
+  color: var(--color-text);
   margin: 0;
   font-size: 1.5em;
 }
@@ -155,7 +155,7 @@
   margin: 0 0 4px 0;
   font-size: 24px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text);
 }
 
 /* Connection Status */
@@ -226,7 +226,7 @@
   max-height: 300px;
   overflow-y: auto;
   padding: 16px;
-  background: #f8f9fa;
+  background: var(--color-light);
   border-radius: 12px;
   margin-bottom: 16px;
 }
@@ -238,7 +238,7 @@
   border-radius: 20px;
   padding: 24px;
   box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e5e5e7;
+  border: 1px solid var(--color-border);
 }
 
 /* Text Input Container */

@@ -148,6 +148,12 @@ webapp_starter_cursor/
 
 ## 🛠️ Development
 
+### UI Tokens
+The frontend uses a small design token system defined in
+`frontend/src/styles/design-tokens.css`. Colors, spacing and typography are
+declared as CSS variables so the chat UI, live mode and replay screens stay
+consistent.
+
 ### Adding New Features
 
 1. **Traditional Chat**: Modify backend routes and frontend components
@@ -260,6 +266,11 @@ docker-compose logs frontend
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🆕 What's New
+
+### v2.2 - Design Tokens and Layout Updates
+- ✅ Introduced CSS design tokens for colors, spacing, and typography
+- ✅ Shared layout variables unify live mode and replay screens
+- ✅ Standardized responsive breakpoints for consistent behavior
 
 ### v2.1 - Gemini-Style UI Redesign (2025)
 - ✅ Complete Gemini-inspired UI overhaul: pill-shaped message input, modern sidebar, and custom CSS

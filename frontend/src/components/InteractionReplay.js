@@ -71,7 +71,12 @@ const useReplayState = () => {
     videoCache: new Map(),
     mediaCacheReady: false,
     isRegeneratingUrls: false,
-    isStreamingAudio: false
+    isStreamingAudio: false,
+    
+    // Conversation segments
+    conversationSegments: null,
+    processedSegments: new Map(),
+    currentSegmentIndex: 0
   });
 
   const updateState = useCallback((updates) => {
@@ -86,7 +91,8 @@ const useReplayState = () => {
       chatMessages: [], // Clear chat history on reset
       currentUserAction: '',
       replayStatus: 'Replay stopped',
-      isStreamingAudio: false
+      isStreamingAudio: false,
+      currentSegmentIndex: 0
     });
   }, [updateState]);
 
@@ -920,12 +926,19 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       if (!state.conversationSegments || state.conversationSegments.length === 0) return;
       
       console.log('🔍 Fetching text content for conversation segments...');
+      console.log(`🔍 DEBUG: ${state.conversationSegments.length} segments found`);
       
       let hasUpdates = false;
       const updatedSegments = await Promise.all(
         state.conversationSegments.map(async (segment) => {
+          // 🔧 DEBUG: Log segment text content status
+          console.log(`🔍 DEBUG: Segment ${segment.id} (${segment.type}) - has fullTextContent: ${!!segment.fullTextContent}`);
+          
           // Skip if already has text content
-          if (segment.fullTextContent) return segment;
+          if (segment.fullTextContent) {
+            console.log(`🔍 DEBUG: Skipping segment ${segment.id} - already has fullTextContent`);
+            return segment;
+          }
           
           let textContent = null;
           
@@ -1040,6 +1053,11 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       updateState({ audioCache: new Map() });
       updateState({ videoCache: new Map() });
       updateState({ mediaCacheReady: false });
+      
+      // 🔧 FIX: Clear conversation segments and processed segments to prevent stale text content caching
+      updateState({ conversationSegments: null });
+      updateState({ processedSegments: new Map() });
+      updateState({ currentSegmentIndex: 0 });
       
       // Start preloading media if there are audio chunks or video frames
       if (data && data.logs) {

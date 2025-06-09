@@ -249,9 +249,8 @@ docker-compose logs frontend
 
 ## 📚 Documentation
 
-- [Gemini Live API Guide](./GEMINI_LIVE_DIRECT.md) - Detailed Live API documentation
-- [API Documentation](./backend/README.md) - Backend API reference
-- [Frontend Guide](./frontend/README.md) - Frontend development guide
+All project documentation is indexed in [docs/README.md](./docs/README.md).
+Key guides include the [Gemini Live API Guide](./GEMINI_LIVE_DIRECT.md).
 
 ## 🤝 Contributing
 

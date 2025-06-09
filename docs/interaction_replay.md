@@ -155,3 +155,5 @@ This implementation transforms the replay from a technical demonstration into a 
 - Consider adding audio waveform visualization  
 - Add replay speed controls for different content types
 - Implement replay session sharing functionality 
+### Shared Audio Logic
+Both live mode and replay now rely on the [useAudioStreaming](../frontend/src/hooks/useAudioStreaming.js) hook so that buffering behavior is consistent.

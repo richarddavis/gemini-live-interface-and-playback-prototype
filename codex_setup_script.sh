@@ -40,14 +40,17 @@ service redis-server start
 echo "🐍 Setting up Python backend..."
 cd backend
 python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+# Install dependencies inside the virtual environment
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r requirements.txt
+# Also install globally so tests run without needing to activate the venv
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
 
 # Run database migrations
 echo "🔄 Running database migrations..."
 export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/webapp
-flask db upgrade || echo "Migration completed or not needed"
+python3 -m flask db upgrade || echo "Migration completed or not needed"
 
 # Setup React frontend
 echo "⚛️ Setting up React frontend..."
@@ -59,4 +62,8 @@ echo ""
 echo "Environment is ready for development."
 echo "Backend: Python Flask with PostgreSQL"
 echo "Frontend: React with Node.js"
-echo "Services: PostgreSQL and Redis are running" 
+echo "Services: PostgreSQL and Redis are running"
+echo "To activate the Python virtual environment run: source backend/venv/bin/activate"
+
+# Return to project root
+cd ..

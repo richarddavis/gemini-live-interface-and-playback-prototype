@@ -15,7 +15,7 @@ sudo -u postgres createdb webapp || true
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';" || true
 
 # Install Python dependencies globally
-pip3 install flask python-dotenv psycopg2-binary requests pytest
+cd backend && pip3 install -r requirements.txt && cd ..
 
 # Install Node dependencies
 cd frontend && npm install && cd ..

@@ -52,4 +52,10 @@ npm test                  # Frontend tests (from frontend/)
 - Do not guess Gemini Live API endpoints - search for current documentation
 - Preserve existing audio/video playback functionality when making changes
 - Use Flask-SQLAlchemy for database operations
-- Environment variables are managed via .env file 
+- Environment variables are managed via .env file
+
+## Testing Guidelines
+- Backend tests may require additional mocking for cloud environments
+- Frontend audio tests use Web Audio API mocks in Jest
+- If tests fail due to environment limitations, focus on functional development
+- Tests are primarily for CI/CD, not required for development tasks 

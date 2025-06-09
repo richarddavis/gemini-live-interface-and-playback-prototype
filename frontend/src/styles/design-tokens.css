@@ -1,15 +1,16 @@
 :root {
-  --color-bg: #f4f4f4;
-  --color-text: #333;
-  --color-muted: #666;
-  --color-primary: #1a73e8;
-  --color-secondary: #5e1f60;
-  --color-secondary-hover: #732c75;
-  --color-light: #f8f9fa;
-  --color-border: #e5e5e7;
-  --color-sidebar-bg: #2c3e50;
-  --color-sidebar-highlight: #e8f0fe;
-  --color-sidebar-hover: #f1f3f4;
+  /* Modern teal + coral color scheme */
+  --color-bg: #fafafa;
+  --color-text: #1f2937;
+  --color-muted: #6b7280;
+  --color-primary: #2a9d8f;
+  --color-secondary: #e76f51;
+  --color-secondary-hover: #d65a3c;
+  --color-light: #ffffff;
+  --color-border: #e5e7eb;
+  --color-sidebar-bg: #264653;
+  --color-sidebar-highlight: #e0f4f1;
+  --color-sidebar-hover: #f0f4f4;
 
   --radius-pill: 24px;
   --radius-md: 8px;
@@ -32,9 +33,9 @@
     --color-bg: #1f2937;
     --color-text: #f9fafb;
     --color-muted: #9ca3af;
-    --color-primary: #60a5fa;
-    --color-secondary: #b747d1;
-    --color-secondary-hover: #a230c0;
+    --color-primary: #2dd4bf;
+    --color-secondary: #fb8450;
+    --color-secondary-hover: #f97316;
     --color-light: #374151;
     --color-border: #374151;
     --color-sidebar-bg: #111827;

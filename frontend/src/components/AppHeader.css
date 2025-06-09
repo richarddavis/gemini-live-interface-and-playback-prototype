@@ -4,8 +4,8 @@
   left: 0;
   right: 0;
   height: 56px; /* Use consistent mobile height for all screen sizes */
-  background: #ffffff;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--color-light);
+  border-bottom: 1px solid var(--color-border);
   z-index: 1100;
   display: flex;
   align-items: center;
@@ -43,7 +43,7 @@
   padding: 8px;
   cursor: pointer;
   border-radius: 8px;
-  color: #5f6368;
+  color: var(--color-muted);
   transition: all 0.2s ease;
   min-width: 44px;
   min-height: 44px;
@@ -52,17 +52,17 @@
 }
 
 .mobile-menu-button:hover {
-  background-color: #f1f3f4;
-  color: #202124;
+  background-color: var(--color-sidebar-hover);
+  color: var(--color-text);
 }
 
 .mobile-menu-button:active {
-  background-color: #e8eaed;
+  background-color: var(--color-sidebar-highlight);
 }
 
 .mobile-menu-button.sidebar-open {
-  background-color: #e8f0fe;
-  color: #1a73e8;
+  background-color: var(--color-sidebar-highlight);
+  color: var(--color-primary);
 }
 
 /* App title */
@@ -75,7 +75,7 @@
 .app-name {
   font-size: 18px; /* Use mobile font size for all screen sizes */
   font-weight: 600;
-  color: #202124;
+  color: var(--color-text);
   letter-spacing: -0.5px;
 }
 
@@ -84,7 +84,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #f1f3f4;
+  background: var(--color-sidebar-hover);
   /* This will be hidden for now but provides space for future user menu */
   opacity: 0;
 }

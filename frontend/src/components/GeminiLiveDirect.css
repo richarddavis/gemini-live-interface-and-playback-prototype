@@ -34,7 +34,7 @@
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 2px solid #e0e0e0;
+  border-bottom: 2px solid var(--color-border);
   flex-shrink: 0; /* Don't shrink header */
 }
 
@@ -192,8 +192,8 @@
 }
 
 .status.disconnected {
-  background: #f5f5f5;
-  color: #666;
+  background: var(--color-light);
+  color: var(--color-muted);
 }
 
 /* Video Preview */
@@ -252,18 +252,18 @@
 .text-input {
   flex: 1;
   padding: 12px 18px;
-  border: 2px solid #e5e5e7;
+  border: 2px solid var(--color-border);
   border-radius: 24px;
   font-size: 15px;
   outline: none;
   transition: all 0.2s ease;
-  background: #f8f9fa;
+  background: var(--color-light);
   height: 44px;
   min-width: 0;
 }
 
 .text-input:focus {
-  border-color: #007aff;
+  border-color: var(--color-primary);
   background: white;
   box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
 }
@@ -273,7 +273,7 @@
   height: 44px;
   border: none;
   border-radius: 50%;
-  background: #007aff;
+  background: var(--color-primary);
   color: white;
   font-size: 18px;
   font-weight: bold;
@@ -286,12 +286,12 @@
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #0056cc;
+  background: var(--color-secondary-hover);
   transform: scale(1.05);
 }
 
 .send-btn:disabled {
-  background: #c7c7cc;
+  background: var(--color-border);
   cursor: not-allowed;
   transform: none;
 }
@@ -310,7 +310,7 @@
   height: 60px;
   border: none;
   border-radius: 50%;
-  background: #f2f2f7;
+  background: var(--color-light);
   font-size: 24px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -321,7 +321,7 @@
 }
 
 .control-btn:hover:not(:disabled) {
-  background: #e5e5ea;
+  background: var(--color-sidebar-hover);
   transform: scale(1.05);
 }
 
@@ -332,32 +332,32 @@
 }
 
 .control-btn.active {
-  background: #007aff;
+  background: var(--color-primary);
   color: white;
-  border-color: #0056cc;
+  border-color: var(--color-secondary-hover);
 }
 
 .control-btn.active:hover {
-  background: #0056cc;
+  background: var(--color-secondary-hover);
 }
 
 /* Specific button styles */
 .connect-btn {
-  background: #34c759;
+  background: var(--color-primary);
   color: white;
 }
 
 .connect-btn:hover {
-  background: #28a745;
+  background: var(--color-secondary-hover);
 }
 
 .disconnect-btn {
-  background: #ff3b30;
+  background: var(--color-secondary);
   color: white;
 }
 
 .disconnect-btn:hover {
-  background: #d70015;
+  background: var(--color-secondary-hover);
 }
 
 /* Voice Selector Container */
@@ -366,12 +366,12 @@
 }
 
 .voice-btn {
-  background: #ff9500;
+  background: var(--color-secondary);
   color: white;
 }
 
 .voice-btn:hover {
-  background: #e6850e;
+  background: var(--color-secondary-hover);
 }
 
 .voice-menu {
@@ -382,7 +382,7 @@
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  border: 1px solid #e5e5e7;
+  border: 1px solid var(--color-border);
   min-width: 200px;
   z-index: 1000;
   opacity: 0;
@@ -409,14 +409,14 @@
   display: block;
   font-size: 14px;
   font-weight: 600;
-  color: #333;
+  color: var(--color-text);
   margin-bottom: 6px;
 }
 
 .voice-option-group select {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #e5e5e7;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   font-size: 14px;
   background: white;
@@ -425,7 +425,7 @@
 }
 
 .voice-option-group select:focus {
-  border-color: #007aff;
+  border-color: var(--color-primary);
 }
 
 /* Mobile Responsive */
@@ -498,17 +498,17 @@
 }
 
 .messages::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--color-light);
   border-radius: 3px;
 }
 
 .messages::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
+  background: var(--color-border);
   border-radius: 3px;
 }
 
 .messages::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
+  background: var(--color-muted);
 }
 
 /* Touch improvements for mobile */

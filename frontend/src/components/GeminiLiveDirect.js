@@ -15,6 +15,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState('user'); // 'user' or 'environment'
   const [selectedVoice, setSelectedVoice] = useState('Aoede');
   const [responseMode, setResponseMode] = useState('AUDIO'); // 'TEXT' or 'AUDIO'
   const [messages, setMessages] = useState([]);
@@ -1040,12 +1041,13 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         addMessage('system', '📹 Requesting camera access...');
         console.log('Requesting camera access...');
         
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
             width: { ideal: 640 },
             height: { ideal: 480 },
-            frameRate: { ideal: 30 }
-          } 
+            frameRate: { ideal: 30 },
+            facingMode: cameraFacingMode
+          }
         });
         
         console.log('Camera stream obtained:', stream);
@@ -1074,7 +1076,39 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.error('Camera error:', error);
       addMessage('error', `Camera error: ${error.message}`);
     }
-  }, [isCameraOn, addMessage, stopVideoFrameCapture]);
+  }, [isCameraOn, cameraFacingMode, addMessage, stopVideoFrameCapture]);
+
+  // Switch between front and back camera
+  const switchCamera = useCallback(async () => {
+    const newMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+    setCameraFacingMode(newMode);
+
+    if (isCameraOn) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30 },
+            facingMode: newMode
+          }
+        });
+
+        if (cameraStreamRef.current) {
+          cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        }
+        cameraStreamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        addMessage('system', `📷 Switched camera to ${newMode === 'user' ? 'front' : 'back'} mode`);
+      } catch (error) {
+        console.error('Camera switch error:', error);
+        addMessage('error', `Camera switch error: ${error.message}`);
+      }
+    }
+  }, [cameraFacingMode, isCameraOn, addMessage]);
 
   // Handle exit - distinguish between casual exit and session completion
   const handleExit = useCallback(() => {
@@ -1172,13 +1206,23 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         {/* Control buttons */}
         <div className="control-buttons">
           {/* Camera toggle */}
-          <button 
-            onClick={toggleCamera} 
+          <button
+            onClick={toggleCamera}
             className={`control-btn camera-btn ${isCameraOn ? 'active' : ''}`}
             disabled={!isConnected}
             title={isCameraOn ? 'Turn off camera' : 'Turn on camera'}
           >
             📹
+          </button>
+
+          {/* Switch camera facing mode */}
+          <button
+            onClick={switchCamera}
+            className="control-btn switch-camera-btn"
+            disabled={!isConnected || !isCameraOn}
+            title="Switch camera"
+          >
+            🔄
           </button>
 
           {/* Microphone toggle */}

@@ -132,3 +132,5 @@ console.log('🔍 Processing server content parts:', serverContent.modelTurn?.pa
 - **getUserMedia**: Requires HTTPS in production
 - **Sample Rate Constraints**: Not all browsers honor exact sample rate requests
 - **Audio Worklet**: Consider for future low-latency implementations 
+## Reusable Hook
+For new features use the shared [useAudioStreaming](../frontend/src/hooks/useAudioStreaming.js) hook to manage buffering and playback.

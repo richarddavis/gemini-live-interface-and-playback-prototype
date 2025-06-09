@@ -33,3 +33,4 @@ The previous chat interface, while functional, lacked the modern, clean look and
 ## Summary
 
 This overhaul brings the project in line with the best practices and visual standards of 2025, ensuring a delightful and accessible experience for all users. All major UI elements now reflect the Gemini design language, and the codebase is cleaner and easier to maintain. 
+See the updated layout in [GeminiLiveDirect.js](../frontend/src/components/GeminiLiveDirect.js).

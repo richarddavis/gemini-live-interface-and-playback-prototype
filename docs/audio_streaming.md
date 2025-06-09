@@ -170,3 +170,4 @@ Use browser console to monitor audio streaming behavior during replay.
 **Branch:** `feature/shared-audio-streaming-fix`  
 **Status:** Ready for testing and review  
 **Estimated Impact:** High - Should significantly improve replay audio quality 
+See [interaction_replay.md](./interaction_replay.md) for details on how these updates improve the replay feature.

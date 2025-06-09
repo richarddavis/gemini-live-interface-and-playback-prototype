@@ -11,11 +11,15 @@ import requests
 import time
 import sys
 import os
+import pytest
+from unittest.mock import patch, MagicMock
+from tests.test_utils import mock_boto3_session, mock_gemini_client
 
 # Test configuration
 API_BASE_URL = "http://localhost:8080/api"
 TEST_SESSION_ID = f"integration_test_{int(time.time())}"
 
+@pytest.mark.integration
 class TestGeminiLiveIntegration(unittest.TestCase):
     """Integration test for Gemini Live API interaction logging"""
     

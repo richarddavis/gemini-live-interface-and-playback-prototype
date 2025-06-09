@@ -9,10 +9,14 @@ import requests
 import json
 import time
 from datetime import datetime
+import pytest
+from unittest.mock import patch
+from tests.test_utils import mock_boto3_session
 
 # Test configuration
 API_BASE_URL = "http://localhost:8080/api"
 
+@pytest.mark.integration
 class TestAudioStreamingIntegration(unittest.TestCase):
     """Test the audio streaming integration with real replay data"""
 

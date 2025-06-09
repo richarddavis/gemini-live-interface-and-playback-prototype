@@ -5,6 +5,7 @@ import hashlib
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 from io import BytesIO
+import pytest
 
 import sys
 import os
@@ -12,8 +13,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app import create_app, db
 from app.models import InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
+from tests.test_utils import mock_boto3_session
 
 
+@pytest.mark.integration
 class TestInteractionLogger(unittest.TestCase):
     """Test suite for interaction logging functionality"""
     

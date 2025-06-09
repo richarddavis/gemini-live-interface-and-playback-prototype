@@ -55,7 +55,7 @@ npm test                  # Frontend tests (from frontend/)
 - Environment variables are managed via .env file
 
 ## Testing Guidelines
-- Backend tests may require additional mocking for cloud environments
-- Frontend audio tests use Web Audio API mocks in Jest
-- If tests fail due to environment limitations, focus on functional development
-- Tests are primarily for CI/CD, not required for development tasks 
+- **Do not run tests automatically.** The test suite is for local development and CI/CD, not the Codex sandbox.
+- Many tests are integration tests that require live network access and will fail here.
+- If you must run tests, run unit tests only. Backend unit tests will pass, but integration tests will be skipped.
+- Focus on functional development and code generation. 

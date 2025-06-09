@@ -25,3 +25,11 @@ global.AudioContext = jest.fn(() => ({
 }));
 
 global.webkitAudioContext = global.AudioContext;
+
+// Mock fetch API
+global.fetch = jest.fn(() =>
+  Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ authenticated: true, user: { name: 'testuser' } }),
+  })
+);

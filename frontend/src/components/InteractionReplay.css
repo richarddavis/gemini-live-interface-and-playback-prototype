@@ -86,7 +86,7 @@
 }
 
 .status-playing {
-  color: #4caf50;
+  color: var(--color-primary);
   font-weight: bold;
 }
 
@@ -115,13 +115,13 @@
 }
 
 .audio-indicator.user-audio {
-  background-color: #e3f2fd;
-  border-left: 4px solid #2196f3;
+  background-color: var(--color-sidebar-highlight);
+  border-left: 4px solid var(--color-primary);
 }
 
 .audio-indicator.api-audio {
-  background-color: #f3e5f5;
-  border-left: 4px solid #9c27b0;
+  background-color: var(--color-sidebar-hover);
+  border-left: 4px solid var(--color-primary-dark);
 }
 
 @keyframes pulse {
@@ -242,21 +242,21 @@
   width: 44px;
   height: 44px;
   font-size: 16px;
-  background: #4caf50;
+  background: var(--color-primary);
   color: white;
 }
 
 .play-btn:hover:not(:disabled) {
-  background: #45a049;
+  background: var(--color-primary-dark);
 }
 
 .stop-btn {
-  background: #f44336;
+  background: var(--color-primary-dark);
   color: white;
 }
 
 .stop-btn:hover:not(:disabled) {
-  background: #da190b;
+  background: var(--color-primary);
 }
 
 .speed-select {
@@ -291,11 +291,11 @@
 .status-text {
   font-size: 14px;
   margin-bottom: 8px;
-  color: #495057;
+  color: var(--color-text);
 }
 
 .regenerate-urls-btn {
-  background: #ff6b35;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -307,7 +307,7 @@
 }
 
 .regenerate-urls-btn:hover:not(:disabled) {
-  background: #e55a2b;
+  background: var(--color-primary-dark);
 }
 
 .regenerate-urls-btn:disabled {
@@ -449,25 +449,25 @@
 }
 
 .conversation-turn.current-turn {
-  background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
-  border-color: #2196f3;
-  box-shadow: 0 2px 8px rgba(33, 150, 243, 0.2);
+  background: linear-gradient(135deg, var(--color-sidebar-highlight) 0%, var(--color-sidebar-hover) 100%);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(44, 123, 229, 0.2);
 }
 
 .conversation-turn.user_speech {
-  border-left: 4px solid #4caf50;
+  border-left: 4px solid var(--color-primary);
 }
 
 .conversation-turn.api_response {
-  border-left: 4px solid #9c27b0;
+  border-left: 4px solid var(--color-primary-dark);
 }
 
 .conversation-turn.user_text {
-  border-left: 4px solid #2196f3;
+  border-left: 4px solid var(--color-primary);
 }
 
 .conversation-turn.user_action {
-  border-left: 4px solid #ff9800;
+  border-left: 4px solid var(--color-primary-light);
 }
 
 .turn-icon {
@@ -527,24 +527,24 @@
 }
 
 .conversation-turn.user_text .text-content-display {
-  background: #e3f2fd;
-  border-color: #2196f3;
+  background: var(--color-sidebar-highlight);
+  border-color: var(--color-primary);
 }
 
 .conversation-turn.api_response .text-content-display {
-  background: #f3e5f5;
-  border-color: #9c27b0;
+  background: var(--color-sidebar-hover);
+  border-color: var(--color-primary-dark);
 }
 
 .current-status {
-  background: rgba(33, 150, 243, 0.1);
+  background: rgba(44, 123, 229, 0.1);
   border-radius: 6px;
   padding: 8px 12px;
-  border-left: 3px solid #2196f3;
+  border-left: 3px solid var(--color-primary);
 }
 
 .status-indicator {
-  color: #2196f3;
+  color: var(--color-primary);
   font-weight: bold;
   font-size: 12px;
   margin-bottom: 4px;

@@ -2,14 +2,16 @@
   --color-bg: #f4f4f4;
   --color-text: #333;
   --color-muted: #666;
-  --color-primary: #1a73e8;
-  --color-secondary: #5e1f60;
-  --color-secondary-hover: #732c75;
+  --color-primary: #2c7be5;
+  --color-primary-dark: #1a56c2;
+  --color-primary-light: #5aa8f0;
+  --color-secondary: #1a56c2;
+  --color-secondary-hover: #144aab;
   --color-light: #f8f9fa;
   --color-border: #e5e5e7;
-  --color-sidebar-bg: #2c3e50;
-  --color-sidebar-highlight: #e8f0fe;
-  --color-sidebar-hover: #f1f3f4;
+  --color-sidebar-bg: #23437e;
+  --color-sidebar-highlight: #e8f1fc;
+  --color-sidebar-hover: #edf3fd;
 
   --radius-pill: 24px;
   --radius-md: 8px;
@@ -32,13 +34,15 @@
     --color-bg: #1f2937;
     --color-text: #f9fafb;
     --color-muted: #9ca3af;
-    --color-primary: #60a5fa;
-    --color-secondary: #b747d1;
-    --color-secondary-hover: #a230c0;
+  --color-primary: #5aa8f0;
+  --color-primary-dark: #2c7be5;
+  --color-primary-light: #7fc0f7;
+  --color-secondary: #2c7be5;
+  --color-secondary-hover: #1a56c2;
     --color-light: #374151;
     --color-border: #374151;
     --color-sidebar-bg: #111827;
-    --color-sidebar-highlight: #374151;
-    --color-sidebar-hover: #1f2937;
+    --color-sidebar-highlight: #233657;
+    --color-sidebar-hover: #1b2a44;
   }
 }

@@ -342,8 +342,8 @@ body {
 .api-controls input:focus,
 .api-controls select:focus {
   outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2), 0 2px 8px rgba(0, 0, 0, 0.15);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(44, 123, 229, 0.2), 0 2px 8px rgba(0, 0, 0, 0.15);
   transform: translateY(-1px);
 }
 
@@ -362,7 +362,7 @@ body {
   padding: 6px 14px;
   border-radius: 6px;
   border: none;
-  background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+  background-color: var(--color-primary);
   color: white;
   cursor: pointer;
   font-size: 12px;
@@ -371,21 +371,21 @@ body {
   min-height: 32px;
   height: 32px;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.3);
+  box-shadow: 0 2px 6px rgba(44, 123, 229, 0.3);
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
 
 .api-controls button.active {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  box-shadow: 0 2px 6px rgba(231, 76, 60, 0.4);
+  background-color: var(--color-primary-dark);
+  box-shadow: 0 2px 6px rgba(26, 86, 194, 0.4);
   animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
-  0% { box-shadow: 0 2px 6px rgba(231, 76, 60, 0.4); }
-  50% { box-shadow: 0 2px 12px rgba(231, 76, 60, 0.6); }
-  100% { box-shadow: 0 2px 6px rgba(231, 76, 60, 0.4); }
+  0% { box-shadow: 0 2px 6px rgba(26, 86, 194, 0.4); }
+  50% { box-shadow: 0 2px 12px rgba(26, 86, 194, 0.6); }
+  100% { box-shadow: 0 2px 6px rgba(26, 86, 194, 0.4); }
 }
 
 @media (max-width: 768px) {
@@ -398,18 +398,18 @@ body {
 }
 
 .api-controls button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2980b9 0%, #1f5f8b 100%);
+  background-color: var(--color-primary-dark);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(52, 152, 219, 0.4);
+  box-shadow: 0 4px 12px rgba(44, 123, 229, 0.4);
 }
 
 .api-controls button.active:hover {
-  background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
-  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.5);
+  background-color: var(--color-primary);
+  box-shadow: 0 4px 12px rgba(44, 123, 229, 0.5);
 }
 
 .api-controls button:disabled {
-  background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+  background-color: var(--color-muted);
   cursor: not-allowed;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transform: none;
@@ -512,7 +512,7 @@ body {
 }
 
 .message-item.user {
-  background-color: #007bff;
+  background-color: var(--color-primary);
   color: white;
   align-self: flex-end;
   border-bottom-right-radius: 4px;
@@ -579,7 +579,7 @@ body {
 }
 
 .no-active-chat button {
-  background-color: #007bff;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   padding: 12px 24px;
@@ -600,7 +600,7 @@ body {
 }
 
 .no-active-chat button:hover {
-  background-color: #0056b3;
+  background-color: var(--color-primary-dark);
 }
 
 /* Loading states */
@@ -626,10 +626,10 @@ body {
   justify-content: center;
   padding: 10px 15px;
   margin: 10px 0;
-  background-color: #f0f9ff;
-  border: 1px solid #cce5ff;
+  background-color: var(--color-sidebar-highlight);
+  border: 1px solid var(--color-primary-light);
   border-radius: 8px;
-  color: #0c5460;
+  color: var(--color-primary-dark);
   align-self: center;
 }
 
@@ -638,7 +638,7 @@ body {
   height: 20px;
   margin: 0 10px 0 0;
   border-width: 2px;
-  border-top-color: #0c5460;
+  border-top-color: var(--color-primary-dark);
 }
 
 .upload-indicator p {
@@ -769,7 +769,7 @@ body {
   align-items: center;
   gap: 8px;
   padding: 20px;
-  background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+  background-color: var(--color-primary);
   border-radius: 12px;
   color: white;
   min-width: 200px;
@@ -806,7 +806,7 @@ body {
 }
 
 .capture-button {
-  background: linear-gradient(135deg, #4CAF50, #45a049);
+  background-color: var(--color-primary);
   color: white;
   border: none;
   padding: 10px 20px;
@@ -819,27 +819,27 @@ body {
 }
 
 .capture-button:hover {
-  background: linear-gradient(135deg, #45a049, #3d8b40);
+  background-color: var(--color-primary-dark);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(76, 175, 80, 0.3);
+  box-shadow: 0 2px 8px rgba(44, 123, 229, 0.3);
 }
 
 .capture-button.recording {
-  background: linear-gradient(135deg, #f44336, #d32f2f);
+  background-color: var(--color-primary-dark);
   animation: recordingPulse 1s ease-in-out infinite;
 }
 
 @keyframes recordingPulse {
   0%, 100% {
-    box-shadow: 0 2px 8px rgba(244, 67, 54, 0.3);
+    box-shadow: 0 2px 8px rgba(26, 86, 194, 0.3);
   }
   50% {
-    box-shadow: 0 2px 16px rgba(244, 67, 54, 0.6);
+    box-shadow: 0 2px 16px rgba(26, 86, 194, 0.6);
   }
 }
 
 .cancel-button {
-  background: linear-gradient(135deg, #6c757d, #5a6268);
+  background-color: var(--color-muted);
   color: white;
   border: none;
   padding: 10px 20px;
@@ -852,9 +852,9 @@ body {
 }
 
 .cancel-button:hover {
-  background: linear-gradient(135deg, #5a6268, #495057);
+  background-color: var(--color-primary-dark);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+  box-shadow: 0 2px 8px rgba(44, 123, 229, 0.3);
 }
 
 /* RESPONSIVE UTILITIES */
@@ -892,7 +892,7 @@ body {
   width: 16px;
   height: 16px;
   border: 2px solid #f3f3f3;
-  border-top: 2px solid #3498db;
+  border-top: 2px solid var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -1263,8 +1263,8 @@ body {
 }
 
 .api-controls select.provider-select:hover {
-  border-color: #3498db;
-  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.2);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 6px rgba(44, 123, 229, 0.2);
 }
 
 .api-controls input.api-key-input {
@@ -1355,9 +1355,9 @@ body {
 .sidebar-select:focus,
 .sidebar-input:focus {
   outline: none;
-  border-color: #3498db;
+  border-color: var(--color-primary);
   background: rgba(255, 255, 255, 0.15);
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+  box-shadow: 0 0 0 2px rgba(44, 123, 229, 0.2);
 }
 
 .sidebar-input::placeholder {

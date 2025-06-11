@@ -1112,42 +1112,60 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
   return (
     <div className="gemini-live-container">
-      {/* Video preview */}
-      {isCameraOn && (
-        <div className="video-preview">
-          <video 
-            ref={videoRef} 
-            className="video-element" 
-            autoPlay 
-            muted 
-            playsInline
-            style={{ 
-              display: 'block',
-              width: '100%', 
-              maxWidth: '400px',
-              height: 'auto',
-              borderRadius: '12px',
-              backgroundColor: '#000'
-            }}
-          >
-            Your browser does not support the video element.
-          </video>
-          {!videoRef.current?.srcObject && (
-            <div style={{ 
-              position: 'absolute', 
-              top: '50%', 
-              left: '50%', 
-              transform: 'translate(-50%, -50%)',
-              color: '#666',
-              fontSize: '14px'
-            }}>
-              Loading camera...
-            </div>
+      {/* Header */}
+      <div className="header">
+        <div className="header-left">
+          <h2>Gemini Live</h2>
+        </div>
+        <button 
+          onClick={handleExit}
+          className="exit-live-btn"
+        >
+          ← Exit Live
+        </button>
+      </div>
+
+      {/* Video Section */}
+      <div className="video-section">
+        {isCameraOn && (
+          <div className="video-preview">
+            <video 
+              ref={videoRef} 
+              className="video-element" 
+              autoPlay 
+              muted 
+              playsInline
+            >
+              Your browser does not support the video element.
+            </video>
+            {!videoRef.current?.srcObject && (
+              <div style={{ 
+                position: 'absolute', 
+                top: '50%', 
+                left: '50%', 
+                transform: 'translate(-50%, -50%)',
+                color: '#fff',
+                fontSize: '14px'
+              }}>
+                Loading camera...
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Connection status in video section */}
+        <div className="connection-status">
+          {isConnecting && <span className="status connecting">Connecting…</span>}
+          {isConnected && !isConnecting && (
+            <span className="status connected">Connected</span>
+          )}
+          {!isConnected && !isConnecting && (
+            <span className="status disconnected">Disconnected</span>
           )}
         </div>
-      )}
+      </div>
 
-      {/* Chat messages */}
+      {/* Chat Section */}
       <div className="chat-section">
         <div className="messages">
           {messages.map((msg) => (
@@ -1160,17 +1178,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           ))}
           <div ref={messagesEndRef} />
         </div>
-      </div>
-
-      {/* Connection status */}
-      <div className="connection-status">
-        {isConnecting && <span className="status connecting">Connecting…</span>}
-        {isConnected && !isConnecting && (
-          <span className="status connected">Connected</span>
-        )}
-        {!isConnected && !isConnecting && (
-          <span className="status disconnected">Disconnected</span>
-        )}
       </div>
 
       {/* Bottom controls cluster */}

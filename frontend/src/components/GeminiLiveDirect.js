@@ -1112,18 +1112,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
   return (
     <div className="gemini-live-container">
-      {/* Header */}
-      <div className="header">
-        <div className="header-left">
-          <h2>Gemini Live</h2>
-        </div>
-        <button 
-          onClick={handleExit}
-          className="exit-live-btn"
-        >
-          ← Exit Live
-        </button>
-      </div>
 
       {/* Video Section */}
       <div className="video-section">
@@ -1152,17 +1140,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             )}
           </div>
         )}
-        
-        {/* Connection status in video section */}
-        <div className="connection-status">
-          {isConnecting && <span className="status connecting">Connecting…</span>}
-          {isConnected && !isConnecting && (
-            <span className="status connected">Connected</span>
-          )}
-          {!isConnected && !isConnecting && (
-            <span className="status disconnected">Disconnected</span>
-          )}
-        </div>
       </div>
 
       {/* Chat Section */}

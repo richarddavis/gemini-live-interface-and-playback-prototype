@@ -17,18 +17,13 @@
   .gemini-live-container {
     display: grid;
     grid-template-columns: 1fr 1fr; /* Two equal columns */
-    grid-template-rows: auto 1fr auto; /* Header, content, controls */
+    grid-template-rows: 1fr auto; /* Content, controls */
     grid-template-areas: 
-      "header header"
       "video messages"
       "controls controls";
     gap: 24px;
     height: calc(100vh - 48px); /* Full height minus padding */
     max-height: 900px; /* Maximum reasonable height */
-  }
-  
-  .header {
-    grid-area: header;
   }
   
   .video-section {
@@ -50,7 +45,7 @@
   }
 }
 
-/* Mobile: Optimized vertical layout without header */
+/* Mobile: Optimized vertical layout */
 @media (max-width: 768px) {
   .gemini-live-container {
     padding: 4px; /* Reduced padding for more space */
@@ -59,11 +54,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px; /* Reduced gap */
-  }
-  
-  /* Hide header on mobile to save space */
-  .header {
-    display: none;
   }
   
   .video-section {
@@ -95,176 +85,9 @@
   }
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0; /* Removed since we use grid gap */
-  padding-bottom: 15px;
-  border-bottom: 2px solid #e0e0e0;
-  flex-shrink: 0;
-}
 
-@media (max-width: 768px) {
-  .header {
-    padding-bottom: 8px;
-    flex-direction: column;
-    gap: 6px;
-    text-align: center;
-  }
-}
 
-@media (max-width: 480px) {
-  .header {
-    gap: 4px;
-  }
-}
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-@media (max-width: 768px) {
-  .header-left {
-    gap: 10px;
-    align-items: center;
-  }
-}
-
-@media (max-width: 480px) {
-  .header-left {
-    gap: 8px;
-  }
-}
-
-.exit-live-btn {
-  background: var(--color-muted);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-@media (max-width: 768px) {
-  .exit-live-btn {
-    padding: 6px 12px;
-    font-size: 14px;
-    min-height: 32px;
-    width: auto;
-    max-width: 140px;
-    justify-content: center;
-  }
-}
-
-@media (max-width: 480px) {
-  .exit-live-btn:hover {
-    background: var(--color-muted);
-  }
-}
-
-.exit-live-btn:hover {
-  background: #555;
-}
-
-@media (max-width: 768px) {
-  .exit-live-btn:hover {
-    background: #555;
-  }
-}
-
-.exit-live-btn:active {
-  transform: scale(0.98);
-}
-
-.header h2 {
-  margin: 0;
-  color: #333;
-  font-size: 24px;
-}
-
-@media (max-width: 768px) {
-  .header h2 {
-    font-size: 20px;
-  }
-}
-
-@media (max-width: 480px) {
-  .header h2 {
-    font-size: 18px;
-  }
-}
-
-/* Live session header styling */
-.live-session-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.live-session-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #333;
-  margin: 0;
-}
-
-/* Connection status */
-.connection-status {
-  display: flex;
-  justify-content: center;
-  margin: 8px 0; /* Reduced margin on mobile */
-  position: relative;
-  z-index: 5; /* Below controls but above content */
-}
-
-@media (max-width: 768px) {
-  .connection-status {
-    margin: 4px 0; /* Even smaller margin on mobile */
-  }
-}
-
-.connection-status .status {
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: 600;
-  display: inline-block;
-}
-
-@media (max-width: 768px) {
-  .connection-status .status {
-    padding: 4px 8px; /* Smaller padding */
-    font-size: 11px; /* Smaller font */
-  }
-}
-
-.status.connecting {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffeaa7;
-}
-
-.status.connected {
-  background: #d1edff;
-  color: #0c5460;
-  border: 1px solid #bee5eb;
-}
-
-.status.disconnected {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-}
 
 /* Video Section */
 .video-section {
@@ -272,11 +95,30 @@
   border-radius: var(--radius-md);
   padding: var(--spacing-md);
   border: 1px solid var(--color-border);
+  /* Fixed height to prevent layout shifts */
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 769px) {
+  .video-section {
+    min-height: 300px;
+  }
 }
 
 @media (max-width: 768px) {
   .video-section {
-    padding: var(--spacing-sm); /* Reduced padding on mobile */
+    padding: var(--spacing-sm);
+    min-height: 150px;
+    max-height: 30vh; /* Prevent video from taking too much space */
+  }
+}
+
+@media (max-width: 480px) {
+  .video-section {
+    max-height: 25vh;
   }
 }
 
@@ -288,20 +130,21 @@
   background: #000;
   border-radius: 12px;
   overflow: hidden;
-  min-height: 200px;
+  width: 100%;
+  height: 100%;
 }
 
-@media (min-width: 769px) {
-  .video-preview {
-    min-height: 300px;
-    height: 100%;
-  }
+/* Empty state when no video - use pseudo-element */
+.video-section:not(:has(.video-preview))::before {
+  content: "📹 Camera off";
+  font-size: 18px;
+  color: var(--color-muted);
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
-  .video-preview {
-    min-height: 150px; /* Smaller on mobile */
-    height: auto;
+  .video-section:not(:has(.video-preview))::before {
+    font-size: 14px;
   }
 }
 
@@ -362,11 +205,12 @@
   border-bottom-right-radius: 4px;
 }
 
-.message.bot, .message.system {
-  background: #e9ecef;
+.message.ai, .message.system {
+  background: #f1f3f4;
   color: #333;
   align-self: flex-start;
   border-bottom-left-radius: 4px;
+  border: 1px solid #dadce0;
 }
 
 .message.error {
@@ -722,30 +566,5 @@
   }
 }
 
-/* Empty state for when no video */
-.video-section:not(:has(.video-preview)) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-  color: var(--color-muted);
-  font-style: italic;
-}
 
-@media (max-width: 768px) {
-  .video-section:not(:has(.video-preview)) {
-    min-height: 100px; /* Smaller empty state on mobile */
-  }
-}
-
-.video-section:not(:has(.video-preview))::before {
-  content: "📹 Camera off";
-  font-size: 18px;
-}
-
-@media (max-width: 768px) {
-  .video-section:not(:has(.video-preview))::before {
-    font-size: 14px;
-  }
-}
 

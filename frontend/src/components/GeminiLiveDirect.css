@@ -134,6 +134,24 @@
   height: 100%;
 }
 
+.flip-camera-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+
+@media (max-width: 768px) {
+  .flip-camera-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
+}
+
 /* Empty state when no video - use pseudo-element */
 .video-section:not(:has(.video-preview))::before {
   content: "📹 Camera off";

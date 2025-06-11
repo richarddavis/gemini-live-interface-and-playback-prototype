@@ -761,6 +761,31 @@ body {
   max-height: 300px;
   border-radius: 8px;
   background: #000;
+  position: relative;
+}
+
+.flip-camera-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255,255,255,0.7);
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .flip-camera-button {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
 }
 
 .audio-recording-indicator {

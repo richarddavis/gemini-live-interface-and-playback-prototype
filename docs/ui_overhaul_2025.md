@@ -16,6 +16,7 @@ The previous chat interface, while functional, lacked the modern, clean look and
 - **Bootstrap Icons**: Only the icon font is imported globally; no other Bootstrap CSS is used.
 - **Connection Status Indicator**: Live mode displays connecting/connected/disconnected badges.
 - **Touchable Voice Settings**: Voice selector opens on tap instead of hover for mobile support.
+- **Compact Bottom Controls**: Reduced padding and icon sizes so text responses remain visible even on small screens.
 
 ## Before/After Highlights
 

@@ -217,8 +217,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   min-height: 0;
-  margin-bottom: 20px;
 }
 
 .messages {
@@ -229,16 +229,25 @@
   background: var(--color-light);
   border-radius: var(--radius-md);
   margin-bottom: var(--spacing-md);
+  padding-bottom: 120px; /* space for sticky controls */
 }
 
 /* Bottom Controls Cluster */
 .bottom-controls {
   flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  left: 0;
   background: white;
   border-radius: var(--radius-pill);
   padding: var(--spacing-md);
   box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  z-index: 10;
+  padding-bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom));
 }
 
 /* Text Input Container */
@@ -438,6 +447,7 @@
 @media (max-width: 768px) {
   .bottom-controls {
     padding: var(--spacing-sm);
+    padding-bottom: calc(var(--spacing-sm) + env(safe-area-inset-bottom));
   }
   
   .control-buttons {
@@ -486,6 +496,7 @@
 
   .bottom-controls {
     padding: var(--spacing-lg);
+    padding-bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom));
   }
   
   .control-buttons {
@@ -503,6 +514,10 @@
     width: 44px;
     height: 44px;
     font-size: 18px;
+  }
+
+  .bottom-controls {
+    padding-bottom: calc(var(--spacing-sm) + env(safe-area-inset-bottom));
   }
 }
 

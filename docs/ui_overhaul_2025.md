@@ -17,6 +17,7 @@ The previous chat interface, while functional, lacked the modern, clean look and
 - **Connection Status Indicator**: Live mode displays connecting/connected/disconnected badges.
 - **Touchable Voice Settings**: Voice selector opens on tap instead of hover for mobile support.
 - **Compact Bottom Controls**: Reduced padding and icon sizes so text responses remain visible even on small screens.
+- **Sticky Bottom Bar**: The input and controls stay pinned to the bottom with safe-area insets for a polished mobile feel.
 
 ## Before/After Highlights
 

@@ -1,30 +1,86 @@
 /* Updated layout for the new component structure */
 .gemini-live-container {
-  max-width: 640px;
+  max-width: 1200px; /* Wider for desktop tiled layout */
   margin: 0 auto;
   padding: 24px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* Allow container to shrink */
-  flex: 1; /* Take available space */
-  overflow-y: auto; /* Enable scrolling */
+  min-height: 0;
+  flex: 1;
   height: 100%;
+  overflow: hidden; /* Prevent container from scrolling */
 }
 
-/* Mobile-first responsive design */
+/* Desktop: CSS Grid Layout */
+@media (min-width: 769px) {
+  .gemini-live-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Two equal columns */
+    grid-template-rows: auto 1fr auto; /* Header, content, controls */
+    grid-template-areas: 
+      "header header"
+      "video messages"
+      "controls controls";
+    gap: 24px;
+    height: calc(100vh - 48px); /* Full height minus padding */
+    max-height: 900px; /* Maximum reasonable height */
+  }
+  
+  .header {
+    grid-area: header;
+  }
+  
+  .video-section {
+    grid-area: video;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  
+  .chat-section {
+    grid-area: messages;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  
+  .bottom-controls {
+    grid-area: controls;
+  }
+}
+
+/* Mobile: Traditional vertical layout */
 @media (max-width: 768px) {
   .gemini-live-container {
     padding: 8px;
-    height: auto; /* Remove fixed height */
-    overflow-y: auto; /* Enable scrolling */
-    max-width: none;
+    height: 100vh;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .video-section {
+    flex-shrink: 0;
+  }
+  
+  .chat-section {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .bottom-controls {
+    flex-shrink: 0;
   }
 }
 
 @media (max-width: 480px) {
   .gemini-live-container {
     padding: 6px;
+    gap: 8px;
   }
 }
 
@@ -32,15 +88,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 0; /* Removed since we use grid gap */
   padding-bottom: 15px;
   border-bottom: 2px solid #e0e0e0;
-  flex-shrink: 0; /* Don't shrink header */
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {
   .header {
-    margin-bottom: 10px;
     padding-bottom: 8px;
     flex-direction: column;
     gap: 6px;
@@ -50,7 +105,6 @@
 
 @media (max-width: 480px) {
   .header {
-    margin-bottom: 8px;
     gap: 4px;
   }
 }
@@ -63,7 +117,6 @@
 
 @media (max-width: 768px) {
   .header-left {
-    /* flex-direction: column; */
     gap: 10px;
     align-items: center;
   }
@@ -103,74 +156,71 @@
 }
 
 @media (max-width: 480px) {
-  .exit-live-btn {
-    padding: 6px 10px;
-    font-size: 13px;
-    min-height: 30px;
-    max-width: 120px;
+  .exit-live-btn:hover {
+    background: var(--color-muted);
   }
 }
 
 .exit-live-btn:hover {
-  background: var(--color-secondary-hover);
-  transform: translateY(-1px);
+  background: #555;
 }
 
 @media (max-width: 768px) {
   .exit-live-btn:hover {
-    transform: none; /* Disable hover transform on mobile */
+    background: #555;
   }
 }
 
 .exit-live-btn:active {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 
 .header h2 {
-  color: var(--color-text);
   margin: 0;
-  font-size: 1.5em;
+  color: #333;
+  font-size: 24px;
 }
 
 @media (max-width: 768px) {
   .header h2 {
-    font-size: 1.1em;
+    font-size: 20px;
   }
 }
 
 @media (max-width: 480px) {
   .header h2 {
-    font-size: 1em;
+    font-size: 18px;
   }
 }
 
-/* Live Session Header */
+/* Live session header styling */
 .live-session-header {
-  text-align: center;
-  margin-bottom: 24px;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .live-session-title {
-  margin: 0 0 4px 0;
-  font-size: 24px;
+  font-size: 1.5rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: #333;
+  margin: 0;
 }
 
-/* Connection Status */
+/* Connection status */
 .connection-status {
-  text-align: center;
-  margin-bottom: 20px;
-  margin-top: -15px;
-  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+  position: relative;
+  z-index: 5; /* Below controls but above content */
 }
 
 .connection-status .status {
   padding: 8px 16px;
   border-radius: 20px;
-  font-weight: 500;
   font-size: 14px;
+  font-weight: 600;
   display: inline-block;
 }
 
@@ -182,62 +232,120 @@
 }
 
 .status.connecting {
-  background: #fff3e0;
-  color: #f57c00;
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
 }
 
 .status.connected {
-  background: #e8f5e8;
-  color: #388e3c;
+  background: #d1edff;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
 }
 
 .status.disconnected {
-  background: #f5f5f5;
-  color: #666;
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
 }
 
-/* Video Preview */
+/* Video Section */
+.video-section {
+  background: var(--color-light);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+}
+
 .video-preview {
-  text-align: center;
-  margin-bottom: 24px;
-  flex-shrink: 0;
   display: flex;
   justify-content: center;
+  align-items: center;
+  position: relative;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 200px;
+}
+
+@media (min-width: 769px) {
+  .video-preview {
+    min-height: 300px;
+    height: 100%;
+  }
 }
 
 .video-element {
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  max-width: 100%;
-  height: auto;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* Chat Section */
 .chat-section {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   min-height: 0;
+  background: var(--color-light);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
 }
 
 .messages {
   flex: 1;
-  min-height: 120px;
   overflow-y: auto;
   padding: var(--spacing-md);
-  background: var(--color-light);
-  border-radius: var(--radius-md);
-  margin-bottom: var(--spacing-md);
-  padding-bottom: 120px; /* space for sticky controls */
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0; /* Important for flex child to shrink */
 }
 
-/* Bottom Controls Cluster */
+/* Message styling */
+.message {
+  padding: 12px 16px;
+  border-radius: 12px;
+  max-width: 85%;
+  word-wrap: break-word;
+  position: relative;
+}
+
+.message.user {
+  background: var(--color-primary);
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+.message.bot, .message.system {
+  background: #e9ecef;
+  color: #333;
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.message.error {
+  background: #f8d7da;
+  color: #721c24;
+  align-self: flex-start;
+  border: 1px solid #f5c6cb;
+}
+
+.message-content {
+  font-size: 15px;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.message-time {
+  font-size: 11px;
+  opacity: 0.7;
+  text-align: right;
+}
+
+/* Bottom Controls - No longer sticky, positioned in grid */
 .bottom-controls {
-  flex-shrink: 0;
-  position: sticky;
-  bottom: 0;
-  left: 0;
   background: white;
   border-radius: var(--radius-pill);
   padding: var(--spacing-md);
@@ -246,8 +354,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+  flex-shrink: 0;
   z-index: 10;
-  padding-bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom));
 }
 
 /* Text Input Container */
@@ -356,7 +464,6 @@
 }
 
 /* Specific button styles */
-
 .connect-btn {
   background: var(--color-primary);
   color: white;
@@ -447,7 +554,7 @@
 @media (max-width: 768px) {
   .bottom-controls {
     padding: var(--spacing-sm);
-    padding-bottom: calc(var(--spacing-sm) + env(safe-area-inset-bottom));
+    border-radius: var(--radius-md);
   }
   
   .control-buttons {
@@ -484,26 +591,6 @@
   }
 }
 
-/* Desktop optimizations */
-@media (min-width: 769px) {
-  .gemini-live-container {
-    min-height: 600px;
-  }
-
-  .text-input-container {
-    margin-bottom: var(--spacing-lg);
-  }
-
-  .bottom-controls {
-    padding: var(--spacing-lg);
-    padding-bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom));
-  }
-  
-  .control-buttons {
-    gap: var(--spacing-lg);
-  }
-}
-
 @media (max-width: 480px) {
   .control-buttons {
     gap: var(--spacing-xs);
@@ -514,10 +601,6 @@
     width: 44px;
     height: 44px;
     font-size: 18px;
-  }
-
-  .bottom-controls {
-    padding-bottom: calc(var(--spacing-sm) + env(safe-area-inset-bottom));
   }
 }
 
@@ -546,15 +629,6 @@
   button, select, input {
     min-height: 44px;
   }
-  
-  /* Add spacing between touch targets */
-  .media-controls > *:not(:last-child) {
-    margin-bottom: 12px;
-  }
-  
-  .config-controls > *:not(:last-child) {
-    margin-bottom: 12px;
-  }
 }
 
 /* Accessibility improvements */
@@ -568,12 +642,27 @@
 
 /* High contrast mode */
 @media (prefers-contrast: high) {
-  .connect-btn, .disconnect-btn, .media-btn, .send-btn {
+  .connect-btn, .disconnect-btn, .send-btn {
     border: 2px solid #000;
   }
   
-  .text-input, .voice-selector select, .response-mode-selector select {
+  .text-input, .voice-option-group select {
     border: 2px solid #000;
   }
+}
+
+/* Empty state for when no video */
+.video-section:not(:has(.video-preview)) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.video-section:not(:has(.video-preview))::before {
+  content: "📹 Camera off";
+  font-size: 18px;
 }
 

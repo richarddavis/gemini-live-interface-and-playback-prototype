@@ -305,7 +305,8 @@
   flex-wrap: wrap;
 }
 
-.control-btn {
+.control-btn,
+.icon-button {
   width: 60px;
   height: 60px;
   border: none;
@@ -320,44 +321,49 @@
   border: 2px solid transparent;
 }
 
-.control-btn:hover:not(:disabled) {
+.control-btn:hover:not(:disabled),
+.icon-button:hover:not(:disabled) {
   background: #e5e5ea;
   transform: scale(1.05);
 }
 
-.control-btn:disabled {
+.control-btn:disabled,
+.icon-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
 }
 
-.control-btn.active {
-  background: #007aff;
+.control-btn.active,
+.icon-button.active {
+  background: var(--color-primary);
   color: white;
-  border-color: #0056cc;
+  border-color: var(--color-primary);
 }
 
-.control-btn.active:hover {
+.control-btn.active:hover,
+.icon-button.active:hover {
   background: #0056cc;
 }
 
 /* Specific button styles */
+
 .connect-btn {
-  background: #34c759;
+  background: var(--color-primary);
   color: white;
 }
 
 .connect-btn:hover {
-  background: #28a745;
+  background: #0c62d6;
 }
 
 .disconnect-btn {
-  background: #ff3b30;
+  background: var(--color-secondary);
   color: white;
 }
 
 .disconnect-btn:hover {
-  background: #d70015;
+  background: var(--color-secondary-hover);
 }
 
 /* Voice Selector Container */
@@ -366,12 +372,12 @@
 }
 
 .voice-btn {
-  background: #ff9500;
+  background: var(--color-secondary);
   color: white;
 }
 
 .voice-btn:hover {
-  background: #e6850e;
+  background: var(--color-secondary-hover);
 }
 
 .voice-menu {
@@ -391,7 +397,7 @@
   transition: all 0.2s ease;
 }
 
-.voice-selector-container:hover .voice-menu {
+.voice-selector-container.open .voice-menu {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -437,8 +443,9 @@
   .control-buttons {
     gap: 12px;
   }
-  
-  .control-btn {
+
+  .control-btn,
+  .icon-button {
     width: 50px;
     height: 50px;
     font-size: 20px;
@@ -489,6 +496,13 @@
 @media (max-width: 480px) {
   .control-buttons {
     gap: 8px;
+  }
+
+  .control-btn,
+  .icon-button {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
   }
 }
 
@@ -547,3 +561,4 @@
     border: 2px solid #000;
   }
 }
+

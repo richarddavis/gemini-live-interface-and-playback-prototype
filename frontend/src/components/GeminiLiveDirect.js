@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import './GeminiLiveDirect.css';
+import IconButton from './IconButton';
 import { interactionLogger } from '../services/interactionLogger';
 
 /**
@@ -15,6 +16,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
+  const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('Aoede');
   const [responseMode, setResponseMode] = useState('AUDIO'); // 'TEXT' or 'AUDIO'
   const [messages, setMessages] = useState([]);
@@ -35,6 +37,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const messagesEndRef = useRef(null);
   const cameraStreamRef = useRef(null); // Store camera stream separately
   const videoFrameIntervalRef = useRef(null); // For video frame capture interval
+  const voiceMenuRef = useRef(null);
 
   // Available voices from Google's 2025 documentation
   const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
@@ -52,6 +55,18 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // Close voice menu when clicking outside
+  useEffect(() => {
+    if (!voiceMenuOpen) return;
+    const handleClick = (e) => {
+      if (voiceMenuRef.current && !voiceMenuRef.current.contains(e.target)) {
+        setVoiceMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [voiceMenuOpen]);
 
   // Notify parent of status changes
   useEffect(() => {
@@ -1147,6 +1162,17 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         </div>
       </div>
 
+      {/* Connection status */}
+      <div className="connection-status">
+        {isConnecting && <span className="status connecting">Connecting…</span>}
+        {isConnected && !isConnecting && (
+          <span className="status connected">Connected</span>
+        )}
+        {!isConnected && !isConnecting && (
+          <span className="status disconnected">Disconnected</span>
+        )}
+      </div>
+
       {/* Bottom controls cluster */}
       <div className="bottom-controls">
         {/* Text input */}
@@ -1172,41 +1198,51 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         {/* Control buttons */}
         <div className="control-buttons">
           {/* Camera toggle */}
-          <button 
-            onClick={toggleCamera} 
-            className={`control-btn camera-btn ${isCameraOn ? 'active' : ''}`}
+          <IconButton
+            onClick={toggleCamera}
+            icon={isCameraOn ? 'camera-video-fill' : 'camera-video'}
+            className={`camera-btn ${isCameraOn ? 'active' : ''}`}
             disabled={!isConnected}
-            title={isCameraOn ? 'Turn off camera' : 'Turn on camera'}
-          >
-            📹
-          </button>
+            label={isCameraOn ? 'Turn off camera' : 'Turn on camera'}
+          />
 
           {/* Microphone toggle */}
-          <button 
-            onClick={toggleMicrophone} 
-            className={`control-btn mic-btn ${isMicOn ? 'active' : ''}`}
+          <IconButton
+            onClick={toggleMicrophone}
+            icon={isMicOn ? 'mic-fill' : 'mic'}
+            className={`mic-btn ${isMicOn ? 'active' : ''}`}
             disabled={!isConnected}
-            title={isMicOn ? 'Turn off microphone' : 'Turn on microphone'}
-          >
-            🎤
-          </button>
+            label={isMicOn ? 'Turn off microphone' : 'Turn on microphone'}
+          />
 
           {/* Connect/Disconnect button */}
           {!isConnected && !isConnecting ? (
-            <button onClick={connectToGemini} className="control-btn connect-btn">
-              ▶️
-            </button>
+            <IconButton
+              onClick={connectToGemini}
+              icon="play-fill"
+              className="connect-btn"
+              label="Connect to Gemini"
+            />
           ) : (
-            <button onClick={disconnect} className="control-btn disconnect-btn">
-              ⏹️
-            </button>
+            <IconButton
+              onClick={disconnect}
+              icon="stop-fill"
+              className="disconnect-btn"
+              label="Disconnect"
+            />
           )}
 
           {/* Voice selection menu */}
-          <div className="voice-selector-container">
-            <button className="control-btn voice-btn" title="Voice settings">
-              🗣️
-            </button>
+          <div
+            className={`voice-selector-container ${voiceMenuOpen ? 'open' : ''}`}
+            ref={voiceMenuRef}
+          >
+            <IconButton
+              className="voice-btn"
+              icon="gear"
+              onClick={() => setVoiceMenuOpen((v) => !v)}
+              label="Voice settings"
+            />
             <div className="voice-menu">
               <div className="voice-option-group">
                 <label>Voice:</label>

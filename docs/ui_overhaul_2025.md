@@ -12,6 +12,9 @@ The previous chat interface, while functional, lacked the modern, clean look and
 - **Custom CSS (No Bootstrap)**: Removed all Bootstrap dependencies. All styling is now handled with custom, mobile-first CSS for a clean, modern look and smooth animations.
 - **Mobile-First Design**: The entire interface is now fully responsive, with touch-friendly controls, proper breakpoints, and optimized layouts for all device sizes.
 - **Header and Controls**: Header is simplified, controls are centered, and vertical space is optimized for usability.
+- **Icon-Based Live Controls**: Camera, microphone, and connect buttons now use Bootstrap Icons with accessible labels.
+- **Connection Status Indicator**: Live mode displays connecting/connected/disconnected badges.
+- **Touchable Voice Settings**: Voice selector opens on tap instead of hover for mobile support.
 
 ## Before/After Highlights
 

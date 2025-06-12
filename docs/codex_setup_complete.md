@@ -22,6 +22,7 @@ Based on research of working OpenAI Codex examples, we've cleaned up the reposit
 **Created `scripts/` directory and moved:**
 - `clear_all_data.py` → `scripts/clear_all_data.py`
 - `gcs_cleanup.py` → `scripts/gcs_cleanup.py`
+- `fast_clear_all_data.py` → `scripts/fast_clear_all_data.py` (new faster cleanup)
 
 ### 3. Minimal Setup Script ✅ REBUILT
 **Created ultra-minimal `codex_setup_script.sh` based on working examples:**
@@ -56,7 +57,8 @@ webapp_starter_cursor/
 │   └── package.json                # ✅ Node.js configuration
 ├── scripts/                        # ✅ Utility scripts organized
 │   ├── clear_all_data.py
-│   └── gcs_cleanup.py
+│   ├── gcs_cleanup.py
+│   └── fast_clear_all_data.py
 └── [clean root directory]          # ✅ No ad-hoc test files
 ```
 

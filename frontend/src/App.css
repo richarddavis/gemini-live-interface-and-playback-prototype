@@ -7,6 +7,40 @@ body {
   overscroll-behavior: none; /* Prevent pull-to-refresh on mobile if not desired */
 }
 
+/* iOS Safari zoom prevention - ensure all inputs are at least 16px */
+input[type="text"],
+input[type="email"], 
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+textarea,
+select {
+  font-size: 16px; /* Prevent iOS Safari auto-zoom */
+}
+
+/* iOS Safari specific styles for app-like behavior */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    -webkit-appearance: none;
+    -webkit-border-radius: 0;
+    border-radius: 0;
+  }
+  
+  /* Disable text selection on non-input elements for app-like feel */
+  * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  /* Re-enable text selection for content areas */
+  input, textarea, [contenteditable="true"], .message-content {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 .App-container { /* Was .App before, now it's the root container for sidebar + main content */
   display: flex;
   height: 100vh;
@@ -114,13 +148,13 @@ body {
   }
 
   .sidebar-select,
-  .sidebar-input {
-    padding: 6px 8px;
-    font-size: 12px;
-    height: 32px;
-    box-sizing: border-box;
-    flex-shrink: 0; /* Never shrink */
-  }
+.sidebar-input {
+  padding: 6px 8px;
+  font-size: 16px; /* Prevent iOS Safari auto-zoom */
+  height: 40px; /* Increased height to accommodate larger font */
+  box-sizing: border-box;
+  flex-shrink: 0; /* Never shrink */
+}
   
   .App-main-content {
     margin-left: 0; /* No margin needed on mobile */
@@ -1389,10 +1423,10 @@ body {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.1);
   color: white;
-  font-size: 13px;
+  font-size: 16px; /* Prevent iOS Safari auto-zoom */
   transition: all 0.2s ease;
   flex-shrink: 0; /* Prevent shrinking */
-  min-height: 36px; /* Ensure minimum touch target */
+  min-height: 44px; /* Ensure larger touch target to accommodate 16px font */
 }
 
 .sidebar-select:focus,

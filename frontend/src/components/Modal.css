@@ -155,8 +155,8 @@
     width: 95%;
     max-width: none;
     /* Fix mobile Safari viewport issues */
-    max-height: 95vh; /* Fallback */
-    max-height: calc(-webkit-fill-available * 0.95); /* WebKit fix - 95% for mobile */
+    max-height: 80vh; /* More conservative - reduced to 80vh to clearly avoid Safari bottom UI */
+    max-height: calc(-webkit-fill-available * 0.8); /* Reduced to 0.8 for more clearance */
     min-width: 0; /* Remove min-width constraint on mobile */
   }
   
@@ -174,7 +174,7 @@
     .modal-container.medium,
     .modal-container.live-session,
     .modal-container.session-playback {
-      max-height: 95dvh;
+      max-height: 80dvh; /* More conservative - reduced to 80dvh to clearly avoid Safari bottom UI */
     }
   }
 }

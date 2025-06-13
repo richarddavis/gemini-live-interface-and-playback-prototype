@@ -22,8 +22,17 @@
       "video messages"
       "controls controls";
     gap: 24px;
-    height: calc(100vh - 48px); /* Full height minus padding */
+    /* Fix mobile Safari viewport issues */
+    height: calc(100vh - 48px); /* Fallback for older browsers */
+    height: calc(-webkit-fill-available - 48px); /* WebKit fix */
     max-height: 900px; /* Maximum reasonable height */
+  }
+
+  /* Modern dynamic viewport height for desktop live session */
+  @supports (height: 100dvh) {
+    .gemini-live-container {
+      height: calc(100dvh - 48px);
+    }
   }
   
   .video-section {
@@ -49,11 +58,20 @@
 @media (max-width: 768px) {
   .gemini-live-container {
     padding: 4px; /* Reduced padding for more space */
-    height: 100vh;
+    /* Fix mobile Safari viewport issues */
+    height: 100vh; /* Fallback */
+    height: -webkit-fill-available; /* WebKit fix */
     max-height: none;
     display: flex;
     flex-direction: column;
     gap: 8px; /* Reduced gap */
+  }
+
+  /* Modern dynamic viewport height for mobile live session */
+  @supports (height: 100dvh) {
+    .gemini-live-container {
+      height: 100dvh;
+    }
   }
   
   .video-section {

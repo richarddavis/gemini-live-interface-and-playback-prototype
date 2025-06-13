@@ -10,9 +10,18 @@ body {
 .App-container { /* Was .App before, now it's the root container for sidebar + main content */
   display: flex;
   height: 100vh;
+  /* Fix for mobile Safari viewport issues */
+  height: -webkit-fill-available; /* Legacy WebKit fix */
   overflow: hidden; /* Prevent body scroll when sidebar/chat scrolls */
   position: relative; /* Add relative positioning for mobile overlay */
   flex-direction: column; /* Always stack header on top, then content below */
+}
+
+/* Modern dynamic viewport height support */
+@supports (height: 100dvh) {
+  .App-container {
+    height: 100dvh;
+  }
 }
 
 .app-body {
@@ -66,8 +75,17 @@ body {
     max-width: 320px;
     transform: translateX(-100%); /* Hidden by default on mobile */
     box-shadow: 2px 0 10px rgba(0,0,0,0.3);
-    height: calc(100vh - 56px); /* Explicit height to ensure proper flexbox behavior */
+    /* Fix mobile Safari viewport issues */
+    height: calc(100vh - 56px); /* Fallback for older browsers */
+    height: calc(-webkit-fill-available - 56px); /* WebKit fix */
     overflow-y: auto; /* Allow scrolling of entire sidebar if needed */
+  }
+
+  /* Modern dynamic viewport height for mobile sidebar */
+  @supports (height: 100dvh) {
+    .chat-sidebar {
+      height: calc(100dvh - 56px);
+    }
   }
   
   .chat-sidebar.mobile-open {
@@ -1509,8 +1527,18 @@ body {
   align-items: center;
   justify-content: center;
   flex: 1;
-  height: calc(100vh - 56px); /* Account for header height */
+  /* Fix mobile Safari viewport issues */
+  height: calc(100vh - 56px); /* Fallback for older browsers */
+  height: calc(-webkit-fill-available - 56px); /* WebKit fix */
   background-color: #f8f9fa;
+}
+
+/* Modern dynamic viewport height for auth containers */
+@supports (height: 100dvh) {
+  .auth-loading-container,
+  .auth-required-container {
+    height: calc(100dvh - 56px);
+  }
 }
 
 .auth-loading-content,
@@ -1546,8 +1574,18 @@ body {
 @media (max-width: 768px) {
   .auth-loading-container,
   .auth-required-container {
-    height: calc(100vh - 56px);
+    /* Fix mobile Safari viewport issues */
+    height: calc(100vh - 56px); /* Fallback */
+    height: calc(-webkit-fill-available - 56px); /* WebKit fix */
     padding: 20px;
+  }
+  
+  /* Modern dynamic viewport height for mobile auth containers */
+  @supports (height: 100dvh) {
+    .auth-loading-container,
+    .auth-required-container {
+      height: calc(100dvh - 56px);
+    }
   }
   
   .auth-loading-content,

@@ -22,10 +22,23 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
+  /* Fix mobile Safari viewport issues */
+  max-height: 90vh; /* Fallback */
+  max-height: calc(-webkit-fill-available * 0.9); /* WebKit fix - 90% for safety */
   overflow: hidden;
   position: relative;
   animation: modalSlideIn 0.2s ease-out;
+}
+
+/* Modern dynamic viewport height for modals */
+@supports (height: 100dvh) {
+  .modal-container {
+    max-height: 90dvh;
+  }
+  
+  .modal-container.session-playback {
+    max-height: 90dvh;
+  }
 }
 
 .modal-container.large {
@@ -48,7 +61,9 @@
   width: fit-content;
   min-width: 900px; /* Minimum to accommodate the grid layout */
   max-width: 95vw; /* Don't exceed viewport */
-  max-height: 90vh;
+  /* Fix mobile Safari viewport issues */
+  max-height: 90vh; /* Fallback */
+  max-height: calc(-webkit-fill-available * 0.9); /* WebKit fix - 90% for safety */
 }
 
 /* Modal Header */
@@ -139,7 +154,9 @@
   .modal-container.session-playback {
     width: 95%;
     max-width: none;
-    max-height: 95vh;
+    /* Fix mobile Safari viewport issues */
+    max-height: 95vh; /* Fallback */
+    max-height: calc(-webkit-fill-available * 0.95); /* WebKit fix - 95% for mobile */
     min-width: 0; /* Remove min-width constraint on mobile */
   }
   
@@ -149,6 +166,16 @@
   
   .modal-title {
     font-size: 16px;
+  }
+
+  /* Modern dynamic viewport height for mobile modals */
+  @supports (height: 100dvh) {
+    .modal-container.large,
+    .modal-container.medium,
+    .modal-container.live-session,
+    .modal-container.session-playback {
+      max-height: 95dvh;
+    }
   }
 }
 

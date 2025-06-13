@@ -7,12 +7,55 @@ body {
   overscroll-behavior: none; /* Prevent pull-to-refresh on mobile if not desired */
 }
 
+/* iOS Safari zoom prevention - ensure all inputs are at least 16px */
+input[type="text"],
+input[type="email"], 
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+textarea,
+select {
+  font-size: 16px; /* Prevent iOS Safari auto-zoom */
+}
+
+/* iOS Safari specific styles for app-like behavior */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    -webkit-appearance: none;
+    -webkit-border-radius: 0;
+    border-radius: 0;
+  }
+  
+  /* Disable text selection on non-input elements for app-like feel */
+  * {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  /* Re-enable text selection for content areas */
+  input, textarea, [contenteditable="true"], .message-content {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
 .App-container { /* Was .App before, now it's the root container for sidebar + main content */
   display: flex;
   height: 100vh;
+  /* Fix for mobile Safari viewport issues */
+  height: -webkit-fill-available; /* Legacy WebKit fix */
   overflow: hidden; /* Prevent body scroll when sidebar/chat scrolls */
   position: relative; /* Add relative positioning for mobile overlay */
   flex-direction: column; /* Always stack header on top, then content below */
+}
+
+/* Modern dynamic viewport height support */
+@supports (height: 100dvh) {
+  .App-container {
+    height: 100dvh;
+  }
 }
 
 .app-body {
@@ -66,8 +109,17 @@ body {
     max-width: 320px;
     transform: translateX(-100%); /* Hidden by default on mobile */
     box-shadow: 2px 0 10px rgba(0,0,0,0.3);
-    height: calc(100vh - 56px); /* Explicit height to ensure proper flexbox behavior */
+    /* Fix mobile Safari viewport issues */
+    height: calc(100vh - 56px); /* Fallback for older browsers */
+    height: calc(-webkit-fill-available - 56px); /* WebKit fix */
     overflow-y: auto; /* Allow scrolling of entire sidebar if needed */
+  }
+
+  /* Modern dynamic viewport height for mobile sidebar */
+  @supports (height: 100dvh) {
+    .chat-sidebar {
+      height: calc(100dvh - 56px);
+    }
   }
   
   .chat-sidebar.mobile-open {
@@ -96,13 +148,13 @@ body {
   }
 
   .sidebar-select,
-  .sidebar-input {
-    padding: 6px 8px;
-    font-size: 12px;
-    height: 32px;
-    box-sizing: border-box;
-    flex-shrink: 0; /* Never shrink */
-  }
+.sidebar-input {
+  padding: 6px 8px;
+  font-size: 16px; /* Prevent iOS Safari auto-zoom */
+  height: 40px; /* Increased height to accommodate larger font */
+  box-sizing: border-box;
+  flex-shrink: 0; /* Never shrink */
+}
   
   .App-main-content {
     margin-left: 0; /* No margin needed on mobile */
@@ -761,6 +813,31 @@ body {
   max-height: 300px;
   border-radius: 8px;
   background: #000;
+  position: relative;
+}
+
+.flip-camera-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255,255,255,0.7);
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  .flip-camera-button {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+  }
 }
 
 .audio-recording-indicator {
@@ -1346,10 +1423,10 @@ body {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.1);
   color: white;
-  font-size: 13px;
+  font-size: 16px; /* Prevent iOS Safari auto-zoom */
   transition: all 0.2s ease;
   flex-shrink: 0; /* Prevent shrinking */
-  min-height: 36px; /* Ensure minimum touch target */
+  min-height: 44px; /* Ensure larger touch target to accommodate 16px font */
 }
 
 .sidebar-select:focus,
@@ -1400,9 +1477,9 @@ body {
 @media (max-width: 768px) {
   .modal-container {
     width: 95vw !important;
-    height: 95vh !important;
+    height: 80vh !important; /* Reduced from 95vh to avoid Safari bottom UI */
     max-width: none !important;
-    max-height: none !important;
+    max-height: 80vh !important; /* Reduced from none to set explicit limit for Safari */
   }
 }
 
@@ -1484,8 +1561,18 @@ body {
   align-items: center;
   justify-content: center;
   flex: 1;
-  height: calc(100vh - 56px); /* Account for header height */
+  /* Fix mobile Safari viewport issues */
+  height: calc(100vh - 56px); /* Fallback for older browsers */
+  height: calc(-webkit-fill-available - 56px); /* WebKit fix */
   background-color: #f8f9fa;
+}
+
+/* Modern dynamic viewport height for auth containers */
+@supports (height: 100dvh) {
+  .auth-loading-container,
+  .auth-required-container {
+    height: calc(100dvh - 56px);
+  }
 }
 
 .auth-loading-content,
@@ -1521,8 +1608,18 @@ body {
 @media (max-width: 768px) {
   .auth-loading-container,
   .auth-required-container {
-    height: calc(100vh - 56px);
+    /* Fix mobile Safari viewport issues */
+    height: calc(100vh - 56px); /* Fallback */
+    height: calc(-webkit-fill-available - 56px); /* WebKit fix */
     padding: 20px;
+  }
+  
+  /* Modern dynamic viewport height for mobile auth containers */
+  @supports (height: 100dvh) {
+    .auth-loading-container,
+    .auth-required-container {
+      height: calc(100dvh - 56px);
+    }
   }
   
   .auth-loading-content,

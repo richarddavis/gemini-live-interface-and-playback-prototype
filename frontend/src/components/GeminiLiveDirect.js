@@ -16,6 +16,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState('user'); // 'user' or 'environment'
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('Aoede');
   const [responseMode, setResponseMode] = useState('AUDIO'); // 'TEXT' or 'AUDIO'
@@ -1054,13 +1055,14 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       if (!isCameraOn) {
         addMessage('system', '📹 Requesting camera access...');
         console.log('Requesting camera access...');
-        
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
             width: { ideal: 640 },
             height: { ideal: 480 },
-            frameRate: { ideal: 30 }
-          } 
+            frameRate: { ideal: 30 },
+            facingMode: cameraFacingMode
+          }
         });
         
         console.log('Camera stream obtained:', stream);
@@ -1090,6 +1092,37 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       addMessage('error', `Camera error: ${error.message}`);
     }
   }, [isCameraOn, addMessage, stopVideoFrameCapture]);
+
+  // Flip between front and rear cameras while camera is active
+  const flipCamera = useCallback(async () => {
+    if (!isCameraOn) return;
+    const newFacing = cameraFacingMode === 'user' ? 'environment' : 'user';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 30 },
+          facingMode: newFacing
+        }
+      });
+
+      // Stop existing stream
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+
+      cameraStreamRef.current = stream;
+      setCameraFacingMode(newFacing);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(console.error);
+      }
+    } catch (err) {
+      console.error('Flip camera error:', err);
+    }
+  }, [isCameraOn, cameraFacingMode]);
 
   // Handle exit - distinguish between casual exit and session completion
   const handleExit = useCallback(() => {
@@ -1127,10 +1160,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
               Your browser does not support the video element.
             </video>
             {!videoRef.current?.srcObject && (
-              <div style={{ 
-                position: 'absolute', 
-                top: '50%', 
-                left: '50%', 
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
                 transform: 'translate(-50%, -50%)',
                 color: '#fff',
                 fontSize: '14px'
@@ -1138,6 +1171,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 Loading camera...
               </div>
             )}
+            <IconButton
+              className="flip-camera-btn"
+              icon="arrow-repeat"
+              label="Flip camera"
+              onClick={flipCamera}
+            />
           </div>
         )}
       </div>

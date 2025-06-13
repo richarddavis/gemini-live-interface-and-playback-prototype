@@ -1,6 +1,17 @@
 @import './styles/design-tokens.css';
 @import './styles/layout.css';
 
+/* Fix for mobile Safari viewport height issues */
+html {
+  height: -webkit-fill-available;
+}
+
+@supports (height: 100dvh) {
+  html {
+    height: 100dvh;
+  }
+}
+
 body {
   margin: 0;
   font-family: var(--font-base);

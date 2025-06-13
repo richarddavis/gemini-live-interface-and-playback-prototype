@@ -19,6 +19,7 @@ const MessageInput = React.forwardRef(({
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTimeLeft, setRecordingTimeLeft] = useState(0);
   const [isRecordingAudio, setIsRecordingAudio] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState('user');
   
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
@@ -85,6 +86,27 @@ const MessageInput = React.forwardRef(({
     setRecordingTimeLeft(0);
   }, []); // No dependencies - use refs for current values
 
+  const flipCamera = useCallback(async () => {
+    if (!videoStreamRef.current) return;
+    const newFacing = cameraFacingMode === 'user' ? 'environment' : 'user';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: newFacing },
+        audio: captureMode === 'video'
+      });
+      videoStreamRef.current.getTracks().forEach(track => track.stop());
+      videoStreamRef.current = stream;
+      setVideoStream(stream);
+      setCameraFacingMode(newFacing);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(console.error);
+      }
+    } catch (err) {
+      console.error('Flip camera error:', err);
+    }
+  }, [cameraFacingMode, captureMode]);
+
   // Clean up camera stream when component unmounts ONLY
   useEffect(() => {
     return () => {
@@ -125,8 +147,8 @@ const MessageInput = React.forwardRef(({
           video: false 
         };
       } else {
-        streamConstraints = { 
-          video: true, 
+        streamConstraints = {
+          video: { facingMode: cameraFacingMode },
           audio: mode === 'video'
         };
       }
@@ -484,12 +506,22 @@ const MessageInput = React.forwardRef(({
       {isCapturing && (
         <div className="camera-capture-container">
           {captureMode !== 'audio' && (
-            <video 
-              ref={videoRef} 
-              autoPlay 
-              muted 
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
               className="camera-preview"
             />
+          )}
+          {captureMode !== 'audio' && (
+            <button
+              type="button"
+              className="flip-camera-button"
+              onClick={flipCamera}
+              title="Flip camera"
+            >
+              ↻
+            </button>
           )}
           
           {captureMode === 'audio' && (

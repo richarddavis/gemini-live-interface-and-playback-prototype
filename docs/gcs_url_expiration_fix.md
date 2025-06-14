@@ -13,7 +13,7 @@ The InteractionReplay component was failing during media preloading with 502 Bad
 
 ### Example Error Pattern
 ```
-GET http://localhost:8080/api/interaction-logs/media/885 502 (BAD GATEWAY)
+GET http://localhost/api/interaction-logs/media/885 502 (BAD GATEWAY)
 Backend logs: "GCS fetch failed: 400"
 ```
 
@@ -147,13 +147,13 @@ elif gcs_response.status_code in [400, 403]:
 
 ```bash
 # Test individual media endpoint (should work now)
-curl -I http://localhost:8080/api/interaction-logs/media/885
+curl -I http://localhost/api/interaction-logs/media/885
 
 # Test batch regeneration (optional manual trigger)
-curl -X POST http://localhost:8080/api/interaction-logs/regenerate-urls/session_1748616970049_m99k4asnw
+curl -X POST http://localhost/api/interaction-logs/regenerate-urls/session_1748616970049_m99k4asnw
 
 # Check for regeneration header
-curl -I http://localhost:8080/api/interaction-logs/media/889
+curl -I http://localhost/api/interaction-logs/media/889
 # Should show: X-URL-Regenerated: true
 ```
 

@@ -11,8 +11,8 @@ services:
     env_file:
       - .env  # Load environment variables from .env file (including REACT_APP_GEMINI_API_KEY)
     environment:
-      - REACT_APP_API_URL=http://localhost:8080/api
-      - REACT_APP_OAUTH_ISSUER=http://localhost:5556
+      - REACT_APP_API_URL=http://localhost/api
+      - REACT_APP_OAUTH_ISSUER=http://localhost/dex
       - REACT_APP_OAUTH_CLIENT_ID=chat-app-dev
     depends_on:
       backend:
@@ -83,6 +83,20 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_started
+      oauth-server:
+        condition: service_started
 
 volumes:
   postgres_data: 

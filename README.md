@@ -54,7 +54,7 @@ GOOGLE_API_KEY=your_google_key
 
 # Gemini Live API (for direct connection)
 REACT_APP_GEMINI_API_KEY=your_api_key_here
-REACT_APP_API_URL=http://localhost:8080
+REACT_APP_API_URL=http://localhost/api
 
 # Development
 FLASK_ENV=development
@@ -69,7 +69,7 @@ docker-compose up --build
 
 # Access the application
 # Frontend: http://localhost:3000
-# Backend API: http://localhost:8080
+# Backend API (via Nginx reverse proxy): http://localhost/api
 ```
 
 ### 3. Manual Setup (Development)

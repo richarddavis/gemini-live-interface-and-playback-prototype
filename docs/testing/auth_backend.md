@@ -100,19 +100,20 @@ Success rate: 100.0%
 
 ### Authentication Status
 ```bash
-curl http://localhost:8080/api/auth/status
+# via Nginx reverse proxy
+curl http://localhost/api/auth/status
 # ✅ Returns: {"authenticated": false, "user": null}
 ```
 
 ### OAuth URL Generation
 ```bash
-curl http://localhost:8080/api/auth/login
+curl http://localhost/api/auth/login
 # ✅ Returns valid OAuth authorization URL with PKCE
 ```
 
 ### Dex OAuth Server
 ```bash
-curl http://localhost:5556/dex/.well-known/openid_configuration
+curl http://localhost/dex/.well-known/openid_configuration
 # ✅ Returns OAuth discovery document
 ```
 

@@ -24,9 +24,16 @@ var/
 venv/
 ENV/
 .env
+.env.backup
+
+# But track the environment templates
+!.env.main
+!.env.nginx
+!.env.network
 
 # Secrets and credentials
-.secrets/
+.secrets
+.gcp-key.json
 *.key
 *.pem
 *-key.json

@@ -28,7 +28,7 @@ services:
       - "8080:5000"
     volumes:
       - ./backend:/app
-      - ./.secrets/gcp/generative-fashion-355408-new-key.json:/app/gcp-key.json:ro
+      - ./.gcp-key.json:/app/gcp-key.json:ro
     env_file:
       - .env  # Load environment variables from .env file
     environment:

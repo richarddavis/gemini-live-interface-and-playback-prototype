@@ -61,7 +61,7 @@ class TestAuthService(unittest.TestCase):
         self.assertEqual(self.auth_service.oauth_issuer, 'http://localhost:5556')
         self.assertEqual(self.auth_service.client_id, 'chat-app-dev')
         self.assertEqual(self.auth_service.client_secret, 'chat-app-dev-secret-12345')
-        self.assertEqual(self.auth_service.redirect_uri, 'http://localhost:3000/auth/callback')
+        self.assertEqual(self.auth_service.redirect_uri, 'http://localhost/auth/callback')
     
     @patch('app.services.auth_service.requests.get')
     def test_get_discovery_document_success(self, mock_get):

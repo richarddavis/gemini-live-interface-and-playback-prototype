@@ -16,8 +16,8 @@ staticClients:
     id: "chat-app-dev"
     secret: "chat-app-dev-secret-12345"
     redirectURIs:
-      - "http://localhost:3000/auth/callback"
-      - "http://127.0.0.1:3000/auth/callback"
+      - "http://localhost/auth/callback"
+      - "http://127.0.0.1/auth/callback"
     public: false
 
 # GitHub OAuth Connector (add this for production)

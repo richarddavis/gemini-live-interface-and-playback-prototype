@@ -16,7 +16,8 @@ class AuthService:
         self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://localhost:5556')
         self.client_id = os.getenv('OAUTH_CLIENT_ID', 'chat-app-dev')
         self.client_secret = os.getenv('OAUTH_CLIENT_SECRET', 'chat-app-dev-secret-12345')
-        self.redirect_uri = 'http://localhost:3000/auth/callback'
+        # Allow override of redirect URI so it matches Nginx reverse-proxy (port 80)
+        self.redirect_uri = os.getenv('OAUTH_REDIRECT_URI', 'http://localhost/auth/callback')
         
     def get_discovery_document(self):
         """Get OAuth discovery document from Dex"""

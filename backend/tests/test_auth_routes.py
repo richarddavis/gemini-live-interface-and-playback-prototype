@@ -26,9 +26,9 @@ class TestAuthRoutes(unittest.TestCase):
         
         # Mock data
         self.mock_discovery = {
-            'authorization_endpoint': 'http://localhost:5556/dex/auth',
-            'token_endpoint': 'http://localhost:5556/dex/token',
-            'userinfo_endpoint': 'http://localhost:5556/dex/userinfo'
+            'authorization_endpoint': 'http://auth.localhost/dex/auth',
+            'token_endpoint': 'http://auth.localhost/dex/token',
+            'userinfo_endpoint': 'http://auth.localhost/dex/userinfo'
         }
         
         self.mock_user_info = {
@@ -90,7 +90,7 @@ class TestAuthRoutes(unittest.TestCase):
         data = json.loads(response.data)
         self.assertIn('auth_url', data)
         self.assertIn('state', data)
-        self.assertIn('localhost:5556/dex/auth', data['auth_url'])
+        self.assertIn('auth.localhost/dex/auth', data['auth_url'])
         self.assertIn('client_id=chat-app-dev', data['auth_url'])
     
     @patch('app.services.auth_service.AuthService.get_discovery_document')

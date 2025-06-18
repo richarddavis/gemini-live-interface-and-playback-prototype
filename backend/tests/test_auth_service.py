@@ -58,10 +58,10 @@ class TestAuthService(unittest.TestCase):
     
     def test_auth_service_initialization(self):
         """Test AuthService initialization with environment variables"""
-        self.assertEqual(self.auth_service.oauth_issuer, 'http://localhost:5556')
+        self.assertEqual(self.auth_service.oauth_issuer, 'http://auth.localhost/dex')
         self.assertEqual(self.auth_service.client_id, 'chat-app-dev')
         self.assertEqual(self.auth_service.client_secret, 'chat-app-dev-secret-12345')
-        self.assertEqual(self.auth_service.redirect_uri, 'http://localhost/auth/callback')
+        self.assertEqual(self.auth_service.redirect_uri, 'http://auth.localhost/auth/callback')
     
     @patch('app.services.auth_service.requests.get')
     def test_get_discovery_document_success(self, mock_get):
@@ -91,7 +91,7 @@ class TestAuthService(unittest.TestCase):
         self.assertIn('authorization_endpoint', result)
         self.assertIn('token_endpoint', result)
         self.assertIn('userinfo_endpoint', result)
-        self.assertEqual(result['authorization_endpoint'], 'http://localhost/dex/auth')
+        self.assertEqual(result['authorization_endpoint'], 'http://auth.localhost/dex/auth')
     
     def test_generate_pkce_challenge(self):
         """Test PKCE challenge generation"""
@@ -117,7 +117,7 @@ class TestAuthService(unittest.TestCase):
         self.assertIsNotNone(auth_url)
         self.assertIsNotNone(state)
         self.assertIsNotNone(code_verifier)
-        self.assertIn('localhost/dex/auth', auth_url)
+        self.assertIn('auth.localhost/dex/auth', auth_url)
         self.assertIn('client_id=chat-app-dev', auth_url)
         self.assertIn('response_type=code', auth_url)
         self.assertIn('code_challenge=', auth_url)

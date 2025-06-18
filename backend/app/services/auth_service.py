@@ -16,8 +16,8 @@ class AuthService:
         self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://oauth-server:5556/dex')
         self.client_id = os.getenv('OAUTH_CLIENT_ID', 'chat-app-dev')
         self.client_secret = os.getenv('OAUTH_CLIENT_SECRET', 'chat-app-dev-secret-12345')
-        # Allow override of redirect URI so it matches Nginx reverse-proxy (port 80)
-        self.redirect_uri = os.getenv('OAUTH_REDIRECT_URI', 'http://localhost/auth/callback')
+        # Allow override of redirect URI; default matches Nginx reverse-proxy host
+        self.redirect_uri = os.getenv('OAUTH_REDIRECT_URI', 'http://auth.localhost/auth/callback')
         
     def get_discovery_document(self):
         """Get OAuth discovery document from Dex"""
@@ -26,26 +26,21 @@ class AuthService:
             response.raise_for_status()
             discovery = response.json()
             
-            # Only replace oauth-server with localhost for browser-facing endpoints
-            # Keep internal endpoints as-is for server-to-server communication
-            if 'authorization_endpoint' in discovery and discovery['authorization_endpoint']:
-                discovery['authorization_endpoint'] = discovery['authorization_endpoint'].replace('http://oauth-server:5556/dex', 'http://localhost/dex')
-            
             # Keep the issuer as oauth-server for internal token validation
             # but create a browser-friendly issuer for the frontend
-            discovery['browser_issuer'] = discovery.get('issuer', '').replace('http://oauth-server:5556/dex', 'http://localhost/dex')
+            discovery['browser_issuer'] = discovery.get('issuer', '').replace('http://oauth-server:5556/dex', 'http://auth.localhost/dex')
             
             return discovery
         except requests.RequestException as e:
             current_app.logger.error(f"Failed to get discovery document: {e}")
             # Fallback for development
             return {
-                'authorization_endpoint': 'http://localhost/dex/auth',
+                'authorization_endpoint': 'http://auth.localhost/dex/auth',
                 'token_endpoint': f"{self.oauth_issuer}/token",
                 'userinfo_endpoint': f"{self.oauth_issuer}/userinfo",
                 'jwks_uri': f"{self.oauth_issuer}/keys",
                 'issuer': self.oauth_issuer,
-                'browser_issuer': 'http://localhost/dex'
+                'browser_issuer': 'http://auth.localhost/dex'
             }
     
     def generate_pkce_challenge(self):

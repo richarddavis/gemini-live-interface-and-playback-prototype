@@ -18,6 +18,7 @@ staticClients:
     redirectURIs:
       - "http://auth.localhost/auth/callback"
       - "http://127.0.0.1/auth/callback"
+      - "https://civil-entirely-rooster.ngrok-free.app/auth/callback"
     public: false
 
 # GitHub OAuth Connector (add this for production)

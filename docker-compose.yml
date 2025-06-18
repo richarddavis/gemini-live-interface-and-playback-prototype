@@ -30,7 +30,7 @@ services:
       - .env  # Load environment variables from .env file (including REACT_APP_GEMINI_API_KEY)
     environment:
       - REACT_APP_API_URL=/api
-      - REACT_APP_OAUTH_ISSUER=http://auth.localhost/dex
+      - REACT_APP_OAUTH_ISSUER=https://civil-entirely-rooster.ngrok-free.app/dex
       - REACT_APP_OAUTH_CLIENT_ID=chat-app-dev
     depends_on:
       backend:
@@ -53,10 +53,10 @@ services:
       - FLASK_APP=wsgi.py
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
-      - OAUTH_ISSUER=http://auth.localhost/dex
+      - OAUTH_ISSUER=https://civil-entirely-rooster.ngrok-free.app/dex
       - OAUTH_CLIENT_ID=chat-app-dev
       - OAUTH_CLIENT_SECRET=chat-app-dev-secret-12345
-      - OAUTH_REDIRECT_URI=http://auth.localhost/auth/callback
+      - OAUTH_REDIRECT_URI=https://civil-entirely-rooster.ngrok-free.app/auth/callback
     depends_on:
       db:
         condition: service_healthy

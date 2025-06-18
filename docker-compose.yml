@@ -1,6 +1,7 @@
 services:
   nginx:
     image: nginx:1.25-alpine
+    profiles: ["proxy"]
     ports:
       - "80:80"
     volumes:

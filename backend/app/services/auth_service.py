@@ -29,23 +29,23 @@ class AuthService:
             # Only replace oauth-server with localhost for browser-facing endpoints
             # Keep internal endpoints as-is for server-to-server communication
             if 'authorization_endpoint' in discovery and discovery['authorization_endpoint']:
-                discovery['authorization_endpoint'] = discovery['authorization_endpoint'].replace('http://oauth-server:', 'http://localhost:')
+                discovery['authorization_endpoint'] = discovery['authorization_endpoint'].replace('http://oauth-server:5556', 'http://localhost/dex')
             
             # Keep the issuer as oauth-server for internal token validation
             # but create a browser-friendly issuer for the frontend
-            discovery['browser_issuer'] = discovery.get('issuer', '').replace('http://oauth-server:', 'http://localhost:')
+            discovery['browser_issuer'] = discovery.get('issuer', '').replace('http://oauth-server:5556', 'http://localhost/dex')
             
             return discovery
         except requests.RequestException as e:
             current_app.logger.error(f"Failed to get discovery document: {e}")
             # Fallback for development
             return {
-                'authorization_endpoint': f"{self.oauth_issuer.replace('oauth-server', 'localhost')}/auth",
+                'authorization_endpoint': 'http://localhost/dex/auth',
                 'token_endpoint': f"{self.oauth_issuer}/token",
                 'userinfo_endpoint': f"{self.oauth_issuer}/userinfo",
                 'jwks_uri': f"{self.oauth_issuer}/keys",
                 'issuer': self.oauth_issuer,
-                'browser_issuer': self.oauth_issuer.replace('oauth-server', 'localhost')
+                'browser_issuer': 'http://localhost/dex'
             }
     
     def generate_pkce_challenge(self):

@@ -1,5 +1,5 @@
 # Dex OAuth Mock Server Configuration for Local Development
-issuer: http://oauth-server:5556
+issuer: http://localhost/dex
 
 storage:
   type: memory

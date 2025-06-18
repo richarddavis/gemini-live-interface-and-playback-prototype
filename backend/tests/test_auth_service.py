@@ -29,7 +29,7 @@ class TestAuthService(unittest.TestCase):
         
         # Mock discovery document
         self.mock_discovery = {
-            'authorization_endpoint': 'http://localhost:5556/auth',
+            'authorization_endpoint': 'http://localhost/dex/auth',
             'token_endpoint': 'http://localhost:5556/token',
             'userinfo_endpoint': 'http://localhost:5556/userinfo'
         }
@@ -91,7 +91,7 @@ class TestAuthService(unittest.TestCase):
         self.assertIn('authorization_endpoint', result)
         self.assertIn('token_endpoint', result)
         self.assertIn('userinfo_endpoint', result)
-        self.assertEqual(result['authorization_endpoint'], 'http://localhost:5556/auth')
+        self.assertEqual(result['authorization_endpoint'], 'http://localhost/dex/auth')
     
     def test_generate_pkce_challenge(self):
         """Test PKCE challenge generation"""
@@ -117,7 +117,7 @@ class TestAuthService(unittest.TestCase):
         self.assertIsNotNone(auth_url)
         self.assertIsNotNone(state)
         self.assertIsNotNone(code_verifier)
-        self.assertIn('localhost:5556/auth', auth_url)
+        self.assertIn('localhost/dex/auth', auth_url)
         self.assertIn('client_id=chat-app-dev', auth_url)
         self.assertIn('response_type=code', auth_url)
         self.assertIn('code_challenge=', auth_url)

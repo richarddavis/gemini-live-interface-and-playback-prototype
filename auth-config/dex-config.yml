@@ -1,5 +1,5 @@
 # Dex OAuth Mock Server Configuration for Local Development
-issuer: http://oauth-server:5556
+issuer: https://civil-entirely-rooster.ngrok-free.app/dex
 
 storage:
   type: memory
@@ -16,8 +16,9 @@ staticClients:
     id: "chat-app-dev"
     secret: "chat-app-dev-secret-12345"
     redirectURIs:
-      - "http://localhost:3000/auth/callback"
-      - "http://127.0.0.1:3000/auth/callback"
+      - "http://auth.localhost/auth/callback"
+      - "http://127.0.0.1/auth/callback"
+      - "https://civil-entirely-rooster.ngrok-free.app/auth/callback"
     public: false
 
 # GitHub OAuth Connector (add this for production)

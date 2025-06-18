@@ -40,7 +40,7 @@ if [ -f ".env" ]; then
     # Detect configuration type
     if [[ "$API_URL" == *"localhost:8080"* ]]; then
         echo -e "${GREEN}📝 Type: Localhost (main branch)${NC}"
-    elif [[ "$API_URL" == "http://localhost/api" ]]; then
+    elif [[ "$API_URL" == "http://auth.localhost/api" ]]; then
         echo -e "${GREEN}📝 Type: Nginx proxy${NC}"
     elif [[ "$API_URL" == *"YOUR_LOCAL_IP"* ]]; then
         echo -e "${RED}⚠️  Type: Network (needs IP configuration)${NC}"

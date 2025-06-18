@@ -64,12 +64,17 @@ REACT_APP_DEBUG=true
 ### 2. Start with Docker
 
 ```bash
-# Start all services
+# A) Plain localhost (no reverse proxy)
 docker-compose up --build
-
-# Access the application
 # Frontend: http://localhost:3000
-# Backend API: http://localhost:8080
+# Backend : http://localhost:8080
+
+# B) Reverse-proxy + ngrok (uses nginx container)
+# Start stack with proxy profile
+docker-compose --profile proxy up --build -d
+# Tunnel (requires reserved domain)
+ngrok http 80 --domain=civil-entirely-rooster.ngrok-free.app
+# App: https://civil-entirely-rooster.ngrok-free.app
 ```
 
 ### 3. Manual Setup (Development)

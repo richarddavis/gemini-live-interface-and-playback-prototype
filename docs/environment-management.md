@@ -81,9 +81,13 @@ REACT_APP_OAUTH_ISSUER=http://localhost:5556
 
 ### Nginx Branch (Proxy)
 ```bash
-REACT_APP_API_URL=http://localhost/api
-REACT_APP_OAUTH_ISSUER=http://localhost/dex
+REACT_APP_API_URL=http://auth.localhost/api
+REACT_APP_OAUTH_ISSUER=http://auth.localhost/dex
 ```
++> **Important:** When running the *nginx* branch, always open the app at
++> `http://auth.localhost` (not plain `localhost`).  The canonical host
++> ensures browser cookies and OAuth redirect URIs match, so the first login
++> attempt succeeds without the state-mismatch error.
 
 ### Network Branch (Remote Access)
 ```bash

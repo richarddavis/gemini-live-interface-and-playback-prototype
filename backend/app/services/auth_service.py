@@ -13,7 +13,7 @@ class AuthService:
     """Service for handling OAuth authentication with Dex"""
     
     def __init__(self):
-        self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://localhost:5556')
+        self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://oauth-server:5556/dex')
         self.client_id = os.getenv('OAUTH_CLIENT_ID', 'chat-app-dev')
         self.client_secret = os.getenv('OAUTH_CLIENT_SECRET', 'chat-app-dev-secret-12345')
         # Allow override of redirect URI so it matches Nginx reverse-proxy (port 80)
@@ -29,11 +29,11 @@ class AuthService:
             # Only replace oauth-server with localhost for browser-facing endpoints
             # Keep internal endpoints as-is for server-to-server communication
             if 'authorization_endpoint' in discovery and discovery['authorization_endpoint']:
-                discovery['authorization_endpoint'] = discovery['authorization_endpoint'].replace('http://oauth-server:5556', 'http://localhost/dex')
+                discovery['authorization_endpoint'] = discovery['authorization_endpoint'].replace('http://oauth-server:5556/dex', 'http://localhost/dex')
             
             # Keep the issuer as oauth-server for internal token validation
             # but create a browser-friendly issuer for the frontend
-            discovery['browser_issuer'] = discovery.get('issuer', '').replace('http://oauth-server:5556', 'http://localhost/dex')
+            discovery['browser_issuer'] = discovery.get('issuer', '').replace('http://oauth-server:5556/dex', 'http://localhost/dex')
             
             return discovery
         except requests.RequestException as e:

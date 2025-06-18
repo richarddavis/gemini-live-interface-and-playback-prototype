@@ -30,8 +30,8 @@ class TestAuthService(unittest.TestCase):
         # Mock discovery document
         self.mock_discovery = {
             'authorization_endpoint': 'http://localhost/dex/auth',
-            'token_endpoint': 'http://localhost:5556/token',
-            'userinfo_endpoint': 'http://localhost:5556/userinfo'
+            'token_endpoint': 'http://localhost:5556/dex/token',
+            'userinfo_endpoint': 'http://localhost:5556/dex/userinfo'
         }
         
         # Mock user info from OAuth provider

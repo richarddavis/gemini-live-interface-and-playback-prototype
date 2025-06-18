@@ -49,7 +49,7 @@ services:
       - FLASK_APP=wsgi.py
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
-      - OAUTH_ISSUER=http://oauth-server:5556
+      - OAUTH_ISSUER=http://oauth-server:5556/dex
       - OAUTH_CLIENT_ID=chat-app-dev
       - OAUTH_CLIENT_SECRET=chat-app-dev-secret-12345
       - OAUTH_REDIRECT_URI=http://localhost/auth/callback

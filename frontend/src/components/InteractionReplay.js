@@ -133,18 +133,46 @@ const useMediaCache = (updateState) => {
     return audioBuffer;
   }, [initializeAudioContext]);
 
-  const downloadMediaFile = useCallback(async (logId, type) => {
-    const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${logId}`;
-    const response = await fetch(proxyUrl);
-    
-    if (!response.ok) {
-      if (CONSTANTS.MEDIA.EXPIRED_STATUSES.includes(response.status)) {
-        throw new Error(`expired_url:${response.status}`);
-      }
-      throw new Error(`HTTP ${response.status}`);
+  const downloadMediaFile = useCallback(async (logOrId, type) => {
+    // If caller passed the full log object we can access signed URL directly
+    const log = typeof logOrId === 'object' ? logOrId : null;
+    const id = log ? log.id : logOrId;
+
+    // Prefer direct signed URL when available to avoid extra proxy hop
+    let targetUrl = null;
+    if (log && log.media_data && log.media_data.cloud_storage_url) {
+      targetUrl = log.media_data.cloud_storage_url;
+    } else {
+      // Fallback to backend proxy (older logs or hash_only storage)
+      targetUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${id}`;
     }
-    
-    return type === 'audio' ? response.arrayBuffer() : response.blob();
+
+    try {
+      const response = await fetch(targetUrl, { mode: 'cors' });
+
+      if (!response.ok) {
+        if (CONSTANTS.MEDIA.EXPIRED_STATUSES.includes(response.status)) {
+          throw new Error(`expired_url:${response.status}`);
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return type === 'audio' ? response.arrayBuffer() : response.blob();
+    } catch (error) {
+      // Likely CORS blocked – fallback to proxy if we haven't tried it yet
+      if (targetUrl.startsWith('https://') && !(targetUrl.includes('/interaction-logs/media/'))) {
+        const proxyUrl = `${process.env.REACT_APP_API_URL || 'http://localhost:8080/api'}/interaction-logs/media/${id}`;
+        const resp = await fetch(proxyUrl);
+        if (!resp.ok) {
+          if (CONSTANTS.MEDIA.EXPIRED_STATUSES.includes(resp.status)) {
+            throw new Error(`expired_url:${resp.status}`);
+          }
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        return type === 'audio' ? resp.arrayBuffer() : resp.blob();
+      }
+      throw error;
+    }
   }, []);
 
   const processMediaPreloadResults = useCallback((results, cacheMap, type) => {
@@ -174,7 +202,7 @@ const useMediaCache = (updateState) => {
     
     const promises = audioLogs.map(async (log, index) => {
       try {
-        const arrayBuffer = await downloadMediaFile(log.id, 'audio');
+        const arrayBuffer = await downloadMediaFile(log, 'audio');
         const sampleRate = log.interaction_metadata?.audio_sample_rate || CONSTANTS.AUDIO.SAMPLE_RATES.API;
         const audioBuffer = await createAudioBuffer(arrayBuffer, sampleRate);
         
@@ -202,7 +230,7 @@ const useMediaCache = (updateState) => {
   const preloadVideo = useCallback(async (videoLogs) => {
     const promises = videoLogs.map(async (log, index) => {
       try {
-        const blob = await downloadMediaFile(log.id, 'video');
+        const blob = await downloadMediaFile(log, 'video');
         const imageUrl = URL.createObjectURL(blob);
         
         console.log(`🎬 Downloaded video ${index + 1}/${videoLogs.length}: ${log.id} (${blob.type}, ${blob.size} bytes)`);

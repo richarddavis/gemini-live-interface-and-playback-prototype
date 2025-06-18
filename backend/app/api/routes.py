@@ -15,6 +15,7 @@ from io import BytesIO
 import requests
 from ..api.auth_routes import require_auth
 from ..services.auth_service import auth_service
+from sqlalchemy.orm import selectinload
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):
@@ -820,11 +821,17 @@ def get_interaction_logs(session_id):
         offset = request.args.get('offset', 0, type=int)
         include_media = request.args.get('include_media', 'false').lower() == 'true'
         
-        # Build query
-        query = InteractionLog.query.filter_by(session_id=session_id)
+        # Use eager loading to avoid N+1 queries when serializing logs
+        query = InteractionLog.query.options(
+            selectinload(InteractionLog.interaction_metadata)
+        ).filter_by(session_id=session_id)
         
         if interaction_type:
             query = query.filter_by(interaction_type=interaction_type)
+        
+        # Conditionally eager load media_data only when requested to minimise memory usage
+        if include_media:
+            query = query.options(selectinload(InteractionLog.media_data))
         
         # Get total count
         total_count = query.count()

@@ -806,6 +806,7 @@ select {
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  position: relative; /* Ensure positioned children align correctly (e.g., flip button) */
 }
 
 .camera-preview {
@@ -830,6 +831,7 @@ select {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  z-index: 10; /* Keep button above video preview */
 }
 
 @media (max-width: 768px) {
@@ -880,6 +882,20 @@ select {
   align-items: center;
   flex-wrap: wrap;
   justify-content: center;
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  pointer-events: auto;
+}
+
+@media (min-width: 769px) {
+  .camera-controls {
+    position: static;
+    transform: none;
+    width: auto;
+  }
 }
 
 .capture-button {

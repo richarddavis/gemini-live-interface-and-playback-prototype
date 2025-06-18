@@ -269,7 +269,16 @@ const MessageInput = React.forwardRef(({
     chunksRef.current = [];
     
     try {
-      const mediaRecorder = new MediaRecorder(stream);
+      let preferredMimeType = '';
+      if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        preferredMimeType = 'audio/mp4';
+      } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+        preferredMimeType = 'audio/webm';
+      }
+
+      const mediaRecorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       
       mediaRecorder.ondataavailable = (e) => {
@@ -281,8 +290,10 @@ const MessageInput = React.forwardRef(({
       
       mediaRecorder.onstop = () => {
         console.log('Audio recording stopped, creating file...');
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const file = new File([blob], `audio-${Date.now()}.webm`, { type: 'audio/webm' });
+        const mimeType = preferredMimeType || mediaRecorder.mimeType || 'audio/webm';
+        const extension = mimeType.includes('mp4') ? 'm4a' : 'webm';
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const file = new File([blob], `audio-${Date.now()}.${extension}`, { type: mimeType });
         setSelectedMedia(file);
         setMediaType('audio');
         setPreviewUrl(URL.createObjectURL(blob));
@@ -340,7 +351,21 @@ const MessageInput = React.forwardRef(({
     chunksRef.current = [];
     
     try {
-      const mediaRecorder = new MediaRecorder(videoStream);
+      // Choose a supported mimeType. Prefer MP4 on Safari/iOS, otherwise WebM.
+      let preferredMimeType = '';
+      if (MediaRecorder.isTypeSupported('video/mp4')) {
+        preferredMimeType = 'video/mp4';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        preferredMimeType = 'video/webm;codecs=vp9';
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8')) {
+        preferredMimeType = 'video/webm;codecs=vp8';
+      } else {
+        preferredMimeType = '';
+      }
+
+      const mediaRecorder = preferredMimeType
+        ? new MediaRecorder(videoStream, { mimeType: preferredMimeType })
+        : new MediaRecorder(videoStream);
       mediaRecorderRef.current = mediaRecorder;
       
       mediaRecorder.ondataavailable = (e) => {
@@ -352,8 +377,10 @@ const MessageInput = React.forwardRef(({
       
       mediaRecorder.onstop = () => {
         console.log('Video recording stopped, creating file...');
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-        const file = new File([blob], `video-${Date.now()}.webm`, { type: 'video/webm' });
+        const mimeType = preferredMimeType || mediaRecorder.mimeType || 'video/webm';
+        const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const file = new File([blob], `video-${Date.now()}.${extension}`, { type: mimeType });
         setSelectedMedia(file);
         setMediaType('video');
         setPreviewUrl(URL.createObjectURL(blob));
@@ -510,6 +537,7 @@ const MessageInput = React.forwardRef(({
               ref={videoRef}
               autoPlay
               muted
+              playsInline
               className="camera-preview"
             />
           )}
@@ -703,6 +731,7 @@ const MessageInput = React.forwardRef(({
           ref={fileInputRef}
           onChange={handleFileSelect}
           accept="image/*,video/*,audio/*"
+          capture
           style={{ display: 'none' }}
           disabled={isDisabled || isLoading}
         />

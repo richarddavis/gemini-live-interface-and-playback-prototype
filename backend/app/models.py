@@ -167,7 +167,26 @@ class ChatMessage(db.Model):
         if self.media_type:
             result['media_type'] = self.media_type
         if self.media_url:
-            result['media_url'] = self.media_url
+            # Always return a fresh signed URL for cloud-storage assets to avoid expiry
+            try:
+                from urllib.parse import urlparse
+                from app.services.storage import GCSStorageService
+
+                parsed = urlparse(self.media_url)
+                if parsed.netloc.endswith('googleapis.com'):
+                    parts = parsed.path.lstrip('/').split('/', 1)
+                    if len(parts) == 2:
+                        blob_name = parts[1]
+                        new_url = GCSStorageService.regenerate_signed_url(blob_name, expiration_hours=168)
+                        result['media_url'] = new_url
+                    else:
+                        result['media_url'] = self.media_url
+                else:
+                    # Not a GCS URL – leave unchanged
+                    result['media_url'] = self.media_url
+            except Exception:
+                # In case of failure, fall back to stored value
+                result['media_url'] = self.media_url
             
         # Handle live session placeholder data stored in text field as JSON
         if self.media_type == 'live_session_placeholder' and self.text:

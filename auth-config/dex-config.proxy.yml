@@ -1,0 +1,26 @@
+issuer: http://auth.localhost/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - name: "Chat App (Proxy Mode)"
+    id: "chat-app-dev"
+    secret: "chat-app-dev-secret-12345"
+    redirectURIs:
+      - "http://auth.localhost/auth/callback"
+      - "http://localhost/auth/callback"
+    public: false
+
+enablePasswordDB: true
+staticPasswords:
+  - email: "admin@example.com"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: "admin"
+    userID: "1" 

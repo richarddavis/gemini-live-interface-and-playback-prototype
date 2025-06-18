@@ -16,7 +16,7 @@ from unittest.mock import patch, MagicMock
 from tests.test_utils import mock_boto3_session, mock_gemini_client
 
 # Test configuration
-API_BASE_URL = "http://localhost:8080/api"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://auth.localhost/api")
 TEST_SESSION_ID = f"integration_test_{int(time.time())}"
 
 @pytest.mark.integration

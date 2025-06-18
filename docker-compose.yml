@@ -24,6 +24,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    profiles: ["dev", "proxy"]
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -31,7 +32,6 @@ services:
       - .env  # Load environment variables from .env file (including REACT_APP_GEMINI_API_KEY)
     environment:
       - REACT_APP_API_URL=/api
-      - REACT_APP_OAUTH_ISSUER=https://civil-entirely-rooster.ngrok-free.app/dex
       - REACT_APP_OAUTH_CLIENT_ID=chat-app-dev
     depends_on:
       backend:
@@ -45,6 +45,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:5000"
+    profiles: ["dev", "proxy"]
     volumes:
       - ./backend:/app
       - ./.gcp-key.json:/app/gcp-key.json:ro
@@ -54,10 +55,8 @@ services:
       - FLASK_APP=wsgi.py
       - FLASK_ENV=development
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
-      - OAUTH_ISSUER=https://civil-entirely-rooster.ngrok-free.app/dex
       - OAUTH_CLIENT_ID=chat-app-dev
       - OAUTH_CLIENT_SECRET=chat-app-dev-secret-12345
-      - OAUTH_REDIRECT_URI=https://civil-entirely-rooster.ngrok-free.app/auth/callback
     depends_on:
       db:
         condition: service_healthy
@@ -75,6 +74,7 @@ services:
     image: postgres:15
     ports:
       - "5432:5432"
+    profiles: ["dev", "proxy"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -92,11 +92,14 @@ services:
     image: dexidp/dex:v2.37.0
     expose:
       - "5556"
+    ports:
+      - "5556:5556"  # Expose for dev profile
+    profiles: ["dev", "proxy"]
     volumes:
-      - ./auth-config/dex-config.yml:/etc/dex/config.yaml:ro
+      - ./auth-config/dex-config.dev.yml:/etc/dex/config.dev.yaml:ro
     env_file:
       - .env  # Load environment variables for GitHub OAuth
-    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    command: ["dex", "serve", "/etc/dex/config.dev.yaml"]
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5556/dex/.well-known/openid_configuration"]
       interval: 10s

@@ -12,9 +12,10 @@ from datetime import datetime
 import pytest
 from unittest.mock import patch
 from tests.test_utils import mock_boto3_session
+import os
 
-# Test configuration
-API_BASE_URL = "http://localhost:8080/api"
+# Determine base URL from environment for flexibility across Docker profiles
+API_BASE_URL = os.getenv("API_BASE_URL", "http://auth.localhost/api")
 
 @pytest.mark.integration
 class TestAudioStreamingIntegration(unittest.TestCase):

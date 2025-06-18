@@ -1,0 +1,28 @@
+services:
+  frontend:
+    environment:
+      - REACT_APP_API_URL=/api
+      - REACT_APP_OAUTH_ISSUER=https://civil-entirely-rooster.ngrok-free.app/dex
+      - REACT_APP_OAUTH_CLIENT_ID=chat-app-dev
+    ports: []
+
+  backend:
+    environment:
+      - FLASK_APP=wsgi.py
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
+      - OAUTH_ISSUER=https://civil-entirely-rooster.ngrok-free.app/dex
+      - OAUTH_CLIENT_ID=chat-app-dev
+      - OAUTH_CLIENT_SECRET=chat-app-dev-secret-12345
+      - OAUTH_REDIRECT_URI=https://civil-entirely-rooster.ngrok-free.app/auth/callback
+    ports: []
+
+  oauth-server:
+    # Remove port exposure for ngrok mode - only accessible through nginx
+    ports: []
+    volumes:
+      - ./auth-config/dex-config.yml:/etc/dex/config.ngrok.yaml:ro
+    command: ["dex", "serve", "/etc/dex/config.ngrok.yaml"]
+
+  db:
+    ports: [] 

@@ -68,7 +68,8 @@ REACT_APP_DEBUG=true
 docker-compose up --build
 
 # Access the application
-# Frontend: http://localhost:3000
+# Frontend (main branch): http://localhost:3000
+# Frontend (nginx proxy branch): http://auth.localhost
 # Backend API: http://localhost:8080
 ```
 

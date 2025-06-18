@@ -22,7 +22,7 @@ class AuthService:
     def get_discovery_document(self):
         """Get OAuth discovery document from Dex"""
         try:
-            response = requests.get(f"{self.oauth_issuer}/.well-known/openid_configuration")
+            response = requests.get(f"{self.oauth_issuer}/.well-known/openid-configuration")
             response.raise_for_status()
             discovery = response.json()
             
@@ -35,7 +35,7 @@ class AuthService:
             current_app.logger.error(f"Failed to get discovery document: {e}")
             # Fallback for development
             return {
-                'authorization_endpoint': 'http://auth.localhost/dex/auth',
+                'authorization_endpoint': f"{self.oauth_issuer}/auth",
                 'token_endpoint': f"{self.oauth_issuer}/token",
                 'userinfo_endpoint': f"{self.oauth_issuer}/userinfo",
                 'jwks_uri': f"{self.oauth_issuer}/keys",

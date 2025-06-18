@@ -1,0 +1,17 @@
+services:
+  frontend:
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080/api
+      - REACT_APP_OAUTH_ISSUER=http://localhost:5556/dex
+      - REACT_APP_OAUTH_CLIENT_ID=chat-app-dev
+
+  backend:
+    environment:
+      - FLASK_APP=wsgi.py
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/webapp
+      - OAUTH_ISSUER=http://oauth-server:5556/dex
+      - OAUTH_CLIENT_ID=chat-app-dev
+      - OAUTH_CLIENT_SECRET=chat-app-dev-secret-12345
+      - OAUTH_REDIRECT_URI=http://localhost:3000/auth/callback
+      - PUBLIC_OAUTH_ISSUER=http://localhost:5556/dex 

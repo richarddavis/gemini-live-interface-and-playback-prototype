@@ -18,6 +18,9 @@ class AuthService:
         self.client_secret = os.getenv('OAUTH_CLIENT_SECRET', 'chat-app-dev-secret-12345')
         # Allow override of redirect URI; default matches Nginx reverse-proxy host
         self.redirect_uri = os.getenv('OAUTH_REDIRECT_URI', 'http://auth.localhost/auth/callback')
+        # Public issuer visible to the browser (may differ from in-cluster issuer)
+        # Defaults to internal issuer unless explicitly overridden.
+        self.public_oauth_issuer = os.getenv('PUBLIC_OAUTH_ISSUER', self.oauth_issuer)
         
     def get_discovery_document(self):
         """Get OAuth discovery document from Dex"""
@@ -61,9 +64,10 @@ class AuthService:
         if not discovery:
             return None, None, None
             
-        authorization_endpoint = discovery.get('authorization_endpoint')
-        if not authorization_endpoint:
-            return None, None, None
+        # Build a browser-reachable authorization endpoint.  In most cases this
+        # is just the public issuer + "/auth".  We fall back to the discovery
+        # document's endpoint if no PUBLIC_OAUTH_ISSUER override is present.
+        authorization_endpoint = f"{self.public_oauth_issuer.rstrip('/')}/auth"
         
         # Generate PKCE parameters
         code_verifier, code_challenge = self.generate_pkce_challenge()

@@ -1,5 +1,5 @@
 # Dex OAuth Mock Server Configuration for Local Development
-issuer: http://auth.localhost/dex
+issuer: https://civil-entirely-rooster.ngrok-free.app/dex
 
 storage:
   type: memory

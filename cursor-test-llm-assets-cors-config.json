@@ -1,0 +1,12 @@
+[
+  {
+    "origin": [
+      "http://auth.localhost",
+      "http://localhost:3000",
+      "https://civil-entirely-rooster.ngrok-free.app"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+] 

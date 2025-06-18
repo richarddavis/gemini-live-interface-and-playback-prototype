@@ -68,4 +68,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-*.swo 
+*.swo
+
+# ngrok local configuration
+ngrok.yml 

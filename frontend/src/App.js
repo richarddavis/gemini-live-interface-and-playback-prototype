@@ -223,18 +223,23 @@ function App() {
     // Add the user message to the UI immediately
     setMessages(prevMessages => [...prevMessages, userMessage]);
 
-    // Create a temporary ID and message for the bot response
-    const tempBotId = `temp-bot-${Date.now()}`;
+    // Generate a stable id for this bot response
+    const botMessageId = `bot-${Date.now()}`;
+
+    // Create a temporary message for the bot (in-flight)
     setCurrentBotResponse({ 
-      id: tempBotId, 
+      id: botMessageId, 
       text: '', 
       sender: 'bot', 
       timestamp: new Date().toISOString(),
       chat_session_id: activeChatSessionId,
-      status: 'thinking' 
+      status: 'thinking'
     });
 
-    // Begin streaming the bot response using effective API key
+    // Ref flag to prevent duplicate completion handling
+    const streamFinalizedRef = { current: false };
+
+    // Begin streaming the bot response
     streamMessageToLLM(
       activeChatSessionId,
       { 
@@ -242,7 +247,7 @@ function App() {
         media_url: mediaUrl, 
         media_type: mediaType 
       },
-      effectiveApiKey, // Use the unified API key logic
+      effectiveApiKey,
       provider,
       {
         onChunk: (chunk) => {
@@ -253,32 +258,36 @@ function App() {
           } : null );
         },
         onComplete: async () => {
-          console.log('Stream completed, refreshing messages');
-          
-          // Clear current response immediately 
-          setCurrentBotResponse(null);
-          
-          try {
-            // Fetch the latest messages from the server
-            const updatedMessages = await fetchSessionMessages(activeChatSessionId);
-            setMessages(updatedMessages);
-            
-            // Focus the input field after a short delay
-            setTimeout(() => {
-              if (messageInputRef.current) {
-                messageInputRef.current.focus();
-              }
-            }, 200);
-          } catch (error) {
-            console.error("Error refreshing messages:", error);
-          }
+          if (streamFinalizedRef.current) return;
+          streamFinalizedRef.current = true;
+
+          // Move / update the final bot message into the messages list
+          setCurrentBotResponse(prevBot => {
+            if (prevBot) {
+              const finalBotMessage = {
+                ...prevBot,
+                status: 'complete'
+              };
+              setMessages(prevMsgs => {
+                // Remove any existing entry with the same id first (safety)
+                const withoutDuplicate = prevMsgs.filter(msg => msg.id !== finalBotMessage.id);
+                return [...withoutDuplicate, finalBotMessage];
+              });
+            }
+            return null;
+          });
+
+          // Refocus input
+          setTimeout(() => {
+            messageInputRef.current?.focus();
+          }, 200);
         },
         onError: (error) => {
+          if (streamFinalizedRef.current) return;
+          streamFinalizedRef.current = true;
           setCurrentBotResponse(null);
           console.error("Streaming error:", error);
-          setMessages(prevMessages => 
-            prevMessages.filter(msg => msg.id !== tempUserMessageId)
-          ); 
+          setMessages(prevMessages => prevMessages.filter(msg => msg.id !== tempUserMessageId));
           alert(`Error streaming response: ${error.message}`);
         }
       }

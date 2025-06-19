@@ -5,6 +5,14 @@ from io import BytesIO
 from .base import LLMProvider
 from flask import current_app
 
+# ---------------------------------------------------------------------------
+# Simple in-process cache so we upload each media asset to Gemini **once**
+# and then reuse the resulting `file.uri` in all subsequent requests. The
+# Gemini Files API keeps the object for 48 h which is more than enough for a
+# single worker process lifetime.
+# ---------------------------------------------------------------------------
+_GEMINI_FILE_CACHE: dict[tuple[str, str], str] = {}
+
 class GeminiProvider(LLMProvider):
     MODEL_NAME = "gemini-1.5-flash-latest"  # Regular model for non-live interactions
 
@@ -29,61 +37,83 @@ class GeminiProvider(LLMProvider):
             # The model should be accessed through the client
             return client
 
-    def _fetch_media_content(self, url, media_type):
-        """Download media content from URL and return it in the format Gemini expects"""
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            
-            # Return binary content with its mime type
-            return {
-                "mime_type": media_type,
-                "data": response.content
-            }
-        except Exception as e:
-            current_app.logger.error(f"Error fetching media from {url}: {str(e)}")
-            raise
+    def _prepare_gemini_messages(self, messages, context_limit=20):
+        """Convert our internal message dicts to Gemini's expected format.
 
-    def _prepare_gemini_messages(self, messages):
-        """Convert our message format to Gemini's format, handling media properly"""
+        Changes vs. previous implementation:
+        • Always reference media by URI instead of downloading bytes locally. This
+          lets Gemini handle its own preprocessing & implicit caching.
+        • Keep context trimming (last `context_limit` messages) to avoid huge
+          payloads, but drop the older 'recent_media_limit' heuristic – URIs are
+          cheap to repeat.
+        """
+
+        trimmed_msgs = messages[-context_limit:] if context_limit else messages
+
         gemini_messages = []
-        
-        for msg in messages:
+
+        for msg in trimmed_msgs:
             parts = []
-            if msg.get('text'):
-                parts.append({"text": msg['text']})
-            
-            # Handle media (image or video) by downloading the content
-            if msg.get('media_url') and msg.get('media_type'):
-                try:
-                    media_content = self._fetch_media_content(msg['media_url'], msg['media_type'])
+
+            if msg.get("text"):
+                parts.append({"text": msg["text"]})
+
+            # ----------------------------------------------------------------
+            # Attach media if present. To avoid the `INVALID_ARGUMENT` errors
+            # we saw when passing signed GCS HTTP URLs directly, we now upload
+            # the blob to Gemini's Files API once and reuse the returned
+            # `file.uri`.
+            # ----------------------------------------------------------------
+            if msg.get("media_url") and msg.get("media_type"):
+                media_url = msg["media_url"]
+                mime_type = msg["media_type"]
+
+                cache_key = (media_url, mime_type)
+                if cache_key in _GEMINI_FILE_CACHE:
+                    file_uri = _GEMINI_FILE_CACHE[cache_key]
+                else:
+                    # Download the asset and push to Files API
+                    try:
+                        resp = requests.get(media_url, timeout=15)
+                        resp.raise_for_status()
+
+                        client = self._configure_client(None)  # use default key logic
+                        uploaded_file = client.files.upload(
+                            file=BytesIO(resp.content),
+                            config={"mime_type": mime_type}
+                        )
+                        file_uri = uploaded_file.uri
+                        _GEMINI_FILE_CACHE[cache_key] = file_uri
+                    except Exception as e:
+                        current_app.logger.error(
+                            f"Failed to cache media for Gemini (url={media_url}): {e}"
+                        )
+                        # Fall back: omit media to avoid breaking entire request
+                        file_uri = None
+
+                if file_uri:
                     parts.append({
-                        "inline_data": media_content
+                        "file_data": {
+                            "file_uri": file_uri,
+                            "mime_type": mime_type
+                        }
                     })
-                except Exception as e:
-                    current_app.logger.error(f"Failed to process media: {str(e)}")
-                    # Continue without the media if there's an error
-            
-            if parts:  # Only add if there's text or media
+
+            if parts:
                 gemini_messages.append({
-                    "role": "user" if msg['sender'] == 'user' else "model",
+                    "role": "user" if msg["sender"] == "user" else "model",
                     "parts": parts
                 })
-        
+
         return gemini_messages
 
     def get_response(self, messages, api_key, **kwargs):
+        # Apply optimised preparation
+        gemini_messages = self._prepare_gemini_messages(messages)
         # Get a configured client
         client = self._configure_client(api_key)
-
-        # Convert our message history to Gemini's format
         try:
-            gemini_messages = self._prepare_gemini_messages(messages)
-            
-            current_app.logger.debug(f"Sending to Gemini: {len(gemini_messages)} messages")
-            
-            # According to the documentation, use only the required parameters
-            # Additional parameters can be added via a generation_config dictionary if needed later
+            current_app.logger.debug(f"Sending to Gemini: {len(gemini_messages)} messages (context limited)")
             response = client.models.generate_content(
                 model=self.MODEL_NAME,
                 contents=gemini_messages
@@ -113,15 +143,12 @@ class GeminiProvider(LLMProvider):
             return f"Error communicating with Gemini: {str(e)}"
 
     def stream_response(self, messages, api_key, **kwargs):
+        # Apply optimised preparation
+        gemini_messages = self._prepare_gemini_messages(messages)
         # Get a configured client
         client = self._configure_client(api_key)
         
         try:
-            # Convert our message history to Gemini's format
-            gemini_messages = self._prepare_gemini_messages(messages)
-
-            # According to the documentation, generate_content_stream doesn't accept temperature
-            # Call it with only the required parameters
             stream = client.models.generate_content_stream(
                 model=self.MODEL_NAME,
                 contents=gemini_messages

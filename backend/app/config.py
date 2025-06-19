@@ -21,6 +21,18 @@ class Config:
     SESSION_COOKIE_SAMESITE = 'Lax'  # Allows cookies in top-level navigation
     SESSION_COOKIE_PATH = '/'
     
+    # ------------------------------------------------------------------
+    # Gemini model configuration (chat – NOT Live API)
+    # ------------------------------------------------------------------
+    # GEMINI_DEFAULT_MODEL lets ops pick the preferred model without code
+    # changes. When unset, the backend falls back to gemini-2.5-flash.
+    # Set ENABLE_LEGACY_MODEL=true to force-use the deprecated
+    # gemini-1.5-flash-latest build in regression test environments.
+    # ------------------------------------------------------------------
+
+    GEMINI_DEFAULT_MODEL = os.environ.get('GEMINI_DEFAULT_MODEL', 'gemini-2.5-flash')
+    ENABLE_LEGACY_MODEL = os.environ.get('ENABLE_LEGACY_MODEL', 'false').lower() in {'1', 'true', 'yes'}
+    
     # Set GOOGLE_APPLICATION_CREDENTIALS in environment or configure here
     # Example: 
     # os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = '/path/to/service-account-key.json'

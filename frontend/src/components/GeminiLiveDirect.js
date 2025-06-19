@@ -48,6 +48,43 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
   const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
 
+  // Helper to build the Live-API setup message using camelCase keys and stable model
+  const buildSetupMessage = () => ({
+    setup: {
+      model: 'models/gemini-2.0-flash-live-001',
+      generationConfig: {
+        responseModalities: [responseMode],
+        speechConfig:
+          responseMode === 'AUDIO'
+            ? {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: selectedVoice,
+                  },
+                },
+              }
+            : undefined,
+      },
+      systemInstruction: {
+        parts: [
+          {
+            text:
+              "You are a helpful AI assistant with multimodal capabilities. You can see video input when the user's camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via clientContent (when camera is active), you also have access to current video frames.\n- When you receive standard text messages (when camera is off), you won't have video context.\n- Audio input always gives you access to both audio and any active video streams.\n\nAlways acknowledge the type of input you're receiving and what you currently perceive (video, audio, text only).",
+          },
+        ],
+      },
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: false,
+          startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+          endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+          prefixPaddingMs: 20,
+          silenceDurationMs: 100,
+        },
+      },
+    },
+  });
+
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -397,36 +434,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         }
         
         // Send setup message using Google's official format
-        const setupMessage = {
-          setup: {
-            model: 'models/gemini-2.0-flash-exp',
-            generation_config: {
-              response_modalities: [responseMode], // Array with single value as per docs
-              speech_config: responseMode === 'AUDIO' ? {
-                voice_config: {
-                  prebuilt_voice_config: {
-                    voice_name: selectedVoice
-                  }
-                }
-              } : undefined
-            },
-            system_instruction: {
-              parts: [{
-                text: 'You are a helpful AI assistant with multimodal capabilities. You can see video input when the user\'s camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via realtime input (when camera is active), you should have access to current video frames and can see what\'s happening right now\n- When you receive standard text messages (when camera is off), you won\'t have video context\n- Audio input always gives you access to both audio and any active video streams\n\nAlways acknowledge the type of input you\'re receiving and what you can currently perceive (video, audio, text only).'
-              }]
-            },
-            // Configure realtime input to handle multimodal data
-            realtime_input_config: {
-              automatic_activity_detection: {
-                disabled: false,
-                start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
-                end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
-                prefix_padding_ms: 20,
-                silence_duration_ms: 100
-              }
-            }
-          }
-        };
+        const setupMessage = buildSetupMessage();
 
         console.log('📤 Setup message sent', setupMessage);
         ws.send(JSON.stringify(setupMessage));
@@ -475,6 +483,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 } else if (message.error) {
                   console.error('❌ Server error:', message.error);
                   addMessage('error', `Server error: ${message.error.message || 'Unknown error'}`);
+                } else if (message.usageMetadata) {
+                  console.log('📊 Usage metadata:', message.usageMetadata);
+                } else if (message.inputTranscription) {
+                  addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
+                } else if (message.outputTranscription) {
+                  addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
+                } else if (message.goAway) {
+                  console.warn('⚠️ Server sent goAway – connection will close soon.');
+                } else if (message.sessionResumptionUpdate) {
+                  console.log('🔄 Session resumption handle received:', message.sessionResumptionUpdate);
                 }
               } catch (jsonError) {
                 // Not JSON, treat as binary audio data
@@ -855,8 +873,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     // This is needed because client_content doesn't automatically include realtime context
     if (isCameraOn && cameraStreamRef.current) {
       const realtimeMessage = {
-        realtimeInput: {
-          text: textInput.trim()
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [{ text: textInput.trim() }]
+          }],
+          turnComplete: true
         }
       };
       
@@ -878,12 +900,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     } else {
       // Standard text message when no camera
       const message = {
-        client_content: {
+        clientContent: {
           turns: [{
             role: 'user',
             parts: [{ text: textInput.trim() }]
           }],
-          turn_complete: true
+          turnComplete: true
         }
       };
 

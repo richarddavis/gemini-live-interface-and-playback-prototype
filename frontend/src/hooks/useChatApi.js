@@ -123,7 +123,7 @@ export function useChatApi(apiUrl) {
   }, [apiUrl]);
 
   const streamMessageToLLM = useCallback((sessionId, messageObj, apiKey, provider, { onChunk, onComplete, onError }) => {
-    if (!sessionId || !apiKey) {
+    if (!sessionId || (!apiKey && provider !== 'gemini')) {
       const errMsg = 'Missing required parameters for sending message';
       setError(errMsg);
       if (onError) onError(new Error(errMsg));
@@ -133,10 +133,8 @@ export function useChatApi(apiUrl) {
     setIsLoading(true);
     setError(null);
 
-    const params = new URLSearchParams({
-      api_key: apiKey,
-      provider,
-    });
+    const params = new URLSearchParams({ provider });
+    if (apiKey) params.append('api_key', apiKey);
     
     // messageObj is expected to be { text, media_url, media_type }
     if (messageObj.text) params.append('text', messageObj.text);

@@ -45,10 +45,30 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Available voices from Google's 2025 documentation
   const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
 
-  // Use the passed API key prop instead of environment variable
-  const API_KEY = apiKey;
+  // Backend base URL for auxiliary endpoints (token provisioning, analytics, etc.)
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
-  const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
+
+  // Helper: fetch an ephemeral token from backend and build WS url
+  const fetchWsUrlWithToken = async () => {
+    try {
+      const res = await fetch(`${API_URL}/live/ephemeral_token`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        throw new Error(`Token server responded ${res.status}`);
+      }
+      const { token } = await res.json();
+      if (!token) {
+        throw new Error('Invalid token payload');
+      }
+      return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
+    } catch (err) {
+      console.error('❌ Failed to obtain Live-API token:', err);
+      throw err;
+    }
+  };
 
   // Helper to build the Live-API setup message using camelCase keys and stable model
   const buildSetupMessage = () => ({
@@ -399,8 +419,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
   // Update connectToGemini to track session start time
   const connectToGemini = useCallback(async () => {
-    if (!API_KEY) {
-      addMessage('error', 'API key is required. Please enter your Google AI Studio API key in the sidebar.');
+    if (!selectedVoice || !responseMode) {
+      addMessage('error', 'Voice and response mode are required. Please select a voice and response mode.');
       return;
     }
 
@@ -413,14 +433,17 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       interactionLogger.logUserAction('connect_attempt', {
         voice: selectedVoice,
         response_mode: responseMode,
-        has_api_key: !!API_KEY
+        auth_method: 'ephemeral_token'
       });
     } catch (logError) {
       console.warn('⚠️ Failed to log connection attempt:', logError);
     }
 
     try {
-      const ws = new WebSocket(WS_URL);
+      // Obtain WS URL with fresh token (ephemeral, single-use)
+      const dynamicWsUrl = await fetchWsUrlWithToken();
+
+      const ws = new WebSocket(dynamicWsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

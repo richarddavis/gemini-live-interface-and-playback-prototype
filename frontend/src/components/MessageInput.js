@@ -710,7 +710,7 @@ const MessageInput = React.forwardRef(({
                   <button 
                     type="button"
                     className={`action-button live-button ${isLiveMode ? 'active' : ''}`}
-                    disabled={!apiKey}
+                    disabled={provider !== 'gemini' && !apiKey}
                     onClick={onToggleLiveMode}
                     title={isLiveMode ? 'Stop Live Mode' : 'Start Live Mode'}
                   >

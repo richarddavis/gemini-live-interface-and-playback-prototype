@@ -9,7 +9,7 @@ import os
 from werkzeug.utils import secure_filename
 import base64
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from io import BytesIO
 import requests
@@ -1371,3 +1371,49 @@ def recover_failed_uploads(session_id):
         db.session.rollback()
         current_app.logger.error(f"Error recovering uploads for session {session_id}: {str(e)}")
         return jsonify({"error": f"Failed to recover uploads: {str(e)}"}), 500 
+
+# --- Live API: Ephemeral Token Endpoint ------------------------------------
+@api.route('/live/ephemeral_token', methods=['POST'])
+@require_auth
+def get_ephemeral_token():
+    """Provision a short-lived Gemini Live-API token for the authenticated user.
+
+    The frontend uses this token in the `access_token` query parameter when
+    opening the Live-API WebSocket, avoiding exposure of the long-lived API key
+    in browser code. The token is single-use and expires ~30 minutes after
+    issuance (configurable below).
+    """
+    try:
+        from google import genai  # Local import to avoid slowing cold starts if library missing
+        import os
+        from datetime import datetime, timedelta, timezone
+
+        api_key = os.getenv("REACT_APP_GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return jsonify({"error": "Server misconfiguration: missing GEMINI API key"}), 500
+
+        # Create client targeting v1alpha (AuthToken service available here)
+        client = genai.Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
+
+        now = datetime.now(tz=timezone.utc)
+        token = client.auth_tokens.create(
+            config={
+                # Single use – good security default
+                'uses': 1,
+                # 30 minutes overall expiry (default is 30 anyway, but be explicit)
+                'expire_time': (now + timedelta(minutes=30)).isoformat(),
+                # Caller has 1 minute to start the WS session
+                'new_session_expire_time': (now + timedelta(minutes=1)).isoformat(),
+                'http_options': {'api_version': 'v1alpha'},
+            }
+        )
+
+        return jsonify({
+            'token': token.name,            # String to send as access_token
+            #'expireTime': token.expire_time # ISO timestamp (useful for debugging)
+        }), 200
+
+    except Exception as e:
+        import traceback
+        current_app.logger.error("Ephemeral token generation failed:\n" + traceback.format_exc())
+        return jsonify({"error": "Failed to generate token"}), 500 

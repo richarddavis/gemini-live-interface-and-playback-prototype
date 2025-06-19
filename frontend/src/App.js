@@ -69,6 +69,7 @@ function App() {
    * @returns {boolean} True if we have a usable API key
    */
   const hasValidApiKey = () => {
+    if (provider === 'gemini') return true; // Ephemeral-token path
     const effectiveKey = getEffectiveApiKey();
     return effectiveKey && effectiveKey.trim().length > 0;
   };

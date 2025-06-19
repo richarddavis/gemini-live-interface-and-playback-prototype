@@ -241,8 +241,11 @@ def respond_llm(session_id):
     media_url = data.get('media_url')
     media_type = data.get('media_type')
 
-    if (not user_text and not media_url) or not api_key:
-        return jsonify({"error": "Either text or media content, and api_key are required"}), 400
+    if not user_text and not media_url:
+        return jsonify({"error": "Either text or media content are required"}), 400
+
+    if provider_name != 'gemini' and not api_key:
+        return jsonify({"error": "api_key is required for this provider"}), 400
 
     session = ChatSession.query.get_or_404(session_id)
     
@@ -319,8 +322,11 @@ def respond_llm_stream(session_id):
     
     current_app.logger.debug(f"[STREAM DEBUG] Called: session_id={session_id}, provider={provider_name}, has_text={bool(user_text)}, has_media={bool(media_url)}")
     
-    if (not user_text and not media_url) or not api_key:
-        return jsonify({"error": "Either text or media content, and api_key are required"}), 400
+    if not user_text and not media_url:
+        return jsonify({"error": "Either text or media content are required"}), 400
+
+    if provider_name != 'gemini' and not api_key:
+        return jsonify({"error": "api_key is required for this provider"}), 400
 
     user_message = ChatMessage(
         text=user_text,

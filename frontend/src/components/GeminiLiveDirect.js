@@ -39,6 +39,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const cameraStreamRef = useRef(null); // Store camera stream separately
   const videoFrameIntervalRef = useRef(null); // For video frame capture interval
   const voiceMenuRef = useRef(null);
+  const currentOutputAudioRef = useRef(null);
+  const micInterruptDoneRef = useRef(false);
 
   // Available voices from Google's 2025 documentation
   const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
@@ -81,6 +83,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           prefixPaddingMs: 20,
           silenceDurationMs: 100,
         },
+        activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
       },
     },
   });
@@ -609,6 +612,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         
         source.start(0);
         addMessage('system', `🔊 Playing audio response (${audioBuffer.duration.toFixed(2)}s)`);
+        currentOutputAudioRef.current = source;
         return;
       } catch (decodeError) {
         console.log('🔍 Standard audio decode failed, trying PCM format...');
@@ -642,6 +646,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         
         source.start(0);
         addMessage('system', `🔊 Playing PCM audio response (${audioBuffer.duration.toFixed(2)}s)`);
+        currentOutputAudioRef.current = source;
       } catch (pcmError) {
         console.error('❌ PCM processing also failed:', pcmError);
         console.log('🔍 Binary data info:', {
@@ -720,6 +725,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       // Clear the buffer
       audioBufferRef.current = [];
       
+      currentOutputAudioRef.current = source;
     } catch (error) {
       console.error('🚨 Buffered audio playback failed:', error);
       addMessage('error', `Audio playback failed: ${error.message}`);
@@ -855,6 +861,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.log('✅ Turn completed');
       // Optionally add a visual indicator that the AI has finished responding
     }
+
+    if (serverContent.interrupted) {
+      console.log('⏹️ Server signalled interruption');
+      stopCurrentOutputAudio();
+    }
   }, [addMessage, handleAudioResponse]);
 
   // Handle tool calls (placeholder)
@@ -931,6 +942,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       message_length: textInput.trim().length,
       camera_active: isCameraOn 
     });
+
+    stopCurrentOutputAudio();
   }, [textInput, isConnected, isCameraOn, addMessage, logAnalytics]);
 
   // Toggle microphone
@@ -958,6 +971,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           // Pass true explicitly since setIsMicOn(true) hasn't updated state yet
           startAudioRecording(stream, true);
         }
+
+        stopCurrentOutputAudio();
       } else {
         if (mediaStreamRef.current) {
           mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -974,6 +989,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         }
         setIsMicOn(false);
         addMessage('system', '🎤 Microphone turned off');
+        micInterruptDoneRef.current = false;
       }
     } catch (error) {
       console.error('Microphone error:', error);
@@ -1050,6 +1066,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             }
           }
           wsRef.current.send(JSON.stringify(audioMessage));
+
+          if (!micInterruptDoneRef.current) {
+            stopCurrentOutputAudio();
+            micInterruptDoneRef.current = true;
+          }
         }
       };
       
@@ -1160,6 +1181,20 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       disconnect();
     }
   }, [isConnected, messages.length, onExitLiveMode, disconnect]);
+
+  // Helper to stop current playback
+  const stopCurrentOutputAudio = useCallback(() => {
+    try {
+      if (currentOutputAudioRef.current) {
+        currentOutputAudioRef.current.stop(0);
+        currentOutputAudioRef.current.disconnect();
+        currentOutputAudioRef.current = null;
+        console.log('🛑 Output audio playback stopped due to interruption');
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to stop output audio:', err);
+    }
+  }, []);
 
   useImperativeHandle(ref, () => ({
     triggerDisconnect: disconnect

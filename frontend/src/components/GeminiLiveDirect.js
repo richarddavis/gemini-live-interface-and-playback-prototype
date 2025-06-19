@@ -39,14 +39,74 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const cameraStreamRef = useRef(null); // Store camera stream separately
   const videoFrameIntervalRef = useRef(null); // For video frame capture interval
   const voiceMenuRef = useRef(null);
+  const currentOutputAudioRef = useRef(null);
+  const micInterruptDoneRef = useRef(false);
 
   // Available voices from Google's 2025 documentation
   const voices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr'];
 
-  // Use the passed API key prop instead of environment variable
-  const API_KEY = apiKey;
+  // Backend base URL for auxiliary endpoints (token provisioning, analytics, etc.)
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
-  const WS_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${API_KEY}`;
+
+  // Helper: fetch an ephemeral token from backend and build WS url
+  const fetchWsUrlWithToken = async () => {
+    try {
+      const res = await fetch(`${API_URL}/live/ephemeral_token`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) {
+        throw new Error(`Token server responded ${res.status}`);
+      }
+      const { token } = await res.json();
+      if (!token) {
+        throw new Error('Invalid token payload');
+      }
+      return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
+    } catch (err) {
+      console.error('❌ Failed to obtain Live-API token:', err);
+      throw err;
+    }
+  };
+
+  // Helper to build the Live-API setup message using camelCase keys and stable model
+  const buildSetupMessage = () => ({
+    setup: {
+      model: 'models/gemini-2.0-flash-live-001',
+      generationConfig: {
+        responseModalities: [responseMode],
+        speechConfig:
+          responseMode === 'AUDIO'
+            ? {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: selectedVoice,
+                  },
+                },
+              }
+            : undefined,
+      },
+      systemInstruction: {
+        parts: [
+          {
+            text:
+              "You are a helpful AI assistant with multimodal capabilities. You can see video input when the user's camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via clientContent (when camera is active), you also have access to current video frames.\n- When you receive standard text messages (when camera is off), you won't have video context.\n- Audio input always gives you access to both audio and any active video streams.\n\nAlways acknowledge the type of input you're receiving and what you currently perceive (video, audio, text only).",
+          },
+        ],
+      },
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: false,
+          startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+          endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+          prefixPaddingMs: 100,
+          silenceDurationMs: 400,
+        },
+        activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
+      },
+    },
+  });
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = useCallback(() => {
@@ -359,8 +419,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
   // Update connectToGemini to track session start time
   const connectToGemini = useCallback(async () => {
-    if (!API_KEY) {
-      addMessage('error', 'API key is required. Please enter your Google AI Studio API key in the sidebar.');
+    if (!selectedVoice || !responseMode) {
+      addMessage('error', 'Voice and response mode are required. Please select a voice and response mode.');
       return;
     }
 
@@ -373,14 +433,17 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       interactionLogger.logUserAction('connect_attempt', {
         voice: selectedVoice,
         response_mode: responseMode,
-        has_api_key: !!API_KEY
+        auth_method: 'ephemeral_token'
       });
     } catch (logError) {
       console.warn('⚠️ Failed to log connection attempt:', logError);
     }
 
     try {
-      const ws = new WebSocket(WS_URL);
+      // Obtain WS URL with fresh token (ephemeral, single-use)
+      const dynamicWsUrl = await fetchWsUrlWithToken();
+
+      const ws = new WebSocket(dynamicWsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -397,36 +460,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         }
         
         // Send setup message using Google's official format
-        const setupMessage = {
-          setup: {
-            model: 'models/gemini-2.0-flash-exp',
-            generation_config: {
-              response_modalities: [responseMode], // Array with single value as per docs
-              speech_config: responseMode === 'AUDIO' ? {
-                voice_config: {
-                  prebuilt_voice_config: {
-                    voice_name: selectedVoice
-                  }
-                }
-              } : undefined
-            },
-            system_instruction: {
-              parts: [{
-                text: 'You are a helpful AI assistant with multimodal capabilities. You can see video input when the user\'s camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via realtime input (when camera is active), you should have access to current video frames and can see what\'s happening right now\n- When you receive standard text messages (when camera is off), you won\'t have video context\n- Audio input always gives you access to both audio and any active video streams\n\nAlways acknowledge the type of input you\'re receiving and what you can currently perceive (video, audio, text only).'
-              }]
-            },
-            // Configure realtime input to handle multimodal data
-            realtime_input_config: {
-              automatic_activity_detection: {
-                disabled: false,
-                start_of_speech_sensitivity: 'START_SENSITIVITY_LOW',
-                end_of_speech_sensitivity: 'END_SENSITIVITY_LOW',
-                prefix_padding_ms: 20,
-                silence_duration_ms: 100
-              }
-            }
-          }
-        };
+        const setupMessage = buildSetupMessage();
 
         console.log('📤 Setup message sent', setupMessage);
         ws.send(JSON.stringify(setupMessage));
@@ -475,6 +509,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 } else if (message.error) {
                   console.error('❌ Server error:', message.error);
                   addMessage('error', `Server error: ${message.error.message || 'Unknown error'}`);
+                } else if (message.usageMetadata) {
+                  console.log('📊 Usage metadata:', message.usageMetadata);
+                } else if (message.inputTranscription) {
+                  addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
+                } else if (message.outputTranscription) {
+                  addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
+                } else if (message.goAway) {
+                  console.warn('⚠️ Server sent goAway – connection will close soon.');
+                } else if (message.sessionResumptionUpdate) {
+                  console.log('🔄 Session resumption handle received:', message.sessionResumptionUpdate);
                 }
               } catch (jsonError) {
                 // Not JSON, treat as binary audio data
@@ -591,6 +635,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         
         source.start(0);
         addMessage('system', `🔊 Playing audio response (${audioBuffer.duration.toFixed(2)}s)`);
+        currentOutputAudioRef.current = source;
         return;
       } catch (decodeError) {
         console.log('🔍 Standard audio decode failed, trying PCM format...');
@@ -624,6 +669,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         
         source.start(0);
         addMessage('system', `🔊 Playing PCM audio response (${audioBuffer.duration.toFixed(2)}s)`);
+        currentOutputAudioRef.current = source;
       } catch (pcmError) {
         console.error('❌ PCM processing also failed:', pcmError);
         console.log('🔍 Binary data info:', {
@@ -702,6 +748,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       // Clear the buffer
       audioBufferRef.current = [];
       
+      currentOutputAudioRef.current = source;
     } catch (error) {
       console.error('🚨 Buffered audio playback failed:', error);
       addMessage('error', `Audio playback failed: ${error.message}`);
@@ -837,6 +884,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.log('✅ Turn completed');
       // Optionally add a visual indicator that the AI has finished responding
     }
+
+    if (serverContent.interrupted) {
+      console.log('⏹️ Server signalled interruption');
+      stopCurrentOutputAudio();
+    }
   }, [addMessage, handleAudioResponse]);
 
   // Handle tool calls (placeholder)
@@ -855,8 +907,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     // This is needed because client_content doesn't automatically include realtime context
     if (isCameraOn && cameraStreamRef.current) {
       const realtimeMessage = {
-        realtimeInput: {
-          text: textInput.trim()
+        clientContent: {
+          turns: [{
+            role: 'user',
+            parts: [{ text: textInput.trim() }]
+          }],
+          turnComplete: true
         }
       };
       
@@ -878,12 +934,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     } else {
       // Standard text message when no camera
       const message = {
-        client_content: {
+        clientContent: {
           turns: [{
             role: 'user',
             parts: [{ text: textInput.trim() }]
           }],
-          turn_complete: true
+          turnComplete: true
         }
       };
 
@@ -909,6 +965,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       message_length: textInput.trim().length,
       camera_active: isCameraOn 
     });
+
+    stopCurrentOutputAudio();
   }, [textInput, isConnected, isCameraOn, addMessage, logAnalytics]);
 
   // Toggle microphone
@@ -936,6 +994,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           // Pass true explicitly since setIsMicOn(true) hasn't updated state yet
           startAudioRecording(stream, true);
         }
+
+        stopCurrentOutputAudio();
       } else {
         if (mediaStreamRef.current) {
           mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -952,6 +1012,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         }
         setIsMicOn(false);
         addMessage('system', '🎤 Microphone turned off');
+        micInterruptDoneRef.current = false;
       }
     } catch (error) {
       console.error('Microphone error:', error);
@@ -1028,6 +1089,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             }
           }
           wsRef.current.send(JSON.stringify(audioMessage));
+
+          if (!micInterruptDoneRef.current) {
+            stopCurrentOutputAudio();
+            micInterruptDoneRef.current = true;
+          }
         }
       };
       
@@ -1138,6 +1204,20 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       disconnect();
     }
   }, [isConnected, messages.length, onExitLiveMode, disconnect]);
+
+  // Helper to stop current playback
+  const stopCurrentOutputAudio = useCallback(() => {
+    try {
+      if (currentOutputAudioRef.current) {
+        currentOutputAudioRef.current.stop(0);
+        currentOutputAudioRef.current.disconnect();
+        currentOutputAudioRef.current = null;
+        console.log('🛑 Output audio playback stopped due to interruption');
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to stop output audio:', err);
+    }
+  }, []);
 
   useImperativeHandle(ref, () => ({
     triggerDisconnect: disconnect

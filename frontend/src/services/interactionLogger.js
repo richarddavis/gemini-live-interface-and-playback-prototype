@@ -27,7 +27,11 @@ class InteractionLogger {
     // Track interaction timing and gaps
     this.interactionTimeline = [];
     this.lastInteractionTime = null;
-    this.gapThreshold = 2000; // 2 seconds - alert if gap is longer
+    this.gapThreshold = 5000; // 5 seconds
+    
+    // 🚨 NEW: Sequence tracking for proper ordering
+    this.sessionSequence = new Map(); // Map of session_id -> current sequence number
+    this.currentSessionSequence = 0; // Current sequence for active session
     
     console.log('🔍 InteractionLogger: Real-time streaming mode enabled');
     this.startStreamProcessor();
@@ -42,7 +46,12 @@ class InteractionLogger {
   startNewSession(chatSessionId = null) {
     // Generate a new session ID for this session
     this.sessionId = this.generateSessionId();
-    console.log(`🆕 Generated new session ID: ${this.sessionId}`);
+    
+    // Initialize sequence counter for this new session
+    this.currentSessionSequence = 0;
+    this.sessionSequence.set(this.sessionId, 0);
+    
+    console.log(`🆕 Generated new session ID: ${this.sessionId} with sequence starting at 0`);
     
     // Start the session
     return this.startSession(chatSessionId);
@@ -165,6 +174,12 @@ class InteractionLogger {
       });
     }
 
+    // 🚨 CRITICAL: Increment sequence number for this session
+    this.currentSessionSequence++;
+    if (this.sessionId) {
+      this.sessionSequence.set(this.sessionId, this.currentSessionSequence);
+    }
+
     // Create stream item for immediate processing
     const streamItem = {
       session_id: this.sessionId,
@@ -175,6 +190,7 @@ class InteractionLogger {
         frontend_logged_at: new Date().toISOString(),
         performance_start: startTime,
         queue_position: this.streamQueue.length,
+        sequence_number: this.currentSessionSequence, // 🎯 KEY FIX: Add sequence tracking
         ...metadata
       },
       mediaData,

@@ -53,28 +53,21 @@ git clone https://github.com/your-user/gemini-live-interface-and-playback-protot
 cd gemini-live-interface-and-playback-prototype
 ```
 
-### 2. Configure Environment
+### 2. Configure Environment (zero-touch)
 
-Choose a template for your `.env` file. For local development the `main` template is easiest:
+`./scripts/start-app.sh` now **auto-generates a fresh `.env`** on every launch, picking the right template for the current git branch.  That means you can clone → start the stack with no manual copy-paste.
 
-```bash
-cp .env.main .env
-```
+After the first run you'll see a new `.env` in the repo root.  Open it and fill in the placeholders:
 
-Edit `.env` and provide real values for:
+* `REACT_APP_GEMINI_API_KEY` – API key from Google AI Studio
+* `GCS_BUCKET_NAME` – your Cloud Storage bucket
+* `SECRET_KEY` – any random string for Flask sessions
+* OAuth variables if you plan to enable sign-in
 
-- `REACT_APP_GEMINI_API_KEY` – API key from Google AI Studio
-- `GCS_BUCKET_NAME` – your Cloud Storage bucket
-- `SECRET_KEY` – Flask secret key
-- OAuth variables if you enable sign‑in
+Optional – **.secrets file**  
+If you'd rather keep credentials out of the committed `.env`, create a `.secrets` file with lines like `REACT_APP_GEMINI_API_KEY=sk-...` and they'll be merged in automatically each time the env is regenerated.
 
-If you keep secrets in a `.secrets` file, run the helper script to populate `.env` automatically:
-
-```bash
-./scripts/setup-env.sh
-```
-
-Place your Google Cloud service account JSON at `.gcp-key.json` so the backend can upload media.
+Place your Google Cloud service-account JSON at `.gcp-key.json`; the backend container mounts it to upload media.
 
 ### 3. Start the Stack
 

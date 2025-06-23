@@ -751,6 +751,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       source.onended = () => {
         console.log('🎵 Audio playback completed');
         setIsReceivingAudio(false);
+        // Allow mic interruptions on the next playback
+        micInterruptDoneRef.current = false;
       };
       
       source.start(0);
@@ -1049,6 +1051,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       const scriptProcessor = recordingAudioContext.createScriptProcessor(4096, 1, 1);
       
       scriptProcessor.onaudioprocess = (event) => {
+        if (isReceivingAudio) {
+          // Ignore mic input while Gemini audio is playing
+          return;
+        }
+
         if (isConnected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           const inputBuffer = event.inputBuffer;
           const inputData = inputBuffer.getChannelData(0); // Get mono channel
@@ -1226,6 +1233,14 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         currentOutputAudioRef.current = null;
         console.log('🛑 Output audio playback stopped due to interruption');
       }
+      // Clear any buffered audio and reset state
+      if (audioTimeoutRef.current) {
+        clearTimeout(audioTimeoutRef.current);
+        audioTimeoutRef.current = null;
+      }
+      audioBufferRef.current = [];
+      setIsReceivingAudio(false);
+      micInterruptDoneRef.current = false;
     } catch (err) {
       console.warn('⚠️ Failed to stop output audio:', err);
     }

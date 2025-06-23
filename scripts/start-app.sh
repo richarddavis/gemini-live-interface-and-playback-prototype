@@ -13,7 +13,7 @@ show_usage() {
     echo -e "${BLUE}🚀 Chat Application Startup Script${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "Usage: $0 [MODE]"
+    echo "Usage: $0 [MODE] [--model=<gemini-model>]"
     echo ""
     echo "Available modes:"
     echo -e "  ${GREEN}dev${NC}     - Development mode with direct port access"
@@ -138,16 +138,51 @@ start_ngrok() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
-# Main script logic
-if [ $# -eq 0 ]; then
+# -----------------------------------------------------------------------------
+# Parse CLI args: [MODE] [--model=<gemini-model>]
+# -----------------------------------------------------------------------------
+
+MODE=""               # dev | proxy | ngrok
+MODEL_OVERRIDE=""     # optional model name
+
+for arg in "$@"; do
+    case $arg in
+        dev|proxy|ngrok)
+            MODE="$arg"
+            shift ;;  # but keep parsing other args
+        --model=*)
+            MODEL_OVERRIDE="${arg#*=}"
+            shift ;;
+        -h|--help|help)
+            MODE="help" ; shift ;;
+        *)
+            # ignore unknown for now (could add later)
+            shift ;;
+    esac
+done
+
+if [ -z "$MODE" ]; then
     MODE="proxy"
     echo -e "${YELLOW}⚙️  No mode supplied — defaulting to 'proxy' (nginx reverse proxy).${NC}"
-else
-    MODE=$1
 fi
 
 # Stop any existing services first
 stop_services
+
+# If --model flag provided, inject/replace GEMINI_DEFAULT_MODEL in .env
+if [ -n "$MODEL_OVERRIDE" ]; then
+    echo -e "${BLUE}🔄 Applying model override: ${MODEL_OVERRIDE}${NC}"
+    if grep -q '^GEMINI_DEFAULT_MODEL=' .env; then
+        # macOS vs Linux sed portability
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|^GEMINI_DEFAULT_MODEL=.*|GEMINI_DEFAULT_MODEL=${MODEL_OVERRIDE}|" .env
+        else
+            sed -i "s|^GEMINI_DEFAULT_MODEL=.*|GEMINI_DEFAULT_MODEL=${MODEL_OVERRIDE}|" .env
+        fi
+    else
+        echo "GEMINI_DEFAULT_MODEL=${MODEL_OVERRIDE}" >> .env
+    fi
+fi
 
 case $MODE in
     "dev")

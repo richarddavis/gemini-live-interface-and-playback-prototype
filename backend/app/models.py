@@ -249,6 +249,9 @@ class InteractionMetadata(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     interaction_log_id = db.Column(db.Integer, db.ForeignKey('interaction_log.id'), nullable=False)
     
+    # Sequence tracking for proper ordering within a session
+    sequence_number = db.Column(db.Integer, nullable=True, index=True)  # Order within session for audio/video chunks
+    
     # Audio/Video technical metadata
     frame_rate = db.Column(db.Float, nullable=True)
     audio_sample_rate = db.Column(db.Integer, nullable=True)
@@ -277,6 +280,7 @@ class InteractionMetadata(db.Model):
     
     def to_dict(self):
         return {
+            'sequence_number': self.sequence_number,
             'frame_rate': self.frame_rate,
             'audio_sample_rate': self.audio_sample_rate,
             'video_resolution': {

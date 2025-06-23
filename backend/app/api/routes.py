@@ -828,12 +828,13 @@ def get_interaction_logs(session_id):
         include_media = request.args.get('include_media', 'false').lower() == 'true'
         
         # Use eager loading to avoid N+1 queries when serializing logs
+        # Join with InteractionMetadata to enable ordering by sequence_number
         query = InteractionLog.query.options(
             selectinload(InteractionLog.interaction_metadata)
-        ).filter_by(session_id=session_id)
+        ).outerjoin(InteractionMetadata).filter(InteractionLog.session_id == session_id)
         
         if interaction_type:
-            query = query.filter_by(interaction_type=interaction_type)
+            query = query.filter(InteractionLog.interaction_type == interaction_type)
         
         # Conditionally eager load media_data only when requested to minimise memory usage
         if include_media:
@@ -842,8 +843,8 @@ def get_interaction_logs(session_id):
         # Get total count
         total_count = query.count()
         
-        # Apply pagination
-        logs = query.order_by(InteractionLog.timestamp.asc())\
+        # Apply pagination with proper ordering: timestamp first, then sequence for same timestamps
+        logs = query.order_by(InteractionLog.timestamp.asc(), InteractionMetadata.sequence_number.asc().nullslast())\
                    .offset(offset)\
                    .limit(limit)\
                    .all()

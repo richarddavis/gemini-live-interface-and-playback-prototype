@@ -390,8 +390,26 @@ const useConversationSegments = (updateState) => {
     // Constants for filtering noise - REDUCED THRESHOLD
     const MIN_USER_SPEECH_DURATION = 800; // Reduced from 1500ms to 800ms to be less aggressive
 
+    // First, ensure logs are properly sorted by timestamp and sequence
+    const sortedLogs = logs.sort((a, b) => {
+      const timeA = new Date(a.timestamp);
+      const timeB = new Date(b.timestamp);
+      
+      // First sort by timestamp
+      if (timeA.getTime() !== timeB.getTime()) {
+        return timeA - timeB;
+      }
+      
+      // For same timestamps, sort by sequence number if available
+      const seqA = a.interaction_metadata?.sequence_number ?? 0;
+      const seqB = b.interaction_metadata?.sequence_number ?? 0;
+      return seqA - seqB;
+    });
+    
+    console.log(`🎭 🔢 Sorted ${logs.length} logs by timestamp and sequence`);
+    
     // Group logs by conversation segments
-    logs.forEach((log, index) => {
+    sortedLogs.forEach((log, index) => {
       const { 
         id, 
         interaction_type, 
@@ -417,7 +435,7 @@ const useConversationSegments = (updateState) => {
       }
 
       // Look ahead to see if this is a trailing single audio chunk (likely noise)
-      const nextLog = index < logs.length - 1 ? logs[index + 1] : null;
+      const nextLog = index < sortedLogs.length - 1 ? sortedLogs[index + 1] : null;
       const isTrailingSingleAudioChunk = (
         isUserAudio && 
         currentSegment && 
@@ -1348,10 +1366,21 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       });
       isPlayingRef.current = true; // Update ref to prevent closure issues
       
-      // Sort logs by timestamp to ensure correct order
-      const sortedLogs = [...state.replayData.logs].sort((a, b) => 
-        new Date(a.timestamp) - new Date(b.timestamp)
-      );
+      // Sort logs by timestamp and sequence number to ensure correct order
+      const sortedLogs = [...state.replayData.logs].sort((a, b) => {
+        const timeA = new Date(a.timestamp);
+        const timeB = new Date(b.timestamp);
+        
+        // First sort by timestamp
+        if (timeA.getTime() !== timeB.getTime()) {
+          return timeA - timeB;
+        }
+        
+        // For same timestamps, sort by sequence number if available
+        const seqA = a.interaction_metadata?.sequence_number ?? 0;
+        const seqB = b.interaction_metadata?.sequence_number ?? 0;
+        return seqA - seqB;
+      });
       playNextInteraction(0);
     }
   };

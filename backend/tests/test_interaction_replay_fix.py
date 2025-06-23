@@ -184,6 +184,114 @@ class TestInteractionReplayFix(unittest.TestCase):
         response_data = json.loads(response.data)
         self.assertIn("Failed to fetch from cloud storage", response_data['error'])
 
+    def test_audio_chunk_sequence_ordering(self):
+        """Test that audio chunks are properly ordered by sequence number"""
+        
+        # Create interaction logs with same timestamp but different sequence numbers
+        base_time = datetime.utcnow()
+        
+        # Create logs in reverse sequence order to test sorting
+        test_data = [
+            {"sequence": 3, "timestamp": base_time},
+            {"sequence": 1, "timestamp": base_time}, 
+            {"sequence": 2, "timestamp": base_time}
+        ]
+        
+        interaction_ids = []
+        
+        for data in test_data:
+            # Create interaction log
+            interaction_log = InteractionLog(
+                session_id=self.test_session_id,
+                interaction_type="audio_chunk",
+                timestamp=data["timestamp"]
+            )
+            db.session.add(interaction_log)
+            db.session.flush()
+            
+            # Create metadata with sequence number
+            metadata = InteractionMetadata(
+                interaction_log_id=interaction_log.id,
+                sequence_number=data["sequence"],
+                audio_sample_rate=24000,
+                microphone_on=False  # API audio
+            )
+            db.session.add(metadata)
+            interaction_ids.append(interaction_log.id)
+        
+        db.session.commit()
+        
+        # Retrieve logs via API endpoint to test ordering
+        response = self.client.get(f'/api/interaction-logs/{self.test_session_id}')
+        
+        self.assertEqual(response.status_code, 200)
+        
+        response_data = json.loads(response.data)
+        logs = response_data.get('logs', [])
+        
+        # Filter to audio chunks
+        audio_chunks = [log for log in logs if log['interaction_type'] == 'audio_chunk']
+        
+        self.assertEqual(len(audio_chunks), 3, "Should have 3 audio chunks")
+        
+        # Verify they are ordered by sequence number (1, 2, 3)
+        for i, chunk in enumerate(audio_chunks):
+            expected_sequence = i + 1
+            actual_sequence = chunk.get('interaction_metadata', {}).get('sequence_number')
+            
+            self.assertEqual(
+                actual_sequence, 
+                expected_sequence,
+                f"Audio chunk {i} has sequence {actual_sequence}, expected {expected_sequence}"
+            )
+        
+        print("✅ Audio chunks properly ordered by sequence number")
+
+    def test_mixed_timestamp_sequence_ordering(self):
+        """Test ordering with mixed timestamps and sequences"""
+        
+        base_time = datetime.utcnow()
+        
+        # Create logs with different timestamps and sequences
+        test_logs = [
+            {"timestamp": base_time + timedelta(milliseconds=200), "sequence": 4},
+            {"timestamp": base_time + timedelta(milliseconds=100), "sequence": 2},
+            {"timestamp": base_time + timedelta(milliseconds=100), "sequence": 1},
+            {"timestamp": base_time + timedelta(milliseconds=200), "sequence": 3},
+        ]
+        
+        for data in test_logs:
+            interaction_log = InteractionLog(
+                session_id=self.test_session_id + "_mixed",
+                interaction_type="audio_chunk", 
+                timestamp=data["timestamp"]
+            )
+            db.session.add(interaction_log)
+            db.session.flush()
+            
+            metadata = InteractionMetadata(
+                interaction_log_id=interaction_log.id,
+                sequence_number=data["sequence"]
+            )
+            db.session.add(metadata)
+        
+        db.session.commit()
+        
+        # Retrieve and verify ordering
+        response = self.client.get(f'/api/interaction-logs/{self.test_session_id}_mixed')
+        response_data = json.loads(response.data)
+        logs = response_data.get('logs', [])
+        
+        audio_chunks = [log for log in logs if log['interaction_type'] == 'audio_chunk']
+        
+        # Should be ordered: timestamp 100ms(seq 1), timestamp 100ms(seq 2), 
+        #                    timestamp 200ms(seq 3), timestamp 200ms(seq 4)
+        expected_sequences = [1, 2, 3, 4]
+        
+        for i, chunk in enumerate(audio_chunks):
+            actual_sequence = chunk.get('interaction_metadata', {}).get('sequence_number')
+            self.assertEqual(actual_sequence, expected_sequences[i])
+
 
 if __name__ == '__main__':
     unittest.main() 

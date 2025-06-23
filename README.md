@@ -1,298 +1,147 @@
-# Full-Stack Chat Application with Google Gemini Live API
+# Gemini Live Interface and Playback Prototype
 
-A modern, dockerized full-stack web application featuring traditional chat with multiple LLM providers and **direct Google Gemini Live API integration** for real-time multimodal conversations.
+A proof-of-concept chat system integrating the Google Gemini Live API. The frontend connects directly to the Live API over WebSocket while a Flask backend handles authentication, data storage, and analytics. Docker Compose manages the supporting services.
 
-## 🏗️ Architecture
+## Architecture
 
-### Traditional Chat
+The application is split into several components:
+
+- **React Frontend** (`frontend/`)
+  - Connects to the Gemini Live API using a secure WebSocket.
+  - Records microphone and camera streams and sends them directly to Google.
+  - Provides a modern chat UI with optional session replay.
+
+- **Flask Backend** (`backend/`)
+  - Exposes REST endpoints for tasks, chat sessions, file uploads, and interaction logs.
+  - Issues ephemeral tokens for the Live API to avoid exposing long-lived keys.
+  - Stores data in **PostgreSQL** and uploads media to **Google Cloud Storage**.
+  - Integrates with **Dex** for OAuth based authentication.
+
+- **Nginx Reverse Proxy** (`proxy` profile)
+  - Serves the React application and routes `/api` calls to Flask.
+  - Used for production‑like local development.
+
+- **Docker Compose**
+  - Launches the frontend, backend, database, authentication service, and optional proxy.
+  - Profiles allow switching between `dev`, `proxy`, and `ngrok` modes (see below).
+
+The Live API connection is completely client side. Only analytics and uploads go through the Flask service. The direct connection design is documented in `docs/GEMINI_LIVE_DIRECT.md`:
+
 ```
-Frontend (React) ↔ Backend (Flask) ↔ LLM APIs (OpenAI, Anthropic, etc.)
-                           ↓
-                  Database (PostgreSQL)
-```
-
-### Gemini Live API (NEW!)
-```
-Frontend (React) ↔ WebSocket ↔ Google Gemini Live API
-        ↓
+Frontend ↔ WebSocket ↔ Google Gemini Live API
+   ↓
 Backend (Analytics Only)
 ```
 
-## ✨ Features
+## Repository Layout
 
-### 💬 Traditional Chat
-- **Multiple LLM Providers**: OpenAI, Anthropic, Google, Vertex AI
-- **Rich Media Support**: Images, videos, files
-- **Session Management**: Create, switch, delete conversations
-- **Streaming Responses**: Real-time message streaming
-- **Persistent Storage**: PostgreSQL database
-- **Modern Gemini-Style UI**: Clean, pill-shaped message input, Gemini-inspired sidebar, and custom CSS (no Bootstrap)
-- **Mobile-First Design**: Fully responsive, touch-friendly controls, and smooth animations
+```
+backend/     - Flask application
+frontend/    - React application
+auth-config/ - Dex OAuth configuration
+scripts/     - Helper scripts (start-app.sh, setup-env.sh, etc.)
+nginx/       - Reverse proxy configuration
+docker-compose*.yml - Container definitions
+```
 
-### 🎤 Gemini Live API (Direct Connection)
-- **Real-time Voice Chat**: Natural voice conversations
-- **Video Streaming**: Camera input for visual context
-- **Multiple Voices**: Choose from 5+ AI voices
-- **Text + Voice**: Seamless switching between modalities
-- **Session Analytics**: Usage tracking and statistics
-- **Gemini-Style UI**: Pill-shaped input, Start Live button in input area, provider/API key controls in sidebar
+## Getting Started
 
-## 🚀 Quick Start
-
-### 1. Environment Setup
-
-Create `.env` file in the root directory:
+### 1. Clone the Repository
 
 ```bash
-# Database
-DATABASE_URL=postgresql://admin:password@db:5432/webapp
-
-# API Keys
-OPENAI_API_KEY=your_openai_key
-ANTHROPIC_API_KEY=your_anthropic_key
-GOOGLE_API_KEY=your_google_key
-
-# Gemini Live API (for direct connection)
-REACT_APP_GEMINI_API_KEY=your_api_key_here
-REACT_APP_API_URL=http://localhost:8080
-
-# Development
-FLASK_ENV=development
-REACT_APP_DEBUG=true
+git clone https://github.com/your-user/gemini-live-interface-and-playback-prototype.git
+cd gemini-live-interface-and-playback-prototype
 ```
 
-### 2. Start with Docker
+### 2. Configure Environment
+
+Choose a template for your `.env` file. For local development the `main` template is easiest:
 
 ```bash
-# A) Plain localhost (no reverse proxy)
-docker-compose up --build
-# Frontend: http://localhost:3000
-# Backend : http://localhost:8080
-
-# B) Reverse-proxy + ngrok (uses nginx container)
-# Start stack with proxy profile
-docker-compose --profile proxy up --build -d
-# Tunnel (requires reserved domain)
-ngrok http 80 --domain=civil-entirely-rooster.ngrok-free.app
-# App: https://civil-entirely-rooster.ngrok-free.app
+cp .env.main .env
 ```
 
-### 3. Manual Setup (Development)
+Edit `.env` and provide real values for:
+
+- `REACT_APP_GEMINI_API_KEY` – API key from Google AI Studio
+- `GCS_BUCKET_NAME` – your Cloud Storage bucket
+- `SECRET_KEY` – Flask secret key
+- OAuth variables if you enable sign‑in
+
+If you keep secrets in a `.secrets` file, run the helper script to populate `.env` automatically:
 
 ```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-flask db upgrade
-python wsgi.py
-
-# Frontend (new terminal)
-cd frontend
-npm install
-npm start
+./scripts/setup-env.sh
 ```
 
-## 📁 Project Structure
+Place your Google Cloud service account JSON at `.gcp-key.json` so the backend can upload media.
 
-```
-webapp_starter_cursor/
-├── frontend/                 # React application
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── GeminiLiveDirect.js    # Live API component
-│   │   └── ...
-│   └── package.json
-├── backend/                  # Flask application
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── analytics_routes.py    # Live API analytics
-│   │   │   ├── routes.py              # Traditional chat API
-│   │   │   └── ...
-│   │   └── services/
-│   ├── requirements.txt
-│   └── Dockerfile
-├── docker-compose.yml        # Container orchestration
-├── README.md                 # This file
-└── GEMINI_LIVE_DIRECT.md    # Live API documentation
-```
+### 3. Start the Stack
 
-## 🎯 Usage
-
-### Traditional Chat
-1. Open http://localhost:3000
-2. Add your API key and select provider in the **sidebar** (bottom left)
-3. Start chatting with text, images, or videos using the modern Gemini-style input bar
-
-### Gemini Live API
-1. Select Gemini as provider in the sidebar
-2. Enter your Gemini API key in the sidebar
-3. Use the **Start Live** button in the input area to begin a live session
-4. Configure voice and response settings as needed
-5. Enable camera/microphone as needed
-6. Start your multimodal conversation!
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes |
-| `OPENAI_API_KEY` | OpenAI API key | Optional |
-| `ANTHROPIC_API_KEY` | Anthropic API key | Optional |
-| `REACT_APP_GEMINI_API_KEY` | Gemini Live API key | For Live API |
-| `REACT_APP_API_URL` | Backend URL | Yes |
-
-### Google AI Studio Setup
-
-1. Go to [Google AI Studio](https://aistudio.google.com/)
-2. Create a new project
-3. Enable Gemini Live API
-4. Generate an API key
-5. Add to `REACT_APP_GEMINI_API_KEY`
-
-## 🛠️ Development
-
-### UI Tokens
-The frontend uses a small design token system defined in
-`frontend/src/styles/design-tokens.css`. Colors, spacing and typography are
-declared as CSS variables so the chat UI, live mode and replay screens stay
-consistent.
-
-### Adding New Features
-
-1. **Traditional Chat**: Modify backend routes and frontend components
-2. **Live API**: Enhance `GeminiLiveDirect.js` component
-3. **Analytics**: Add endpoints to `analytics_routes.py`
-
-### Database Migrations
+The easiest way to run everything is with the provided script. By default it uses the `proxy` profile which starts an nginx reverse proxy on port 80:
 
 ```bash
-cd backend
-
-# Create migration
-flask db migrate -m "Description"
-
-# Apply migration
-flask db upgrade
+./scripts/start-app.sh
 ```
 
-### Testing
+For direct access to each service you can start in `dev` mode instead:
 
 ```bash
-# Backend tests
-cd backend
-pytest
-
-# Frontend tests
-cd frontend
-npm test
+./scripts/start-app.sh dev
 ```
 
-## 🐳 Docker
+After the containers finish building the application is available at one of:
 
-### Development
-```bash
-docker-compose up --build
-```
+- **Proxy mode:** [http://auth.localhost](http://auth.localhost)
+- **Dev mode:** Frontend on [http://localhost:3000](http://localhost:3000) and backend API on [http://localhost:8080/api](http://localhost:8080/api)
 
-### Production
-```bash
-docker-compose -f docker-compose.prod.yml up --build
-```
-
-### Individual Services
-```bash
-# Database only
-docker-compose up db
-
-# Backend only
-docker-compose up backend
-
-# Frontend only
-docker-compose up frontend
-```
-
-## 📊 Analytics
-
-The backend provides analytics for Live API usage:
-
-- Session tracking (start/end times)
-- Interaction counting (text, audio, video)
-- Usage statistics
-- Error monitoring
-
-Access analytics at: `GET /api/analytics/stats`
-
-## 🔒 Security
-
-- **API Keys**: Store securely, never commit to version control
-- **HTTPS**: Required for camera/microphone in production
-- **CORS**: Properly configured for frontend domain
-- **Database**: Use strong passwords and secure connections
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-1. **Database Connection**: Check `DATABASE_URL` format
-2. **API Keys**: Ensure all required keys are set
-3. **CORS Errors**: Verify backend CORS configuration
-4. **Live API Connection**: Check Google AI Studio project status
-5. **Media Permissions**: Grant browser camera/microphone access
-
-### Logs
+To stop all containers run:
 
 ```bash
-# All services
-docker-compose logs
-
-# Specific service
-docker-compose logs backend
-docker-compose logs frontend
+./scripts/stop-app.sh
 ```
 
-## 📚 Documentation
+## Using the Application
 
-All project documentation is indexed in [docs/README.md](./docs/README.md).
-Key guides include the [Gemini Live API Guide](./GEMINI_LIVE_DIRECT.md).
+1. **Open the UI**
+   - Proxy mode: [http://auth.localhost](http://auth.localhost)
+   - Dev mode: [http://localhost:3000](http://localhost:3000)
 
-## 🤝 Contributing
+2. **Chat**
+   - Select or create a chat in the sidebar.
+   - Type text in the input field and press **Enter** to send.
+   - Use the attachment icon to upload images or videos; they are sent to the backend and included in the message.
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+3. **Live Sessions**
+   - Click **Start Live** in the message input to open the live session modal.
+   - Grant camera and microphone permissions when prompted.
+   - When you disconnect, a **Live Session** placeholder appears in the chat.
 
-## 📄 License
+4. **Playback**
+   - Click **Play Session** on a placeholder message to view the recorded session with synchronized audio and video.
 
-This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🆕 What's New
+## Planning a Similar System
 
-### v2.2 - Design Tokens and Layout Updates
-- ✅ Introduced CSS design tokens for colors, spacing, and typography
-- ✅ Shared layout variables unify live mode and replay screens
-- ✅ Standardized responsive breakpoints for consistent behavior
+The key design ideas for this prototype are:
 
-### v2.1 - Gemini-Style UI Redesign (2025)
-- ✅ Complete Gemini-inspired UI overhaul: pill-shaped message input, modern sidebar, and custom CSS
-- ✅ Start Live button moved to input area, provider/API key controls in sidebar
-- ✅ Fully mobile-responsive, touch-friendly, and visually modern
+1. **Direct WebSocket Connection** – The browser communicates with Google using the user's API key. This avoids a heavy backend proxy and reduces latency.
+2. **Ephemeral Token Service** – The backend provides short‑lived tokens so permanent keys are never exposed to the client.
+3. **Separate Analytics Service** – All interaction data is sent to small logging endpoints (`/api/analytics/...`) for future analysis.
+4. **Containerized Infrastructure** – Docker Compose orchestrates the web app, database, authentication server, and proxy, allowing profiles for different environments.
+5. **Replay System** – Audio and video sent to the Live API are stored in GCS and can later be replayed to reproduce the session.
 
-### v2.0 - Direct Gemini Live API
-- ✅ Removed complex backend proxy architecture
-- ✅ Direct frontend WebSocket connections to Google
-- ✅ Simplified backend to analytics-only
-- ✅ Modern React component with clean UI
-- ✅ Real-time multimodal conversations
-- ✅ Comprehensive error handling
+See `docs/docker-profiles.md` for details on the compose profiles and `docs/GEMINI_LIVE_DIRECT.md` for the direct connection design.
 
-### Previous Versions
-- v1.x - Traditional multi-LLM chat with media support
-- v0.x - Basic chat functionality
+## Testing
 
----
+Backend tests use `pytest` and frontend tests use `Jest`. Run them manually from the respective directories:
 
-**Built with ❤️ using React, Flask, PostgreSQL, and Google Gemini Live API** 
+```bash
+cd backend && pytest
+cd ../frontend && npm test
+```
+
+## License
+
+This project is licensed under the MIT License.

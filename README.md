@@ -55,86 +55,33 @@ cd gemini-live-interface-and-playback-prototype
 
 ### 2. Configure Environment (zero-touch)
 
-`./scripts/start-app.sh` now **auto-generates a fresh `.env`** on every launch, picking the right template for the current git branch.  That means you can clone → start the stack with no manual copy-paste.
+`./scripts/start-app.sh` **auto-generates a fresh `.env`** on *every* launch, picking the right template for the current git branch. Required credentials should live in a **`.secrets`** file (ignored by git) with simple `KEY=value` lines, for example:
 
-After the first run you'll see a new `.env` in the repo root.  Open it and fill in the placeholders:
+```ini
+REACT_APP_GEMINI_API_KEY=sk-********************************
+GCS_BUCKET_NAME=my-bucket
+SECRET_KEY=change-me
+```
 
-* `REACT_APP_GEMINI_API_KEY` – API key from Google AI Studio
-* `GCS_BUCKET_NAME` – your Cloud Storage bucket
-* `SECRET_KEY` – any random string for Flask sessions
-* OAuth variables if you plan to enable sign-in
+When `.env` is regenerated the script merges any matching keys from `.secrets`, keeping them out of version control.
 
-Optional – **.secrets file**  
-If you'd rather keep credentials out of the committed `.env`, create a `.secrets` file with lines like `REACT_APP_GEMINI_API_KEY=sk-...` and they'll be merged in automatically each time the env is regenerated.
+Place your Google Cloud service-account JSON at `.gcp-key.json`; the backend container mounts it automatically.
 
-Place your Google Cloud service-account JSON at `.gcp-key.json`; the backend container mounts it to upload media.
+**Switching Gemini models**  
+Quick experiments:
+
+```bash
+./scripts/start-app.sh dev --model gemini-1.5-flash-latest   # one-off override
+```
+
+The flag patches `.env` for the current run.  For a permanent change, put the line in `.secrets`:
+
+```ini
+GEMINI_DEFAULT_MODEL=gemini-1.5-flash-latest
+```
+
+The backend prints the active model on startup so you can confirm which one is loaded.
 
 ### 3. Start the Stack
 
-The easiest way to run everything is with the provided script. By default it uses the `proxy` profile which starts an nginx reverse proxy on port 80:
-
-```bash
-./scripts/start-app.sh
-```
-
-For direct access to each service you can start in `dev` mode instead:
-
-```bash
-./scripts/start-app.sh dev
-```
-
-After the containers finish building the application is available at one of:
-
-- **Proxy mode:** [http://auth.localhost](http://auth.localhost)
-- **Dev mode:** Frontend on [http://localhost:3000](http://localhost:3000) and backend API on [http://localhost:8080/api](http://localhost:8080/api)
-
-To stop all containers run:
-
-```bash
-./scripts/stop-app.sh
-```
-
-## Using the Application
-
-1. **Open the UI**
-   - Proxy mode: [http://auth.localhost](http://auth.localhost)
-   - Dev mode: [http://localhost:3000](http://localhost:3000)
-
-2. **Chat**
-   - Select or create a chat in the sidebar.
-   - Type text in the input field and press **Enter** to send.
-   - Use the attachment icon to upload images or videos; they are sent to the backend and included in the message.
-
-3. **Live Sessions**
-   - Click **Start Live** in the message input to open the live session modal.
-   - Grant camera and microphone permissions when prompted.
-   - When you disconnect, a **Live Session** placeholder appears in the chat.
-
-4. **Playback**
-   - Click **Play Session** on a placeholder message to view the recorded session with synchronized audio and video.
-
-
-## Planning a Similar System
-
-The key design ideas for this prototype are:
-
-1. **Direct WebSocket Connection** – The browser communicates with Google using the user's API key. This avoids a heavy backend proxy and reduces latency.
-2. **Ephemeral Token Service** – The backend provides short‑lived tokens so permanent keys are never exposed to the client.
-3. **Separate Analytics Service** – All interaction data is sent to small logging endpoints (`/api/analytics/...`) for future analysis.
-4. **Containerized Infrastructure** – Docker Compose orchestrates the web app, database, authentication server, and proxy, allowing profiles for different environments.
-5. **Replay System** – Audio and video sent to the Live API are stored in GCS and can later be replayed to reproduce the session.
-
-See `docs/docker-profiles.md` for details on the compose profiles and `docs/GEMINI_LIVE_DIRECT.md` for the direct connection design.
-
-## Testing
-
-Backend tests use `pytest` and frontend tests use `Jest`. Run them manually from the respective directories:
-
-```bash
-cd backend && pytest
-cd ../frontend && npm test
-```
-
-## License
-
-This project is licensed under the MIT License.
+The easiest way to run everything is with the provided script. By default it uses the `

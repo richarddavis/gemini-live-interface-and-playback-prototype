@@ -13,7 +13,7 @@ show_usage() {
     echo -e "${BLUE}🚀 Chat Application Startup Script${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo "Usage: $0 [MODE]"
+    echo "Usage: $0 [MODE] [--model MODEL_NAME]"
     echo ""
     echo "Available modes:"
     echo -e "  ${GREEN}dev${NC}     - Development mode with direct port access"
@@ -28,6 +28,9 @@ show_usage() {
     echo -e "  ${GREEN}ngrok${NC}   - Public access with ngrok tunnel"
     echo -e "           App:      https://civil-entirely-rooster.ngrok-free.app"
     echo -e "           Note:     Requires ngrok to be running separately"
+    echo ""
+    echo "Options:"
+    echo -e "  --model MODEL   Override the chat model (e.g., gemini-1.5-flash-latest) for this run"
     echo ""
     echo "Examples:"
     echo "  $0 dev        # Start in development mode"
@@ -138,12 +141,39 @@ start_ngrok() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 }
 
-# Main script logic
-if [ $# -eq 0 ]; then
-    MODE="proxy"
-    echo -e "${YELLOW}⚙️  No mode supplied — defaulting to 'proxy' (nginx reverse proxy).${NC}"
-else
-    MODE=$1
+# -----------------------------------------------------------------------------
+# Parse CLI arguments: MODE (dev|proxy|ngrok) and optional --model <model-name>
+# -----------------------------------------------------------------------------
+
+MODE="proxy"   # default
+MODEL_OVERRIDE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        dev|proxy|ngrok)
+            MODE="$1";
+            shift ;;
+        --model)
+            MODEL_OVERRIDE="$2";
+            shift 2 ;;
+        -h|--help|help)
+            show_usage; exit 0 ;;
+        *)
+            echo -e "${RED}❌ Unknown option or mode: $1${NC}"; show_usage; exit 1 ;;
+    esac
+done
+
+echo -e "${BLUE}📦 Launch mode: ${GREEN}$MODE${NC}"
+
+# If a model override was provided, patch .env so the backend sees it.
+if [ -n "$MODEL_OVERRIDE" ]; then
+    echo -e "${YELLOW}🧠 Overriding Gemini model -> $MODEL_OVERRIDE${NC}"
+    # Ensure GEMINI_DEFAULT_MODEL line is present/updated in .env
+    if grep -q "^GEMINI_DEFAULT_MODEL=" .env 2>/dev/null; then
+        sed -i '' "s/^GEMINI_DEFAULT_MODEL=.*/GEMINI_DEFAULT_MODEL=$MODEL_OVERRIDE/" .env || true
+    else
+        echo "GEMINI_DEFAULT_MODEL=$MODEL_OVERRIDE" >> .env
+    fi
 fi
 
 # Stop any existing services first

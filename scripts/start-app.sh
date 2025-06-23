@@ -1,12 +1,22 @@
 #!/bin/bash
 set -e
 
+# Always operate from project root (parent directory of this script)
+cd "$(dirname "$0")/.."
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# -----------------------------------------------------------------------------
+# Always regenerate the .env file at startup to avoid stale configuration.
+# -----------------------------------------------------------------------------
+
+echo -e "${YELLOW}⚙️  Regenerating .env for this session...${NC}"
+scripts/setup-env.sh || { echo -e "${RED}❌ Environment setup failed${NC}"; exit 1; }
 
 # Function to display usage
 show_usage() {

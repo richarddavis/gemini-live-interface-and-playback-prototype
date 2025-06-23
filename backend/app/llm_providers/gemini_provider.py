@@ -4,6 +4,7 @@ import requests
 from io import BytesIO
 from .base import LLMProvider
 from flask import current_app
+import logging as _logging
 
 # ---------------------------------------------------------------------------
 # Simple in-process cache so we upload each media asset to Gemini **once**
@@ -13,8 +14,49 @@ from flask import current_app
 # ---------------------------------------------------------------------------
 _GEMINI_FILE_CACHE: dict[tuple[str, str], str] = {}
 
+# ---------------------------------------------------------------------------
+# Runtime-configurable model selection
+# Priority order (highest first):
+#   1) Explicit environment variable GEMINI_DEFAULT_MODEL
+#   2) Legacy fallback (gemini-1.5-flash-latest) when ENABLE_LEGACY_MODEL=true
+#   3) Recommended default: gemini-2.5-flash
+# ---------------------------------------------------------------------------
+
 class GeminiProvider(LLMProvider):
-    MODEL_NAME = "gemini-1.5-flash-latest"  # Regular model for non-live interactions
+    # Determine which model to use at import time. Fast and keeps the value
+    # constant for the lifetime of the worker process (avoids re-evaluation in
+    # every request loop).
+
+    _env_model = os.getenv("GEMINI_DEFAULT_MODEL")
+    _legacy_enabled = os.getenv("ENABLE_LEGACY_MODEL", "false").lower() in {"1", "true", "yes"}
+
+    if _env_model:
+        MODEL_NAME = _env_model  # Explicit override via environment
+    elif _legacy_enabled:
+        MODEL_NAME = "gemini-1.5-flash-latest"  # Regression-test legacy model
+    else:
+        MODEL_NAME = "gemini-2.5-flash"  # Recommended default for 2025+
+
+    # ---------------------------------------------------------------------------
+    # Emit a startup log so Docker users immediately see which model is active.
+    # This runs once when the module is imported (i.e. when the Flask app starts
+    # inside the backend container).  The message is printed **and** sent via the
+    # standard logging facility so it will always appear in `docker-compose logs`.
+    # ---------------------------------------------------------------------------
+
+    _logger = _logging.getLogger(__name__)
+    # Ensure at least INFO level for this message in case the root logger is not
+    # configured yet.  (Flask/Gunicorn will usually configure logging later.)
+    if not _logger.handlers:
+        _logging.basicConfig(level=_logging.INFO)
+
+    _msg = f"GeminiProvider active — using model: {MODEL_NAME}"
+
+    # Plain print guarantees the message even before logging is configured.
+    print(_msg)
+
+    # And via logging for normal operation.
+    _logger.info(_msg)
 
     def _configure_client(self, api_key, for_live=False):
         # The google-genai package has changed, and genai.configure() is no longer available

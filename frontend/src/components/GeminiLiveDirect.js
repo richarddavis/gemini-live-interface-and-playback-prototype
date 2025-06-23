@@ -104,6 +104,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           silenceDurationMs: 400,
         },
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
+        turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',
       },
     },
   });
@@ -177,6 +178,17 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       return;
     }
 
+    // Skip this frame if the WebSocket has too much data queued (simple back-pressure)
+    const BACKPRESSURE_LIMIT_BYTES = 500_000; // ~0.5 MB
+    if (wsRef.current.bufferedAmount > BACKPRESSURE_LIMIT_BYTES) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug(
+          `📹 Skipped video frame due to back-pressure (bufferedAmount = ${wsRef.current.bufferedAmount} bytes)`
+        );
+      }
+      return;
+    }
+
     try {
       // Create a canvas to capture the current video frame
       const canvas = document.createElement('canvas');
@@ -236,10 +248,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       clearInterval(videoFrameIntervalRef.current);
     }
     
-    // Increase capture rate in replay mode for smoother playback
-    const captureInterval = interactionLogger.replayMode ? 200 : 500; // 5 FPS in replay mode, 2 FPS otherwise
+    // Capture at a fixed 2 FPS to minimize bandwidth and buffering issues
+    const captureInterval = 500; // 500 ms per frame ≈ 2 FPS
     videoFrameIntervalRef.current = setInterval(captureAndSendVideoFrame, captureInterval);
-    console.log(`📹 Started video frame capture at ${1000/captureInterval} FPS (replay mode: ${interactionLogger.replayMode})`);
+    console.log(`📹 Started video frame capture at ${1000 / captureInterval} FPS (fixed rate)`);
   }, [captureAndSendVideoFrame]);
 
   // Stop video frame capture

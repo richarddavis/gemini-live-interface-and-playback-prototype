@@ -1232,7 +1232,9 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
               const segmentAudio = await createSegmentAudio(segment, audioCache);
               if (segmentAudio) {
                 processedSegments.set(`${segment.id}_audio`, segmentAudio);
-                console.log(`🎭 Created audio segment: ${segment.id}_audio (${segmentAudio.duration.toFixed(2)}s)`);
+                // 🔧 FIX: Store the actual audio duration back to the segment for timeline display
+                segment.actualAudioDuration = segmentAudio.duration; // Store in seconds
+                console.log(`🎭 Created audio segment: ${segment.id}_audio (${segmentAudio.duration.toFixed(2)}s) - updated segment with actual duration`);
               } else {
                 console.warn(`🎭 Failed to create audio segment for ${segment.id}`);
         }
@@ -2277,7 +2279,12 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
     console.log(`🐛 DEBUG playApiResponseSegment - segment:`, segment);
     console.log(`🐛 DEBUG playApiResponseSegment - segment.logs:`, segment.logs);
     
-    updateState({ replayStatus: `🤖 Playing API response (${(segment.duration / 1000).toFixed(1)}s)` });
+    // 🔧 FIX: Use actual audio duration for status display
+    const statusDuration = segment.actualAudioDuration !== undefined 
+      ? segment.actualAudioDuration.toFixed(1) 
+      : (segment.duration / 1000).toFixed(1);
+    
+    updateState({ replayStatus: `🤖 Playing API response (${statusDuration}s)` });
     
     // Display video frames during API response if available (for text responses)
     const segmentVideo = state.processedSegments.get(`${segment.id}_video`);
@@ -2743,7 +2750,17 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                   {state.conversationSegments && state.conversationSegments.length > 0 ? (
                     state.conversationSegments.map((segment, index) => {
                       const isCurrentSegment = state.currentSegmentIndex === index;
-                      const durationSec = (segment.duration / 1000).toFixed(1);
+                      
+                      // 🔧 FIX: Use actual audio duration when available, fallback to wall-clock time
+                      let displayDuration;
+                      if (segment.actualAudioDuration !== undefined) {
+                        // Use the actual audio content duration (already in seconds)
+                        displayDuration = segment.actualAudioDuration.toFixed(1);
+                      } else {
+                        // Fallback to wall-clock time difference (convert from ms to seconds)
+                        displayDuration = (segment.duration / 1000).toFixed(1);
+                      }
+                      
                       const startTime = new Date(segment.startTime).toLocaleTimeString();
                       
                       // Determine segment display info
@@ -2753,7 +2770,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                         case 'user_speech':
                           segmentIcon = '🎤';
                           segmentLabel = 'You spoke';
-                          segmentContent = `Voice message (${durationSec}s, ${segment.audioChunks.length} chunks)`;
+                          segmentContent = `Voice message (${displayDuration}s, ${segment.audioChunks.length} chunks)`;
                           if (segment.videoFrames.length > 0) {
                             segmentContent += ` + ${segment.videoFrames.length} video frames`;
                           }
@@ -2772,10 +2789,10 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                           
                           if (hasTextContent) {
                             // Use the fetched text if available, otherwise fallback
-                            segmentContent = segment.timelineDisplayText || `Text response (${durationSec}s)`;
+                            segmentContent = segment.timelineDisplayText || `Text response (${displayDuration}s)`;
                           } else {
-                            // This is a voice response
-                            segmentContent = `Voice response (${durationSec}s, ${segment.audioChunks.length} chunks)`;
+                            // This is a voice response - use actual audio duration
+                            segmentContent = `Voice response (${displayDuration}s, ${segment.audioChunks.length} chunks)`;
                           }
                           
                           if (segment.mergedSegmentIds && segment.mergedSegmentIds.length > 0) {
@@ -2813,7 +2830,7 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
                         default:
                           segmentIcon = '❓';
                           segmentLabel = 'Unknown';
-                          segmentContent = `${segment.type} (${durationSec}s)`;
+                          segmentContent = `${segment.type} (${displayDuration}s)`;
                       }
 
                       return (

@@ -610,7 +610,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     // hears two overlapping responses. Until the API offers a definitive single-stream contract
     // (or we explicitly switch to binary-only), we ignore the binary frames and rely solely on
     // the `inlineData` path handled farther below.
-    console.debug('� Skipping binary audio chunk to avoid duplicate playback. Size:', arrayBuffer?.byteLength);
+    console.debug('🚨 Skipping binary audio chunk to avoid duplicate playback. Size:', arrayBuffer?.byteLength);
     return;
   }, []);
 
@@ -826,67 +826,92 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       return;
     }
 
-    // If camera is on, send text as realtime input to ensure it sees current video
-    // This is needed because client_content doesn't automatically include realtime context
-    if (isCameraOn && cameraStreamRef.current) {
-      const realtimeMessage = {
-        clientContent: {
-          turns: [{
-            role: 'user',
-            parts: [{ text: textInput.trim() }]
-          }],
-          turnComplete: true
-        }
-      };
-      
-      console.log('📤 Sending text as realtime input (camera active):', realtimeMessage);
-      wsRef.current.send(JSON.stringify(realtimeMessage));
-      addMessage('user', textInput.trim());
-      
-      // Log text input with error handling
+    // Helper to synchronously grab a snapshot from the <video> tag (JPEG base64)
+    const grabVideoSnapshot = () => {
       try {
-        interactionLogger.logTextInput(textInput.trim(), {
-          message_length: textInput.trim().length,
-          is_connected: isConnected,
-          camera_active: true,
-          input_type: 'realtime'
-        });
-      } catch (logError) {
-        console.warn('⚠️ Failed to log text input:', logError);
+        if (!videoRef.current) return null;
+        const video = videoRef.current;
+        if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Encode as moderately compressed JPEG
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        return dataUrl.split(',')[1]; // strip the data: prefix
+      } catch (err) {
+        console.warn('⚠️ Failed to capture video snapshot:', err);
+        return null;
       }
+    };
+
+    let message;
+
+    if (isCameraOn && cameraStreamRef.current) {
+      // Capture a single frame so that Gemini has immediate visual context.
+      const base64Snapshot = grabVideoSnapshot();
+
+      const parts = [{ text: textInput.trim() }];
+      if (base64Snapshot) {
+        parts.push({
+          inlineData: {
+            mimeType: 'image/jpeg',
+            data: base64Snapshot,
+          },
+        });
+      }
+
+      message = {
+        clientContent: {
+          turns: [
+            {
+              role: 'user',
+              parts,
+            },
+          ],
+          turnComplete: true,
+        },
+      };
+
+      console.log('📤 Sending text+snapshot message (camera active):', message);
     } else {
       // Standard text message when no camera
-      const message = {
+      message = {
         clientContent: {
-          turns: [{
-            role: 'user',
-            parts: [{ text: textInput.trim() }]
-          }],
-          turnComplete: true
-        }
+          turns: [
+            {
+              role: 'user',
+              parts: [{ text: textInput.trim() }],
+            },
+          ],
+          turnComplete: true,
+        },
       };
 
       console.log('📤 Sending text message (no camera):', message);
-      wsRef.current.send(JSON.stringify(message));
-      addMessage('user', textInput.trim());
-      
-      // Log text input with error handling
-      try {
-        interactionLogger.logTextInput(textInput.trim(), {
-          message_length: textInput.trim().length,
-          is_connected: isConnected,
-          camera_active: false,
-          input_type: 'client_content'
-        });
-      } catch (logError) {
-        console.warn('⚠️ Failed to log text input:', logError);
-      }
     }
-    
+
+    wsRef.current.send(JSON.stringify(message));
+    addMessage('user', textInput.trim());
+
+    // Log text input with error handling
+    try {
+      interactionLogger.logTextInput(textInput.trim(), {
+        message_length: textInput.trim().length,
+        is_connected: isConnected,
+        camera_active: isCameraOn,
+        input_type: 'client_content',
+      });
+    } catch (logError) {
+      console.warn('⚠️ Failed to log text input:', logError);
+    }
+
     setTextInput('');
-    logAnalytics('text_input', { 
+    logAnalytics('text_input', {
       message_length: textInput.trim().length,
-      camera_active: isCameraOn 
+      camera_active: isCameraOn,
     });
 
     stopCurrentOutputAudio();

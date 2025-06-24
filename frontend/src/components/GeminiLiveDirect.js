@@ -98,10 +98,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       realtimeInputConfig: {
         automaticActivityDetection: {
           disabled: false,
-          startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+          startOfSpeechSensitivity: 'START_SENSITIVITY_MEDIUM',
           endOfSpeechSensitivity: 'END_SENSITIVITY_HIGH',
-          prefixPaddingMs: 1200,
-          silenceDurationMs: 800,
+          prefixPaddingMs: 1000,
+          silenceDurationMs: 600,
         },
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',

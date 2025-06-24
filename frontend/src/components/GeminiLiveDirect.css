@@ -74,15 +74,6 @@
     }
   }
   
-  .video-section {
-    flex: 1 1 auto;        /* Allow growth */
-    max-height: none;      /* Remove fixed height constraint */
-  }
-  
-  .chat-section {
-    display: none !important; /* Ensure the element takes no space */
-  }
-  
   .bottom-controls {
     flex-shrink: 0;
   }
@@ -604,17 +595,6 @@
   
   .text-input, .voice-option-group select {
     border: 2px solid #000;
-  }
-}
-
-/* FINAL mobile overrides to ensure chat feedback window is hidden */
-@media (max-width: 768px) {
-  .chat-section {
-    display: none !important;
-  }
-  .video-section {
-    flex: 1 1 auto;
-    max-height: none !important;
   }
 }
 

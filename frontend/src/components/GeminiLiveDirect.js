@@ -787,21 +787,21 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }
   }, [addMessage]);
 
-  // Stop current playback and clear queue
+  // Stop current playback and clear queue (user interruption only)
   const stopCurrentOutputAudio = useCallback(() => {
     try {
       if (currentOutputAudioRef.current) {
         currentOutputAudioRef.current.stop(0);
         currentOutputAudioRef.current.disconnect();
         currentOutputAudioRef.current = null;
-        console.log('🛑 Current audio playback stopped');
+        console.log('🛑 Current audio playback stopped by user');
       }
       
-      // Clear queue and reset state
+      // Clear queue and reset state (user wants to interrupt)
       audioResponseQueueRef.current = [];
       isPlayingAudioRef.current = false;
       currentResponseIdRef.current = null;
-      console.log('🛑 Audio queue cleared');
+      console.log('🛑 Audio queue cleared by user interruption');
     } catch (err) {
       console.warn('⚠️ Failed to stop output audio:', err);
     }
@@ -864,12 +864,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         
         // Wait for stream to complete (500ms of no new chunks)
         audioTimeoutRef.current = setTimeout(() => {
-          // Stop current audio and queue new response
-          if (isPlayingAudioRef.current) {
-            stopCurrentOutputAudio();
-          }
-          
-          // Create new audio response and add to queue
+          // Create new audio response and add to queue (don't interrupt current playback)
           const responseId = nextResponseIdRef.current++;
           const audioResponse = {
             id: responseId,
@@ -878,15 +873,17 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           };
           
           audioResponseQueueRef.current.push(audioResponse);
-          console.log(`🎵 Queued audio response ${responseId} (${audioResponse.chunks.length} chunks)`);
+          console.log(`🎵 Queued audio response ${responseId} (${audioResponse.chunks.length} chunks) - Queue length: ${audioResponseQueueRef.current.length}`);
           
           // Clear the buffer for next response
           audioBufferRef.current = [];
           setIsReceivingAudio(false);
           
-          // Start playing if not already playing
+          // Start playing if not already playing (true queuing behavior)
           if (!isPlayingAudioRef.current) {
             playNextAudioFromQueue();
+          } else {
+            console.log(`🎵 Response ${responseId} queued, waiting for current response to finish`);
           }
           
           // Log the end of audio streaming
@@ -910,7 +907,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     } else {
       console.warn('⚠️ Invalid audio data:', { mimeType: inlineData.mimeType, hasData: !!inlineData.data });
     }
-  }, [addMessage, isReceivingAudio, playNextAudioFromQueue, stopCurrentOutputAudio]);
+  }, [addMessage, isReceivingAudio, playNextAudioFromQueue]);
 
   // Handle server content using Google's official format
   const handleServerContent = useCallback((serverContent) => {

@@ -607,7 +607,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const handleBinaryAudioData = useCallback(async (arrayBuffer) => {
     try {
       console.log('🔍 Binary data received, size:', arrayBuffer.byteLength);
-      
+
       // Check if this might not be audio data
       if (arrayBuffer.byteLength < 100) {
         console.warn('⚠️ Binary data too small to be audio, might be an error response');
@@ -622,86 +622,20 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         }
       }
 
-      // Initialize audio context for playback at 24kHz if needed
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-          sampleRate: 24000 // Google's output sample rate
-        });
+      // Convert binary PCM data to base64 and reuse the inline audio handler
+      const uint8Array = new Uint8Array(arrayBuffer);
+      let binaryString = '';
+      for (let i = 0; i < uint8Array.length; i++) {
+        binaryString += String.fromCharCode(uint8Array[i]);
       }
-      
-      const audioContext = audioContextRef.current;
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
+      const base64Audio = btoa(binaryString);
 
-      // First try to decode as standard audio format
-      try {
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice());
-        const source = audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContext.destination);
-        
-        source.onended = () => {
-          console.log('🎵 Audio playback completed');
-        };
-        
-        source.start(0);
-        addMessage('system', `🔊 Playing audio response (${audioBuffer.duration.toFixed(2)}s)`);
-        currentOutputAudioRef.current = source;
-        return;
-      } catch (decodeError) {
-        console.log('🔍 Standard audio decode failed, trying PCM format...');
-      }
-
-      // If standard decode fails, try as raw PCM (assume 24kHz, 16-bit, mono, little-endian)
-      try {
-        const sampleRate = 24000;
-        const numChannels = 1;
-        const bytesPerSample = 2;
-        const numSamples = arrayBuffer.byteLength / bytesPerSample;
-        
-        const audioBuffer = audioContext.createBuffer(numChannels, numSamples, sampleRate);
-        const channelData = audioBuffer.getChannelData(0);
-        
-        // Convert 16-bit PCM to float32 with proper endianness handling
-        const dataView = new DataView(arrayBuffer);
-        for (let i = 0; i < numSamples; i++) {
-          // Read 16-bit little-endian signed integer
-          const sample = dataView.getInt16(i * 2, true); // true = little-endian
-          channelData[i] = sample / 32768.0; // Convert to [-1, 1] range
-        }
-        
-        const source = audioContext.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(audioContext.destination);
-        
-        source.onended = () => {
-          console.log('🎵 PCM Audio playback completed');
-        };
-        
-        source.start(0);
-        addMessage('system', `🔊 Playing PCM audio response (${audioBuffer.duration.toFixed(2)}s)`);
-        currentOutputAudioRef.current = source;
-      } catch (pcmError) {
-        console.error('❌ PCM processing also failed:', pcmError);
-        console.log('🔍 Binary data info:', {
-          byteLength: arrayBuffer.byteLength,
-          firstBytes: new Uint8Array(arrayBuffer.slice(0, 16))
-        });
-        
-        // Try to decode as text to see what we actually received
-        try {
-          const text = new TextDecoder().decode(arrayBuffer);
-          addMessage('error', `Binary data decode failed. Content preview: ${text.substring(0, 100)}`);
-        } catch (textError) {
-          addMessage('error', `Audio decode failed: ${pcmError.message}. Data size: ${arrayBuffer.byteLength} bytes`);
-        }
-      }
+      await handleAudioResponse({ mimeType: 'audio/pcm;rate=24000', data: base64Audio });
     } catch (error) {
       console.error('❌ Binary audio processing failed:', error);
       addMessage('error', `Audio processing failed: ${error.message}`);
     }
-  }, [addMessage]);
+  }, [addMessage, handleAudioResponse]);
 
   // Play buffered audio chunks as a single stream
   const playBufferedAudio = useCallback(async () => {
@@ -751,6 +685,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       source.onended = () => {
         console.log('🎵 Audio playback completed');
         setIsReceivingAudio(false);
+        // Allow mic interruptions on the next playback
+        micInterruptDoneRef.current = false;
       };
       
       source.start(0);
@@ -1049,6 +985,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       const scriptProcessor = recordingAudioContext.createScriptProcessor(4096, 1, 1);
       
       scriptProcessor.onaudioprocess = (event) => {
+        if (isReceivingAudio) {
+          // Ignore mic input while Gemini audio is playing
+          return;
+        }
+
         if (isConnected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           const inputBuffer = event.inputBuffer;
           const inputData = inputBuffer.getChannelData(0); // Get mono channel
@@ -1226,6 +1167,14 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         currentOutputAudioRef.current = null;
         console.log('🛑 Output audio playback stopped due to interruption');
       }
+      // Clear any buffered audio and reset state
+      if (audioTimeoutRef.current) {
+        clearTimeout(audioTimeoutRef.current);
+        audioTimeoutRef.current = null;
+      }
+      audioBufferRef.current = [];
+      setIsReceivingAudio(false);
+      micInterruptDoneRef.current = false;
     } catch (err) {
       console.warn('⚠️ Failed to stop output audio:', err);
     }

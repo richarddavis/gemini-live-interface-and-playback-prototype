@@ -75,16 +75,12 @@
   }
   
   .video-section {
-    flex-shrink: 0;
-    max-height: 30vh; /* Limit video height on mobile */
+    flex: 1 1 auto;        /* Allow growth */
+    max-height: none;      /* Remove fixed height constraint */
   }
   
   .chat-section {
-    flex: 1; /* Take most available space */
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    min-height: 200px; /* Ensure minimum message area */
+    display: none !important; /* Ensure the element takes no space */
   }
   
   .bottom-controls {
@@ -103,9 +99,18 @@
   }
 }
 
-
-
-
+/* ==========================================================
+   Mobile overrides: hide chat feedback window & prioritise camera
+   ========================================================== */
+@media (max-width: 768px) {
+  .chat-section {
+    display: none !important;
+  }
+  .video-section {
+    flex: 1 1 auto;
+    max-height: none !important;
+  }
+}
 
 /* Video Section */
 .video-section {
@@ -599,6 +604,17 @@
   
   .text-input, .voice-option-group select {
     border: 2px solid #000;
+  }
+}
+
+/* FINAL mobile overrides to ensure chat feedback window is hidden */
+@media (max-width: 768px) {
+  .chat-section {
+    display: none !important;
+  }
+  .video-section {
+    flex: 1 1 auto;
+    max-height: none !important;
   }
 }
 

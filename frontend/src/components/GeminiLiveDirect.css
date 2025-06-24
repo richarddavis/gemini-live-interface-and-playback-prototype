@@ -101,6 +101,10 @@
     flex: 1 1 auto;
     max-height: none !important;
   }
+  /* Hide text input on mobile – voice/video only */
+  .text-input-container {
+    display: none !important;
+  }
 }
 
 /* Video Section */

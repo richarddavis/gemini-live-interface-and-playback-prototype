@@ -53,30 +53,29 @@ function App() {
   // Type-writer support for streaming
   // -------------------------------
   const charQueueRef = useRef([]);            // pending characters to render
-  const typingTimeoutRef = useRef(null);      // next setTimeout id
+  const typingRafRef = useRef(null);          // requestAnimationFrame id
 
   // Helper: type one char then schedule next
   const pumpChar = () => {
     if (charQueueRef.current.length === 0) {
-      typingTimeoutRef.current = null;
-      return;
+      typingRafRef.current = null;
+      return; // stop loop when queue empty
     }
 
     const nextChar = charQueueRef.current.shift();
     setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
 
-    // Constant 16 ms cadence (~60 fps)
-    typingTimeoutRef.current = setTimeout(pumpChar, 16);
+    typingRafRef.current = requestAnimationFrame(pumpChar);
   };
 
   const startTypingLoop = () => {
-    if (typingTimeoutRef.current) return; // already running
-    pumpChar();
+    if (typingRafRef.current) return; // already running
+    typingRafRef.current = requestAnimationFrame(pumpChar);
   };
 
   // Clean-up on unmount
   useEffect(() => () => {
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    if (typingRafRef.current) cancelAnimationFrame(typingRafRef.current);
   }, []);
 
   // 🔑 UNIFIED API KEY LOGIC
@@ -292,9 +291,10 @@ function App() {
 
           // Flush any remaining queued chars instantly so the final
           // message is complete before we mark status="complete".
-          if (typingTimeoutRef.current) {
-            clearTimeout(typingTimeoutRef.current);
-            typingTimeoutRef.current = null;
+          if (typingRafRef.current) {
+            cancelAnimationFrame(typingRafRef.current);
+            typingRafRef.current = null;
+            charQueueRef.current = [];
           }
           if (charQueueRef.current.length) {
             setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + charQueueRef.current.join('') } : null);

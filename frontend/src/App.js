@@ -57,22 +57,16 @@ function App() {
 
   // Helper: type one char then schedule next
   const pumpChar = () => {
-    // Determine how many characters to emit this frame (adaptive).
-    const queueLen = charQueueRef.current.length;
-    const batchSize = Math.min(4, Math.max(1, Math.ceil(queueLen / 80)));
-
-    let batchText = '';
-    for (let i = 0; i < batchSize && charQueueRef.current.length; i++) {
-      batchText += charQueueRef.current.shift();
+    if (charQueueRef.current.length === 0) {
+      typingTimeoutRef.current = null;
+      return;
     }
 
-    if (batchText) {
-      setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + batchText, status: 'streaming' } : null);
-    }
+    const nextChar = charQueueRef.current.shift();
+    setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
 
-    // Base delay ~16 ms (≈60 fps) with ±4 ms jitter for natural feel
-    const delay = 14 + Math.random() * 8;  // 14-22 ms
-    typingTimeoutRef.current = setTimeout(pumpChar, delay);
+    // Constant 16 ms cadence (~60 fps)
+    typingTimeoutRef.current = setTimeout(pumpChar, 16);
   };
 
   const startTypingLoop = () => {

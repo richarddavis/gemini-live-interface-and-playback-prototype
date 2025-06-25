@@ -9,4 +9,10 @@
 
 .streaming-text {
   white-space: pre-wrap; /* keep line breaks */
+  animation: fadeInText 0.08s ease-out;
+}
+
+@keyframes fadeInText {
+  from { opacity: 0.25; }
+  to   { opacity: 1; }
 }

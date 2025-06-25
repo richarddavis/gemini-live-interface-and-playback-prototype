@@ -132,9 +132,9 @@ function MessageList({ messages, isLoadingMessages, isUploadingMedia, currentBot
             )}
 
             {currentBotResponse.status === 'streaming' && (
-              // Render raw text for performance during streaming
               <p className="streaming-text">
-                {currentBotResponse.text}
+                {currentBotResponse.text.slice(0, -1)}
+                <span className="fade-char">{currentBotResponse.text.slice(-1)}</span>
                 <span className="typing-caret">▮</span>
               </p>
             )}

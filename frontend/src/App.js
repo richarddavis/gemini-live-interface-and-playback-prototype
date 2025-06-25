@@ -54,16 +54,27 @@ function App() {
   // -------------------------------
   const charQueueRef = useRef([]);            // pending characters to render
   const typingRafRef = useRef(null);          // requestAnimationFrame id
+  const lastFrameTimeRef = useRef(null);      // previous timestamp for raf
+  const CHAR_INTERVAL = 1000 / 60;            // target ~60 chars / sec (~16.67ms)
 
   // Helper: type one char then schedule next
-  const pumpChar = () => {
-    if (charQueueRef.current.length === 0) {
-      typingRafRef.current = null;
-      return; // stop loop when queue empty
+  const pumpChar = (timestamp) => {
+    if (!lastFrameTimeRef.current) lastFrameTimeRef.current = timestamp;
+    let delta = timestamp - lastFrameTimeRef.current;
+
+    // Add characters based on elapsed time
+    while (delta >= CHAR_INTERVAL && charQueueRef.current.length > 0) {
+      const nextChar = charQueueRef.current.shift();
+      setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
+      delta -= CHAR_INTERVAL;
+      lastFrameTimeRef.current += CHAR_INTERVAL;
     }
 
-    const nextChar = charQueueRef.current.shift();
-    setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
+    if (charQueueRef.current.length === 0) {
+      typingRafRef.current = null;
+      lastFrameTimeRef.current = null;
+      return;
+    }
 
     typingRafRef.current = requestAnimationFrame(pumpChar);
   };
@@ -294,6 +305,7 @@ function App() {
           if (typingRafRef.current) {
             cancelAnimationFrame(typingRafRef.current);
             typingRafRef.current = null;
+            lastFrameTimeRef.current = null;
             charQueueRef.current = [];
           }
           if (charQueueRef.current.length) {

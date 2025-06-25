@@ -1,0 +1,12 @@
+.typing-caret {
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  from, to { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+.streaming-text {
+  white-space: pre-wrap; /* keep line breaks */
+}

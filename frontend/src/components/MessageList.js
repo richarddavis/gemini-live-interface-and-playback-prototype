@@ -127,9 +127,19 @@ function MessageList({ messages, isLoadingMessages, isUploadingMedia, currentBot
       {currentBotResponse && (
         <div key={currentBotResponse.id} className={`message-item ${currentBotResponse.sender}`}>
           <div className="message-content">
-            {currentBotResponse.status === 'thinking' ? (
-              <p><strong>Bot:</strong> <em>Thinking...</em></p>
-            ) : (
+            {currentBotResponse.status === 'thinking' && (
+              <p><strong>Bot:</strong> <em>Thinking</em></p>
+            )}
+
+            {currentBotResponse.status === 'streaming' && (
+              // Render raw text for performance during streaming
+              <p className="streaming-text">
+                {currentBotResponse.text}
+                <span className="typing-caret">▮</span>
+              </p>
+            )}
+
+            {currentBotResponse.status === 'complete' && (
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex]}
@@ -138,8 +148,7 @@ function MessageList({ messages, isLoadingMessages, isUploadingMedia, currentBot
               </ReactMarkdown>
             )}
           </div>
-          {/* Show timestamp for streaming message, but not for 'thinking' status */}
-          {currentBotResponse.status === 'streaming' && (
+          {currentBotResponse.status !== 'thinking' && (
             <span className="message-timestamp">
               {new Date(currentBotResponse.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>

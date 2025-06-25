@@ -51,20 +51,38 @@ function App() {
     streamMessageToLLM
   } = useChatApi(API_URL);
 
-  // WebWorker based typewriter
-  const typewriterWorkerRef = useRef(null);
-  useEffect(() => {
-    typewriterWorkerRef.current = new TypewriterWorker();
-    typewriterWorkerRef.current.onmessage = (e) => {
-      const { type, char } = e.data;
-      if (type === 'char') {
-        setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + char, status: 'streaming' } : null);
-      }
-    };
-    return () => {
-      if (typewriterWorkerRef.current) typewriterWorkerRef.current.terminate();
-    };
-  }, []);
+  // React-side typewriter using RAF
+  const charQueueRef = useRef([]);
+  const rafIdRef = useRef(null);
+  const lastTimeRef = useRef(0);
+  const BASE_DELAY = 80; // ms target between chars
+
+  const typewriterStep = (ts) => {
+    if (!lastTimeRef.current) lastTimeRef.current = ts;
+    const delta = ts - lastTimeRef.current;
+    if (delta >= BASE_DELAY && charQueueRef.current.length) {
+      // emit exactly one char
+      const nextChar = charQueueRef.current.shift();
+      setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
+      // randomise next interval ±15 ms
+      lastTimeRef.current = ts - (delta % BASE_DELAY) + (Math.random()*30 - 15);
+    }
+
+    if (charQueueRef.current.length) {
+      rafIdRef.current = requestAnimationFrame(typewriterStep);
+    } else {
+      rafIdRef.current = null;
+      lastTimeRef.current = 0;
+    }
+  };
+
+  const enqueueChars = (text) => {
+    if (!text) return;
+    charQueueRef.current.push(...text.split(''));
+    if (!rafIdRef.current) {
+      rafIdRef.current = requestAnimationFrame(typewriterStep);
+    }
+  };
 
   // 🔑 UNIFIED API KEY LOGIC
   /**
@@ -269,15 +287,19 @@ function App() {
       {
         onChunk: (chunk) => {
           if (!chunk) return;
-          // send chunk to worker
-          typewriterWorkerRef.current?.postMessage({ type: 'add', data: chunk });
+          enqueueChars(chunk);
         },
         onComplete: async () => {
           if (streamFinalizedRef.current) return;
           streamFinalizedRef.current = true;
 
-          // flush remaining
-          typewriterWorkerRef.current?.postMessage({ type: 'flush' });
+          // flush remaining queue instantly
+          if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+          if (charQueueRef.current.length) {
+            setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + charQueueRef.current.join('') } : null);
+            charQueueRef.current = [];
+          }
 
           // Move / update the final bot message into the messages list
           setCurrentBotResponse(prevBot => {

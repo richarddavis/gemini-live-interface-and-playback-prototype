@@ -26,6 +26,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   
   // Audio buffering state
   const [isReceivingAudio, setIsReceivingAudio] = useState(false);
+  // Track model activity for UI overlay (thinking/responding/speaking)
+  const [activityStatus, setActivityStatus] = useState(null);
   const audioBufferRef = useRef([]);
   const audioTimeoutRef = useRef(null);
 
@@ -662,6 +664,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       source.onended = () => {
         console.log('🎵 Audio playback completed');
         setIsReceivingAudio(false);
+        // Clear the activity overlay once audio playback is done
+        setActivityStatus(null);
       };
       
       source.start(0);
@@ -682,6 +686,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
   // Handle audio response with improved PCM processing and buffering
   const handleAudioResponse = useCallback(async (inlineData) => {
+    // Receiving inline audio means the model is currently "speaking"
+    setActivityStatus('speaking');
     console.log('🎵 Audio chunk received:', {
       mimeType: inlineData.mimeType,
       dataLength: inlineData.data ? inlineData.data.length : 0
@@ -770,6 +776,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         if (part.text) {
           console.log('💬 Adding AI message:', part.text);
           addMessage('ai', part.text);
+          setActivityStatus('responding');
           
           // Log API text response with error handling
           try {
@@ -805,7 +812,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     // Handle turn completion
     if (serverContent.turnComplete) {
       console.log('✅ Turn completed');
-      // Optionally add a visual indicator that the AI has finished responding
+      // Reset activity status when the model finishes its turn
+      setActivityStatus(null);
     }
 
     if (serverContent.interrupted) {
@@ -893,7 +901,9 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.log('📤 Sending text message (no camera):', message);
     }
 
+    // Send to Gemini and update activity status so the UI shows immediate feedback
     wsRef.current.send(JSON.stringify(message));
+    setActivityStatus('thinking');
     addMessage('user', textInput.trim());
 
     // Log text input with error handling
@@ -1176,6 +1186,13 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
       {/* Video Section */}
       <div className="video-section">
+        {activityStatus && (
+          <div className="model-activity-overlay">
+            {activityStatus === 'thinking' && '🤖 Thinking...'}
+            {activityStatus === 'responding' && '💬 Responding...'}
+            {activityStatus === 'speaking' && '🔊 Speaking...'}
+          </div>
+        )}
         {isCameraOn && (
           <div className="video-preview">
             <video 

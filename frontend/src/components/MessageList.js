@@ -127,18 +127,22 @@ function MessageList({ messages, isLoadingMessages, isUploadingMedia, currentBot
       {currentBotResponse && (
         <div key={currentBotResponse.id} className={`message-item ${currentBotResponse.sender}`}>
           <div className="message-content">
-            {currentBotResponse.status === 'thinking' ? (
-              <p><strong>Bot:</strong> <em>Thinking...</em></p>
-            ) : (
+            {currentBotResponse.text ? (
               <ReactMarkdown 
                 remarkPlugins={[remarkGfm, remarkMath]}
                 rehypePlugins={[rehypeKatex]}
               >
                 {convertLatexBracketsToDollars(currentBotResponse.text)}
               </ReactMarkdown>
+            ) : (
+              <div className="typing-indicator">
+                <span className="typing-dot"></span>
+                <span className="typing-dot"></span>
+                <span className="typing-dot"></span>
+              </div>
             )}
           </div>
-          {/* Show timestamp for streaming message, but not for 'thinking' status */}
+          {/* Show timestamp for streaming message */}
           {currentBotResponse.status === 'streaming' && (
             <span className="message-timestamp">
               {new Date(currentBotResponse.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

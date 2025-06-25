@@ -314,6 +314,76 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }]);
   }, []);
 
+  // Mobile status overlay component
+  const MobileStatusOverlay = () => {
+    if (window.innerWidth > 768) return null; // Only show on mobile
+
+    const getStatusInfo = () => {
+      if (isConnecting) {
+        return {
+          indicator: 'connecting',
+          main: 'Connecting to Gemini...',
+          subtitle: 'Please wait'
+        };
+      }
+      
+      if (!isConnected) {
+        return {
+          indicator: 'disconnected',
+          main: 'Disconnected',
+          subtitle: 'Tap Connect to start'
+        };
+      }
+
+      if (isReceivingAudio) {
+        return {
+          indicator: 'speaking',
+          main: 'Gemini is speaking',
+          subtitle: 'Streaming audio response',
+          showAudioActivity: true
+        };
+      }
+
+      if (isMicOn) {
+        return {
+          indicator: 'connected',
+          main: 'Listening...',
+          subtitle: 'Speak now or tap to send text'
+        };
+      }
+
+      return {
+        indicator: 'connected',
+        main: 'Connected',
+        subtitle: 'Ready for voice or text input'
+      };
+    };
+
+    const status = getStatusInfo();
+    const shouldShow = isConnecting || isConnected || isReceivingAudio;
+
+    return (
+      <div className={`mobile-status-overlay ${!shouldShow ? 'hidden' : ''}`}>
+        <div className="status-main">
+          <div className={`status-indicator ${status.indicator}`}></div>
+          <span>{status.main}</span>
+          {status.showAudioActivity && (
+            <div className="audio-activity">
+              <div className="audio-bar"></div>
+              <div className="audio-bar"></div>
+              <div className="audio-bar"></div>
+              <div className="audio-bar"></div>
+              <div className="audio-bar"></div>
+            </div>
+          )}
+        </div>
+        {status.subtitle && (
+          <div className="status-subtitle">{status.subtitle}</div>
+        )}
+      </div>
+    );
+  };
+
   // Log analytics events (simplified)
   const logAnalytics = useCallback(async (event, data = {}) => {
     try {
@@ -1322,6 +1392,9 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           </div>
         </div>
       </div>
+
+      {/* Mobile status overlay */}
+      <MobileStatusOverlay />
     </div>
   );
 });

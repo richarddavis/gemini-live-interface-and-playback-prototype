@@ -233,7 +233,7 @@ function App() {
       sender: 'bot', 
       timestamp: new Date().toISOString(),
       chat_session_id: activeChatSessionId,
-      status: 'thinking'
+      status: 'streaming'
     });
 
     // Ref flag to prevent duplicate completion handling

@@ -1,10 +1,22 @@
 .typing-caret {
   animation: blink 1s step-end infinite;
+  display: inline-block;
+  will-change: transform;
+}
+
+.typing-caret.animate {
+  animation: blink 1s step-end infinite, caretNudge 0.3s ease-out;
 }
 
 @keyframes blink {
   from, to { opacity: 0; }
   50% { opacity: 1; }
+}
+
+@keyframes caretNudge {
+  0%   { transform: translateX(0); }
+  50%  { transform: translateX(1px); }
+  100% { transform: translateX(0); }
 }
 
 .streaming-text {
@@ -19,7 +31,7 @@
 
 .fade-char {
   opacity: 0;
-  animation: fadeInChar 0.25s forwards ease-out;
+  animation: fadeInChar 0.3s forwards ease-out;
 }
 
 @keyframes fadeInChar {

@@ -54,8 +54,8 @@ function App() {
   // -------------------------------
   const charQueueRef = useRef([]);            // pending characters to render
   const typingTimeoutRef = useRef(null);      // timeout id for next char
-  const MIN_DELAY = 40; // ms
-  const MAX_DELAY = 60; // ms
+  const MIN_DELAY = 80; // ms
+  const MAX_DELAY = 100; // ms
 
   // Helper: type one char then schedule next
   const pumpChar = () => {

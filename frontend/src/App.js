@@ -53,25 +53,30 @@ function App() {
   // Type-writer support for streaming
   // -------------------------------
   const charQueueRef = useRef([]);            // pending characters to render
-  const typingIntervalRef = useRef(null);     // setInterval id
+  const typingTimeoutRef = useRef(null);      // next setTimeout id
 
-  // Helper: start / continue the type-writer loop
+  // Helper: type one char then schedule next
+  const pumpChar = () => {
+    if (charQueueRef.current.length === 0) {
+      typingTimeoutRef.current = null;
+      return;
+    }
+    const nextChar = charQueueRef.current.shift();
+    setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
+
+    // Randomised delay (10-35 ms) for more natural feel
+    const delay = 10 + Math.random() * 25;
+    typingTimeoutRef.current = setTimeout(pumpChar, delay);
+  };
+
   const startTypingLoop = () => {
-    if (typingIntervalRef.current) return; // already running
-    typingIntervalRef.current = setInterval(() => {
-      if (charQueueRef.current.length === 0) {
-        clearInterval(typingIntervalRef.current);
-        typingIntervalRef.current = null;
-        return;
-      }
-      const nextChar = charQueueRef.current.shift();
-      setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
-    }, 20); // 50 fps ≈ 60 wpm type speed
+    if (typingTimeoutRef.current) return; // already running
+    pumpChar();
   };
 
   // Clean-up on unmount
   useEffect(() => () => {
-    if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
   }, []);
 
   // 🔑 UNIFIED API KEY LOGIC
@@ -287,9 +292,9 @@ function App() {
 
           // Flush any remaining queued chars instantly so the final
           // message is complete before we mark status="complete".
-          if (typingIntervalRef.current) {
-            clearInterval(typingIntervalRef.current);
-            typingIntervalRef.current = null;
+          if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+            typingTimeoutRef.current = null;
           }
           if (charQueueRef.current.length) {
             setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + charQueueRef.current.join('') } : null);

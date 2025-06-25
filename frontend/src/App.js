@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+// @ts-ignore - webpack will inline worker
+import TypewriterWorker from 'worker-loader!./workers/typewriterWorker.js';
 import './App.css';
 import MessageList from './components/MessageList';
 import MessageInput from './components/MessageInput';
@@ -49,37 +51,19 @@ function App() {
     streamMessageToLLM
   } = useChatApi(API_URL);
 
-  // -------------------------------
-  // Type-writer support for streaming
-  // -------------------------------
-  const charQueueRef = useRef([]);            // pending characters to render
-  const typingTimeoutRef = useRef(null);      // timeout id for next char
-  const MIN_DELAY = 80; // ms
-  const MAX_DELAY = 100; // ms
-
-  // Helper: type one char then schedule next
-  const pumpChar = () => {
-    if (charQueueRef.current.length === 0) {
-      typingTimeoutRef.current = null;
-      return;
-    }
-
-    const nextChar = charQueueRef.current.shift();
-    setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + nextChar, status: 'streaming' } : null);
-
-    const delay = MIN_DELAY + Math.random() * (MAX_DELAY - MIN_DELAY);
-    typingTimeoutRef.current = setTimeout(pumpChar, delay);
-  };
-
-  const startTypingLoop = () => {
-    if (typingTimeoutRef.current) return; // already running
-    pumpChar();
-  };
-
-  // Clean-up on unmount
-  useEffect(() => () => {
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = null;
+  // WebWorker based typewriter
+  const typewriterWorkerRef = useRef(null);
+  useEffect(() => {
+    typewriterWorkerRef.current = new TypewriterWorker();
+    typewriterWorkerRef.current.onmessage = (e) => {
+      const { type, char } = e.data;
+      if (type === 'char') {
+        setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + char, status: 'streaming' } : null);
+      }
+    };
+    return () => {
+      if (typewriterWorkerRef.current) typewriterWorkerRef.current.terminate();
+    };
   }, []);
 
   // 🔑 UNIFIED API KEY LOGIC
@@ -285,25 +269,15 @@ function App() {
       {
         onChunk: (chunk) => {
           if (!chunk) return;
-          // Push characters into queue for smooth typing effect
-          charQueueRef.current.push(...chunk.split(''));
-          startTypingLoop();
+          // send chunk to worker
+          typewriterWorkerRef.current?.postMessage({ type: 'add', data: chunk });
         },
         onComplete: async () => {
           if (streamFinalizedRef.current) return;
           streamFinalizedRef.current = true;
 
-          // Flush any remaining queued chars instantly so the final
-          // message is complete before we mark status="complete".
-          if (typingTimeoutRef.current) {
-            clearTimeout(typingTimeoutRef.current);
-            typingTimeoutRef.current = null;
-            charQueueRef.current = [];
-          }
-          if (charQueueRef.current.length) {
-            setCurrentBotResponse(prev => prev ? { ...prev, text: prev.text + charQueueRef.current.join('') } : null);
-            charQueueRef.current = [];
-          }
+          // flush remaining
+          typewriterWorkerRef.current?.postMessage({ type: 'flush' });
 
           // Move / update the final bot message into the messages list
           setCurrentBotResponse(prevBot => {

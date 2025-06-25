@@ -135,7 +135,7 @@ function MessageList({ messages, isLoadingMessages, isUploadingMedia, currentBot
               <p className="streaming-text">
                 {currentBotResponse.text.slice(0, -1)}
                 <span className="fade-char">{currentBotResponse.text.slice(-1)}</span>
-                <span className="typing-caret">▮</span>
+                <span key={currentBotResponse.text.length} className="typing-caret animate">▮</span>
               </p>
             )}
 

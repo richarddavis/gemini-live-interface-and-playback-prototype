@@ -48,6 +48,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Backend base URL for auxiliary endpoints (token provisioning, analytics, etc.)
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
 
+  const LIVE_MODEL = process.env.REACT_APP_GEMINI_LIVE_MODEL || 'models/gemini-live-2.5-flash-preview';
+
   // Helper: fetch an ephemeral token from backend and build WS url
   const fetchWsUrlWithToken = async () => {
     try {
@@ -73,7 +75,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Helper to build the Live-API setup message using camelCase keys and stable model
   const buildSetupMessage = () => ({
     setup: {
-      model: 'models/gemini-2.0-flash-live-001',
+      model: LIVE_MODEL,
       generationConfig: {
         responseModalities: [responseMode],
         speechConfig:
@@ -106,6 +108,9 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',
       },
+      // Enable real-time transcription for both user input and model output
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
     },
   });
 

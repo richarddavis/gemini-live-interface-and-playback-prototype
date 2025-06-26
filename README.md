@@ -152,3 +152,44 @@ cd ../frontend && npm test
 ## License
 
 MIT
+
+## New in 2025 — Real-time Audio Transcription 🎙️
+The Live chat modal now supports **bidirectional speech-to-text** using Gemini's 2.5 Flash Live models.
+
+### How it works
+1. When a live session starts the frontend includes `inputAudioTranscription` and `outputAudioTranscription` keys in the WebSocket *setup* message.
+2. The Gemini server streams back `inputTranscription` and `outputTranscription` events.  These appear inline in the chat as grey subtitle bubbles.
+3. No server resources are required—transcription is handled entirely by Gemini.
+
+### Selecting the Live model
+The default Live model is **`models/gemini-live-2.5-flash-preview`** (half-cascade audio, supports transcription).  You can override it for testing:
+
+```ini
+# .secrets or .env
+REACT_APP_GEMINI_LIVE_MODEL=models/gemini-live-2.5-flash-preview-native-audio-dialog  # native audio
+```
+
+### Quick test (Docker)
+```bash
+# Development profile
+./scripts/start-app.sh dev
+
+# In the UI click **Start Live** > speak – subtitles should appear in real-time.
+```
+
+The feature works in **all Compose profiles** (`dev`, `proxy`, `ngrok`) because it's purely frontend-side.
+
+### Unit test
+A Jest test verifies that enabling transcription adds the required fields to the setup message:
+
+```js
+import { buildSetupMessage } from 'components/GeminiLiveDirect';
+
+test('setup includes transcription keys', () => {
+  const msg = buildSetupMessage();
+  expect(msg.setup.inputAudioTranscription).toEqual({});
+  expect(msg.setup.outputAudioTranscription).toEqual({});
+});
+```
+
+Run with `npm test -- -t transcription` inside `frontend/`.

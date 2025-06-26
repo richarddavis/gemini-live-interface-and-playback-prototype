@@ -8,7 +8,8 @@ alembic==1.12.0
 
 # For logging and basic analytics
 requests==2.31.0
-psycopg2-binary==2.9.7
+# Using psycopg3 binary wheels for cp313; psycopg2 has no wheel yet
+# psycopg2-binary==2.9.7
 
 # LLM Providers (for traditional chat)
 openai>=1.0.0

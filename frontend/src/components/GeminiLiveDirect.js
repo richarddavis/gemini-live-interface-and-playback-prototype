@@ -73,7 +73,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Helper to build the Live-API setup message using camelCase keys and stable model
   const buildSetupMessage = () => ({
     setup: {
-      model: 'models/gemini-2.0-flash-live-001',
+      model: 'models/gemini-live-2.5-flash-preview',
       generationConfig: {
         responseModalities: [responseMode],
         speechConfig:
@@ -86,7 +86,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 },
               }
             : undefined,
+        // speechConfig ends here
       },
+      // Enable automatic transcription for both user input audio and model output audio
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
       systemInstruction: {
         parts: [
           {
@@ -524,8 +528,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 } else if (message.usageMetadata) {
                   console.log('📊 Usage metadata:', message.usageMetadata);
                 } else if (message.inputTranscription) {
+                  console.log('📝 Input transcription:', message.inputTranscription);
                   addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
                 } else if (message.outputTranscription) {
+                  console.log('🗣️ Output transcription:', message.outputTranscription);
                   addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
                 } else if (message.goAway) {
                   console.warn('⚠️ Server sent goAway – connection will close soon.');
@@ -568,6 +574,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             } else if (message.error) {
               console.error('❌ Server error:', message.error);
               addMessage('error', `Server error: ${message.error.message || 'Unknown error'}`);
+            } else if (message.inputTranscription) {
+              console.log('📝 Input transcription:', message.inputTranscription);
+              addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
+            } else if (message.outputTranscription) {
+              console.log('🗣️ Output transcription:', message.outputTranscription);
+              addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
             }
           } else {
             console.warn('⚠️ Unknown message type:', typeof event.data);

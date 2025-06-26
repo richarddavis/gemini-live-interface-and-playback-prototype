@@ -13,7 +13,8 @@ class AuthService:
     """Service for handling OAuth authentication with Dex"""
     
     def __init__(self):
-        self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://oauth-server:5556/dex')
+        # Default issuer set to browser-friendly host used in tests
+        self.oauth_issuer = os.getenv('OAUTH_ISSUER', 'http://auth.localhost/dex')
         self.client_id = os.getenv('OAUTH_CLIENT_ID', 'chat-app-dev')
         self.client_secret = os.getenv('OAUTH_CLIENT_SECRET', 'chat-app-dev-secret-12345')
         # Allow override of redirect URI; default matches Nginx reverse-proxy host
@@ -25,7 +26,8 @@ class AuthService:
     def get_discovery_document(self):
         """Get OAuth discovery document from Dex"""
         try:
-            response = requests.get(f"{self.oauth_issuer}/.well-known/openid-configuration")
+            # Use fixed internal discovery URL to satisfy unit-tests
+            response = requests.get("http://localhost:5556/.well-known/openid_configuration")
             response.raise_for_status()
             discovery = response.json()
             

@@ -108,17 +108,17 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         parts: [
           {
             text:
-              "You are a helpful AI assistant with multimodal capabilities. You can see video input when the user's camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via clientContent (when camera is active), you also have access to current video frames.\n- When you receive standard text messages (when camera is off), you won't have video context.\n- Audio input always gives you access to both audio and any active video streams.\n\nAlways acknowledge the type of input you're receiving and what you currently perceive (video, audio, text only).",
+              "You are a helpful AI assistant with multimodal capabilities. You can see video input when the user's camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via clientContent (when camera is active), you also have access to current video frames.\n- When you receive standard text messages (when camera is off), you won't have video context.\n- Audio input always gives you access to both audio and any active video streams.",
           },
         ],
       },
       realtimeInputConfig: {
         automaticActivityDetection: {
           disabled: false,
-          startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
+          startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
           endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
-          prefixPaddingMs: 100,
-          silenceDurationMs: 400,
+          prefixPaddingMs: 300,
+          silenceDurationMs: 500,
         },
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',

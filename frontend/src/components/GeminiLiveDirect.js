@@ -51,6 +51,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // New state for activity status
   const [activityStatus, setActivityStatus] = useState(null); // null | "thinking" | "receiving" | "responding"
 
+  // New: optional "noisy background" mode disables VAD.
+  // When enabled we send explicit activityStart / activityEnd messages
+  // and build the setup message with automaticActivityDetection.disabled = true.
+  const [noisyBackgroundMode, setNoisyBackgroundMode] = useState(false);
+
   // Helper to stop current output audio playback – declared early to ensure availability
   const stopCurrentOutputAudio = useCallback(() => {
     try {
@@ -88,45 +93,52 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   };
 
   // Helper to build the Live-API setup message using camelCase keys and stable model
-  const buildSetupMessage = () => ({
-    setup: {
-      model: 'models/gemini-live-2.5-flash-preview',
-      generationConfig: {
-        responseModalities: [responseMode],
-        speechConfig:
-          responseMode === 'AUDIO'
-            ? {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName: selectedVoice,
-                  },
-                },
-              }
-            : undefined,
-      },
-      systemInstruction: {
-        parts: [
-          {
-            text:
-              "You are a helpful AI assistant with multimodal capabilities. You can see video input when the user's camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via clientContent (when camera is active), you also have access to current video frames.\n- When you receive standard text messages (when camera is off), you won't have video context.\n- Audio input always gives you access to both audio and any active video streams.",
-          },
-        ],
-      },
-      realtimeInputConfig: {
-        automaticActivityDetection: {
+  const buildSetupMessage = () => {
+    // Configure VAD based on noisyBackgroundMode flag
+    const automaticActivityDetection = noisyBackgroundMode
+      ? { disabled: true }
+      : {
           disabled: false,
           startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
           endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
           prefixPaddingMs: 300,
           silenceDurationMs: 500,
+        };
+
+    return {
+      setup: {
+        model: 'models/gemini-live-2.5-flash-preview',
+        generationConfig: {
+          responseModalities: [responseMode],
+          speechConfig:
+            responseMode === 'AUDIO'
+              ? {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: selectedVoice,
+                    },
+                  },
+                }
+              : undefined,
         },
-        activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
-        turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',
+        systemInstruction: {
+          parts: [
+            {
+              text:
+                "You are a helpful AI assistant with multimodal capabilities. You can see video input when the user's camera is active, hear audio when their microphone is active, and respond with voice or text.\n\nImportant context about input types:\n- When you receive text via clientContent (when camera is active), you also have access to current video frames.\n- When you receive standard text messages (when camera is off), you won't have video context.\n- Audio input always gives you access to both audio and any active video streams.",
+            },
+          ],
+        },
+        realtimeInputConfig: {
+          automaticActivityDetection,
+          activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
+          turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',
+        },
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
       },
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
-    },
-  });
+    };
+  };
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = useCallback(() => {
@@ -981,7 +993,13 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         mediaStreamRef.current = stream;
         setIsMicOn(true);
         addMessage('system', '🎤 Microphone access granted');
-        
+
+        // If VAD is disabled we must explicitly indicate the start of activity
+        if (noisyBackgroundMode && isConnected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ realtimeInput: { activityStart: {} } }));
+          console.log('📤 Sent activityStart (manual VAD mode)');
+        }
+
         if (isConnected && wsRef.current) {
           // Pass true explicitly since setIsMicOn(true) hasn't updated state yet
           startAudioRecording(stream, true);
@@ -1005,12 +1023,18 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         setIsMicOn(false);
         addMessage('system', '🎤 Microphone turned off');
         micInterruptDoneRef.current = false;
+
+        // If VAD is disabled we must explicitly indicate the end of activity
+        if (noisyBackgroundMode && isConnected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ realtimeInput: { activityEnd: {} } }));
+          console.log('📤 Sent activityEnd (manual VAD mode)');
+        }
       }
     } catch (error) {
       console.error('Microphone error:', error);
       addMessage('error', `Microphone error: ${error.message}`);
     }
-  }, [isMicOn, isConnected, addMessage]);
+  }, [isMicOn, isConnected, addMessage, noisyBackgroundMode]);
 
   // Start audio recording (proper PCM conversion for Google Live API)
   const startAudioRecording = useCallback((stream, microphoneState = null) => {
@@ -1357,6 +1381,15 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                   <option value="TEXT">Text</option>
                   <option value="AUDIO">Audio</option>
                 </select>
+              </div>
+              <div className="voice-option-group">
+                <label>Noisy BG (disable VAD):</label>
+                <input
+                  type="checkbox"
+                  checked={noisyBackgroundMode}
+                  onChange={(e) => setNoisyBackgroundMode(e.target.checked)}
+                  disabled={isConnected}
+                />
               </div>
             </div>
           </div>

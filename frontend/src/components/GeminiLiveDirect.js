@@ -73,7 +73,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Helper to build the Live-API setup message using camelCase keys and stable model
   const buildSetupMessage = () => ({
     setup: {
-      model: 'models/gemini-2.0-flash-live-001',
+      model: 'models/gemini-live-2.5-flash-preview',
       generationConfig: {
         responseModalities: [responseMode],
         speechConfig:
@@ -106,6 +106,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',
       },
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
     },
   });
 
@@ -208,11 +210,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       // Send frame to Gemini Live API
       const videoMessage = {
         realtimeInput: {
-          mediaChunks: [{
+          video: {
             mimeType: 'image/jpeg',
-            data: base64Data
-          }]
-        }
+            data: base64Data,
+          },
+        },
       };
       
       wsRef.current.send(JSON.stringify(videoMessage));
@@ -1010,11 +1012,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           
           const audioMessage = {
             realtimeInput: {
-              mediaChunks: [{
-                mimeType: `audio/pcm;rate=${sampleRate}`, // Include sample rate in MIME type
-                data: base64Audio
-              }]
-            }
+              audio: {
+                mimeType: `audio/pcm;rate=${sampleRate}`,
+                data: base64Audio,
+              },
+            },
           };
           
           // Log audio chunk with error handling

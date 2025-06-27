@@ -73,7 +73,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Helper to build the Live-API setup message using camelCase keys and stable model
   const buildSetupMessage = () => ({
     setup: {
-      model: 'models/gemini-2.0-flash-live-001',
+      model: 'models/gemini-live-2.5-flash-preview',
       generationConfig: {
         responseModalities: [responseMode],
         speechConfig:
@@ -106,6 +106,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',
       },
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
     },
   });
 
@@ -208,11 +210,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       // Send frame to Gemini Live API
       const videoMessage = {
         realtimeInput: {
-          mediaChunks: [{
+          video: {
             mimeType: 'image/jpeg',
-            data: base64Data
-          }]
-        }
+            data: base64Data,
+          },
+        },
       };
       
       wsRef.current.send(JSON.stringify(videoMessage));
@@ -524,8 +526,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 } else if (message.usageMetadata) {
                   console.log('📊 Usage metadata:', message.usageMetadata);
                 } else if (message.inputTranscription) {
+                  console.debug('👂 Input transcription:', message.inputTranscription.text);
                   addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
                 } else if (message.outputTranscription) {
+                  console.debug('🗣️ Output transcription:', message.outputTranscription.text);
                   addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
                 } else if (message.goAway) {
                   console.warn('⚠️ Server sent goAway – connection will close soon.');
@@ -568,6 +572,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             } else if (message.error) {
               console.error('❌ Server error:', message.error);
               addMessage('error', `Server error: ${message.error.message || 'Unknown error'}`);
+            } else if (message.inputTranscription) {
+              console.debug('👂 Input transcription:', message.inputTranscription.text);
+              addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
+            } else if (message.outputTranscription) {
+              console.debug('🗣️ Output transcription:', message.outputTranscription.text);
+              addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
             }
           } else {
             console.warn('⚠️ Unknown message type:', typeof event.data);
@@ -765,6 +775,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const handleServerContent = useCallback((serverContent) => {
     console.log('🔍 Processing server content parts:', serverContent.modelTurn?.parts?.length || 0);
     
+    if (serverContent.inputTranscription) {
+      console.debug('👂 Input transcription (serverContent):', serverContent.inputTranscription.text);
+      addMessage('transcription', `📝 You said: ${serverContent.inputTranscription.text || '[unknown]'}`);
+    }
+
+    if (serverContent.outputTranscription) {
+      console.debug('🗣️ Output transcription (serverContent):', serverContent.outputTranscription.text);
+      addMessage('transcription', `🗣️ Model said: ${serverContent.outputTranscription.text || '[unknown]'}`);
+    }
+
     if (serverContent.modelTurn && serverContent.modelTurn.parts) {
       for (const part of serverContent.modelTurn.parts) {
         if (part.text) {
@@ -1010,11 +1030,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           
           const audioMessage = {
             realtimeInput: {
-              mediaChunks: [{
-                mimeType: `audio/pcm;rate=${sampleRate}`, // Include sample rate in MIME type
-                data: base64Audio
-              }]
-            }
+              audio: {
+                mimeType: `audio/pcm;rate=${sampleRate}`,
+                data: base64Audio,
+              },
+            },
           };
           
           // Log audio chunk with error handling

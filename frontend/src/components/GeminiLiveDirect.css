@@ -602,5 +602,21 @@
   }
 }
 
+/* Video activity overlay */
+.video-activity-overlay {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+}
+
 
 

@@ -775,6 +775,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const handleServerContent = useCallback((serverContent) => {
     console.log('🔍 Processing server content parts:', serverContent.modelTurn?.parts?.length || 0);
     
+    if (serverContent.inputTranscription) {
+      console.debug('👂 Input transcription (serverContent):', serverContent.inputTranscription.text);
+      addMessage('transcription', `📝 You said: ${serverContent.inputTranscription.text || '[unknown]'}`);
+    }
+
+    if (serverContent.outputTranscription) {
+      console.debug('🗣️ Output transcription (serverContent):', serverContent.outputTranscription.text);
+      addMessage('transcription', `🗣️ Model said: ${serverContent.outputTranscription.text || '[unknown]'}`);
+    }
+
     if (serverContent.modelTurn && serverContent.modelTurn.parts) {
       for (const part of serverContent.modelTurn.parts) {
         if (part.text) {

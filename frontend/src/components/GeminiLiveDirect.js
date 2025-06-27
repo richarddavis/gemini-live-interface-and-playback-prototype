@@ -526,8 +526,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 } else if (message.usageMetadata) {
                   console.log('📊 Usage metadata:', message.usageMetadata);
                 } else if (message.inputTranscription) {
+                  console.debug('👂 Input transcription:', message.inputTranscription.text);
                   addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
                 } else if (message.outputTranscription) {
+                  console.debug('🗣️ Output transcription:', message.outputTranscription.text);
                   addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
                 } else if (message.goAway) {
                   console.warn('⚠️ Server sent goAway – connection will close soon.');
@@ -570,6 +572,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             } else if (message.error) {
               console.error('❌ Server error:', message.error);
               addMessage('error', `Server error: ${message.error.message || 'Unknown error'}`);
+            } else if (message.inputTranscription) {
+              console.debug('👂 Input transcription:', message.inputTranscription.text);
+              addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
+            } else if (message.outputTranscription) {
+              console.debug('🗣️ Output transcription:', message.outputTranscription.text);
+              addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
             }
           } else {
             console.warn('⚠️ Unknown message type:', typeof event.data);

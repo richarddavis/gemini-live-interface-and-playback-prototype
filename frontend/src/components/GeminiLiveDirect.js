@@ -48,6 +48,23 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Backend base URL for auxiliary endpoints (token provisioning, analytics, etc.)
   const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
 
+  // New state for activity status
+  const [activityStatus, setActivityStatus] = useState(null); // null | "thinking" | "receiving" | "responding"
+
+  // Helper to stop current output audio playback – declared early to ensure availability
+  const stopCurrentOutputAudio = useCallback(() => {
+    try {
+      if (currentOutputAudioRef.current) {
+        currentOutputAudioRef.current.stop(0);
+        currentOutputAudioRef.current.disconnect();
+        currentOutputAudioRef.current = null;
+        console.log('🛑 Output audio playback stopped due to interruption');
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to stop output audio:', err);
+    }
+  }, []);
+
   // Helper: fetch an ephemeral token from backend and build WS url
   const fetchWsUrlWithToken = async () => {
     try {
@@ -528,6 +545,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                 } else if (message.inputTranscription) {
                   console.debug('👂 Input transcription:', message.inputTranscription.text);
                   addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
+                  setActivityStatus('thinking');
                 } else if (message.outputTranscription) {
                   console.debug('🗣️ Output transcription:', message.outputTranscription.text);
                   addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
@@ -575,6 +593,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             } else if (message.inputTranscription) {
               console.debug('👂 Input transcription:', message.inputTranscription.text);
               addMessage('transcription', `📝 You said: ${message.inputTranscription.text || '[unknown]'}`);
+              setActivityStatus('thinking');
             } else if (message.outputTranscription) {
               console.debug('🗣️ Output transcription:', message.outputTranscription.text);
               addMessage('transcription', `🗣️ Model said: ${message.outputTranscription.text || '[unknown]'}`);
@@ -672,8 +691,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       source.onended = () => {
         console.log('🎵 Audio playback completed');
         setIsReceivingAudio(false);
+        setActivityStatus(null);
       };
       
+      // Indicate that we are now responding (playback about to start)
+      setActivityStatus('responding');
       source.start(0);
       
       addMessage('system', `🔊 Playing audio response (${audioBuffer.duration.toFixed(2)}s, ${audioBufferRef.current.length} chunks)`);
@@ -688,7 +710,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       setIsReceivingAudio(false);
       audioBufferRef.current = [];
     }
-  }, [addMessage]);
+  }, [addMessage, setActivityStatus]);
 
   // Handle audio response with improved PCM processing and buffering
   const handleAudioResponse = useCallback(async (inlineData) => {
@@ -727,6 +749,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         if (!isReceivingAudio) {
           setIsReceivingAudio(true);
           addMessage('system', '🎵 Receiving audio stream...');
+          setActivityStatus('receiving');
           
           // Log the start of audio streaming
           try {
@@ -769,7 +792,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     } else {
       console.warn('⚠️ Invalid audio data:', { mimeType: inlineData.mimeType, hasData: !!inlineData.data });
     }
-  }, [addMessage, isReceivingAudio, playBufferedAudio]);
+  }, [addMessage, isReceivingAudio, playBufferedAudio, setActivityStatus]);
 
   // Handle server content using Google's official format
   const handleServerContent = useCallback((serverContent) => {
@@ -778,6 +801,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     if (serverContent.inputTranscription) {
       console.debug('👂 Input transcription (serverContent):', serverContent.inputTranscription.text);
       addMessage('transcription', `📝 You said: ${serverContent.inputTranscription.text || '[unknown]'}`);
+      setActivityStatus('thinking');
     }
 
     if (serverContent.outputTranscription) {
@@ -832,7 +856,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.log('⏹️ Server signalled interruption');
       stopCurrentOutputAudio();
     }
-  }, [addMessage, handleAudioResponse]);
+  }, [addMessage, handleAudioResponse, setActivityStatus]);
 
   // Handle tool calls (placeholder)
   const handleToolCall = useCallback((toolCall) => {
@@ -1173,20 +1197,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }
   }, [isConnected, messages.length, onExitLiveMode, disconnect]);
 
-  // Helper to stop current playback
-  const stopCurrentOutputAudio = useCallback(() => {
-    try {
-      if (currentOutputAudioRef.current) {
-        currentOutputAudioRef.current.stop(0);
-        currentOutputAudioRef.current.disconnect();
-        currentOutputAudioRef.current = null;
-        console.log('🛑 Output audio playback stopped due to interruption');
-      }
-    } catch (err) {
-      console.warn('⚠️ Failed to stop output audio:', err);
-    }
-  }, []);
-
   useImperativeHandle(ref, () => ({
     triggerDisconnect: disconnect
   }));
@@ -1207,6 +1217,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             >
               Your browser does not support the video element.
             </video>
+            {/* Activity overlay */}
+            {activityStatus && (
+              <div className={"video-activity-overlay " + activityStatus}>
+                {activityStatus === 'thinking'
+                  ? 'Thinking...'
+                  : activityStatus === 'receiving'
+                    ? 'Receiving audio response...'
+                    : 'Responding...'}
+              </div>
+            )}
             {!videoRef.current?.srcObject && (
               <div style={{
                 position: 'absolute',
@@ -1348,4 +1368,4 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
 GeminiLiveDirect.displayName = 'GeminiLiveDirect';
 
-export default GeminiLiveDirect; 
+export default GeminiLiveDirect;

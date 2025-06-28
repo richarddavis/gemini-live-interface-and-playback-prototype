@@ -1,4 +1,4 @@
-from google import genai
+from google import genai  # type: ignore
 import os
 import requests
 from io import BytesIO

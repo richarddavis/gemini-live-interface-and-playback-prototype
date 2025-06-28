@@ -12,7 +12,15 @@ import os
 import requests
 from io import BytesIO
 from .base import LLMProvider
-from flask import current_app, Flask  # noqa: F401
+# Safe Flask import with helpful error message for environments where Flask
+# isn't installed (e.g. some CI/static-analysis images).
+try:
+    from flask import current_app, Flask  # type: ignore  # noqa: F401
+except ImportError as exc:  # pragma: no cover
+    raise ImportError(
+        "Flask is required by GeminiProvider for logging. Install it via "
+        "`pip install Flask`."
+    ) from exc
 import logging as _logging
 from typing import TYPE_CHECKING
 

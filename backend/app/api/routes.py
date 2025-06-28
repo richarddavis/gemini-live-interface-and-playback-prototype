@@ -1,4 +1,41 @@
-from flask import Flask, jsonify, request, Response, stream_with_context, current_app  # noqa: F401
+# ---------------------------------------------------------------------------
+# Runtime-safe imports with user-friendly error messages.  The try/except
+# blocks ensure that if a developer spins up the environment without the
+# required dependencies installed, they receive a clear hint instead of a
+# cryptic stack-trace.
+# ---------------------------------------------------------------------------
+
+from typing import TYPE_CHECKING
+
+try:
+    # Flask runtime essentials
+    from flask import (  # type: ignore
+        Flask,  # noqa: F401 (imported for typing/IDE support)
+        jsonify,
+        request,
+        Response,
+        stream_with_context,
+        current_app,
+    )
+except ImportError as exc:  # pragma: no cover
+    raise ImportError(
+        "Flask is not installed. Install it with `pip install Flask` to run the "
+        "backend API server."
+    ) from exc
+
+try:
+    # SQLAlchemy helpers used in this module
+    from sqlalchemy import func  # type: ignore
+    from sqlalchemy.orm import selectinload  # type: ignore
+
+    if TYPE_CHECKING:  # pragma: no cover
+        from sqlalchemy.orm import Session  # type: ignore # for static analyzers only
+except ImportError as exc:  # pragma: no cover
+    raise ImportError(
+        "SQLAlchemy is not installed. Install it with `pip install SQLAlchemy` to "
+        "run the backend API server."
+    ) from exc
+
 from . import api
 from .. import db
 from ..models import ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
@@ -9,12 +46,10 @@ import os
 import base64
 import hashlib
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func
 from io import BytesIO
 import requests
 from ..api.auth_routes import require_auth
 from ..services.auth_service import auth_service
-from sqlalchemy.orm import selectinload, declarative_base, Session  # noqa: F401
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):

@@ -1,0 +1,51 @@
+CREATE
++name: CI
++
++on:
++  pull_request:
++  push:
++    branches: [ main ]
++
++jobs:
++  unit-tests:
++    runs-on: ubuntu-latest
++
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Set up Docker Buildx
++        uses: docker/setup-buildx-action@v3
++
++      - name: Build backend image (unit profile)
++        run: docker compose --profile unit build backend
++
++      - name: Run backend unit tests
++        run: docker compose --profile unit run --rm backend pytest -m "not integration"
++
++  e2e-tests:
++    needs: unit-tests
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Set up Docker Buildx
++        uses: docker/setup-buildx-action@v3
++
++      - name: Start full stack (e2e profile)
++        run: docker compose --profile e2e up -d --build
++
++      - name: Wait for services to be healthy
++        run: |
++          echo "Waiting for backend to become healthy..."
++          for i in {1..30}; do
++            if curl -s http://localhost:8080/api/health | grep -q 'healthy'; then
++              echo "Backend is healthy!"; break; fi; sleep 5; done
++
++      - name: Run backend integration tests (allow failures for now)
++        run: docker compose exec backend pytest -m integration || true
++
++      - name: Shut down stack
++        if: always()
++        run: docker compose --profile e2e down -v

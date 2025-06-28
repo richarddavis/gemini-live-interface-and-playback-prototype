@@ -1,7 +1,7 @@
 services:
   nginx:
     image: nginx:1.25-alpine
-    profiles: ["proxy"]
+    profiles: ["proxy", "e2e"]
     ports:
       - "80:80"
     volumes:
@@ -24,7 +24,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-    profiles: ["dev", "proxy"]
+    profiles: ["dev", "proxy", "e2e"]
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -45,7 +45,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:5000"
-    profiles: ["dev", "proxy"]
+    profiles: ["dev", "proxy", "unit", "e2e"]
     volumes:
       - ./backend:/app
       - ./.gcp-key.json:/app/gcp-key.json:ro
@@ -74,7 +74,7 @@ services:
     image: postgres:15
     ports:
       - "5432:5432"
-    profiles: ["dev", "proxy"]
+    profiles: ["dev", "proxy", "e2e"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -94,7 +94,7 @@ services:
       - "5556"
     ports:
       - "5556:5556"  # Expose for dev profile
-    profiles: ["dev", "proxy"]
+    profiles: ["dev", "proxy", "e2e"]
     volumes:
       - ./auth-config/dex-config.dev.yml:/etc/dex/config.dev.yaml:ro
     env_file:

@@ -6,7 +6,6 @@ from app.llm_providers import OpenAIProvider, GeminiProvider
 from app.services.storage import GCSStorageService
 import json
 import os
-from werkzeug.utils import secure_filename
 import base64
 import hashlib
 from datetime import datetime, timedelta, timezone

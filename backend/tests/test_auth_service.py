@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from app import create_app, db
 from app.models import User, OAuthAccount
 from app.services.auth_service import AuthService
+import pytest
 
+pytestmark = pytest.mark.integration
 
 class TestAuthService(unittest.TestCase):
     """Test suite for AuthService"""

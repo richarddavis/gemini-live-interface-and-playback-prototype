@@ -27,7 +27,6 @@ class User(db.Model):
     # Relationships
     oauth_accounts = db.relationship('OAuthAccount', backref='user', lazy=True, cascade='all, delete-orphan')
     chat_sessions = db.relationship('ChatSession', backref='user', lazy=True, cascade='all, delete-orphan')
-    tasks = db.relationship('Task', backref='user', lazy=True, cascade='all, delete-orphan')
     interaction_logs = db.relationship('InteractionLog', backref='user', lazy=True, cascade='all, delete-orphan')
     interaction_session_summaries = db.relationship('InteractionSessionSummary', backref='user', lazy=True, cascade='all, delete-orphan')
     
@@ -118,28 +117,6 @@ class ChatSession(db.Model):
             'name': self.name or f"Chat {self.id}", # Default name if not set
             'created_at': self.created_at.isoformat(),
             'provider': self.provider,
-            'user_id': self.user_id
-        }
-
-class Task(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(100), nullable=False)
-    description = db.Column(db.Text, nullable=True)
-    completed = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Link to user
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'title': self.title,
-            'description': self.description,
-            'completed': self.completed,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
             'user_id': self.user_id
         }
 

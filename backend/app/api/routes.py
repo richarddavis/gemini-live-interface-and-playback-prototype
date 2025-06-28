@@ -1,7 +1,7 @@
 from flask import jsonify, request, Response, stream_with_context, current_app
 from . import api
 from .. import db
-from ..models import Task, ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
+from ..models import ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
 from app.llm_providers import OpenAIProvider, GeminiProvider
 from app.services.storage import GCSStorageService
 import json
@@ -27,60 +27,6 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "timestamp": datetime.utcnow().isoformat()}), 200
 
-@api.route('/tasks', methods=['GET'])
-def get_tasks():
-    tasks = Task.query.all()
-    return jsonify([task.to_dict() for task in tasks]), 200
-
-@api.route('/tasks/<int:task_id>', methods=['GET'])
-def get_task(task_id):
-    task = Task.query.get_or_404(task_id)
-    return jsonify(task.to_dict()), 200
-
-@api.route('/tasks', methods=['POST'])
-def create_task():
-    data = request.get_json()
-    
-    if not data or not data.get('title'):
-        return jsonify({"error": "Title is required"}), 400
-    
-    task = Task(
-        title=data.get('title'),
-        description=data.get('description', ''),
-        completed=data.get('completed', False)
-    )
-    
-    db.session.add(task)
-    db.session.commit()
-    
-    return jsonify(task.to_dict()), 201
-
-@api.route('/tasks/<int:task_id>', methods=['PUT'])
-def update_task(task_id):
-    task = Task.query.get_or_404(task_id)
-    data = request.get_json()
-    
-    if 'title' in data:
-        task.title = data['title']
-    if 'description' in data:
-        task.description = data['description']
-    if 'completed' in data:
-        task.completed = data['completed']
-    
-    db.session.commit()
-    
-    return jsonify(task.to_dict()), 200
-
-@api.route('/tasks/<int:task_id>', methods=['DELETE'])
-def delete_task(task_id):
-    task = Task.query.get_or_404(task_id)
-    
-    db.session.delete(task)
-    db.session.commit()
-    
-    return jsonify({"message": "Task deleted successfully"}), 200
-
-# Chat Message Routes
 @api.route('/messages', methods=['GET'])
 def get_messages():
     messages = ChatMessage.query.order_by(ChatMessage.timestamp.asc()).all()
@@ -107,7 +53,6 @@ def create_message():
     
     return jsonify(message.to_dict()), 201
 
-# Chat Session Routes
 @api.route('/chat_sessions', methods=['GET'])
 @require_auth
 def get_chat_sessions():
@@ -177,7 +122,6 @@ def update_chat_session_provider(session_id):
     
     return jsonify(session.to_dict()), 200
 
-# Session-Specific Message Routes
 @api.route('/chat_sessions/<int:session_id>/messages', methods=['GET'])
 def get_session_messages(session_id):
     session = ChatSession.query.get_or_404(session_id)

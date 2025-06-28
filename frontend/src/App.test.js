@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from './App';
 
 test('renders webapp interface', () => {
@@ -8,9 +8,17 @@ test('renders webapp interface', () => {
   expect(chatInterface).toBeInTheDocument();
 });
 
-test('renders live mode toggle', () => {
+test('renders live mode toggle when provider is set to Gemini', async () => {
   render(<App />);
-  // Test for the live mode functionality
-  const liveToggle = screen.getByText(/Live Mode/i);
-  expect(liveToggle).toBeInTheDocument();
+
+  // Locate the provider select element in the sidebar
+  const providerSelect = await screen.findByLabelText(/Provider/i);
+
+  // Switch provider to Gemini so the Start/Stop Live button becomes visible
+  fireEvent.change(providerSelect, { target: { value: 'gemini' } });
+
+  // Wait for the UI to re-render with the live button
+  await waitFor(() => {
+    expect(screen.getByText(/Start Live/i)).toBeInTheDocument();
+  });
 });

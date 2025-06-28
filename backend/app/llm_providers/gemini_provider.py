@@ -1,9 +1,18 @@
-import google.generativeai as genai  # type: ignore
+try:
+    import google.generativeai as genai  # type: ignore
+except ImportError as exc:  # pragma: no cover
+    # Provide a clearer error message if the runtime environment is missing the
+    # optional dependency.  This will also silence static analyzers that expect
+    # the symbol to exist later in the file.
+    raise RuntimeError(
+        "google-generativeai package is required for GeminiProvider. "
+        "Install with `pip install google-generativeai`"
+    ) from exc
 import os
 import requests
 from io import BytesIO
 from .base import LLMProvider
-from flask import current_app
+from flask import current_app, Flask  # noqa: F401
 import logging as _logging
 
 # ---------------------------------------------------------------------------

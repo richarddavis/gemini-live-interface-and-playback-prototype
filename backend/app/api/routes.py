@@ -1,4 +1,4 @@
-from flask import jsonify, request, Response, stream_with_context, current_app
+from flask import Flask, jsonify, request, Response, stream_with_context, current_app  # noqa: F401
 from . import api
 from .. import db
 from ..models import ChatMessage, ChatSession, InteractionLog, InteractionMetadata, InteractionMediaData, InteractionSessionSummary
@@ -14,7 +14,7 @@ from io import BytesIO
 import requests
 from ..api.auth_routes import require_auth
 from ..services.auth_service import auth_service
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, declarative_base, Session  # noqa: F401
 
 # Helper function to check if file type is allowed
 def allowed_file(filename):

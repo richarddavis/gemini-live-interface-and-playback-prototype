@@ -67,10 +67,12 @@ class GeminiProvider(LLMProvider):
         # Use the API key from the parameter or environment
         client_api_key = api_key or os.getenv("REACT_APP_GEMINI_API_KEY")
         
-        # For Live API, we need to specify the alpha API version
+        # For Live API, the public preview is now served via API version v1beta.
+        # Note: We keep the "for_live" flag so call sites can explicitly request
+        # the websocket-compatible client if needed, but we switch to v1beta to
+        # unlock new capabilities (thinking, native-audio, etc.).
         if for_live:
-            # Return a configured client for live API
-            return genai.Client(api_key=client_api_key, http_options={'api_version': 'v1alpha'})
+            return genai.Client(api_key=client_api_key, http_options={"api_version": "v1beta"})
         else:
             # Create a client for regular API
             # The error indicates there's no genai.GenerativeModel attribute

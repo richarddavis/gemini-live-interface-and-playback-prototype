@@ -31,6 +31,23 @@ _GEMINI_FILE_CACHE: dict[tuple[str, str], str] = {}
 #   3) Recommended default: gemini-2.5-flash
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Helper class: google-genai's Files API expects a file-like object that has
+# both a `name` attribute (used for filename inference) and, in some versions,
+# a `content_type` attribute.  The standard `BytesIO` lacks these, so we wrap
+# it into a tiny subclass that sets them.
+# ---------------------------------------------------------------------------
+
+class NamedBytesIO(BytesIO):
+    """BytesIO subclass carrying filename & content_type metadata."""
+
+    def __init__(self, data: bytes, mime_type: str):
+        super().__init__(data)
+        # Filename is not relevant – any non-empty string works.
+        self.name = "media_asset"
+        # Some client versions look for `content_type`; set it for safety.
+        self.content_type = mime_type
+
 class GeminiProvider(LLMProvider):
     # Determine which model to use at import time. Fast and keeps the value
     # constant for the lifetime of the worker process (avoids re-evaluation in
@@ -131,9 +148,7 @@ class GeminiProvider(LLMProvider):
                         resp.raise_for_status()
 
                         client = self._configure_client(None)  # use default key logic
-                        bio = BytesIO(resp.content)
-                        # google-genai expects the buffer to have a name attribute
-                        bio.name = "media_asset"
+                        bio = NamedBytesIO(resp.content, mime_type)
                         uploaded_file = client.files.upload(
                             file=bio,
                             config={"mime_type": mime_type}

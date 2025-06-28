@@ -20,6 +20,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const [voiceMenuOpen, setVoiceMenuOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('Aoede');
   const [responseMode, setResponseMode] = useState('AUDIO'); // 'TEXT' or 'AUDIO'
+  const [isManualMode, setIsManualMode] = useState(false); // Manual mic control (disable VAD)
   const [messages, setMessages] = useState([]);
   const [textInput, setTextInput] = useState('');
   const [sessionStartTime, setSessionStartTime] = useState(null);
@@ -87,8 +88,10 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }
   };
 
-  // Helper to build the Live-API setup message using camelCase keys and stable model
-  const buildSetupMessage = () => ({
+  // Helper to build the Live-API setup message. Memoized so that it always reflects the
+  // current manual-mode flag (otherwise the WebSocket config can get out of sync and
+  // trigger a 1011 "Internal error").
+  const buildSetupMessage = React.useCallback(() => ({
     setup: {
       model: 'models/gemini-live-2.5-flash-preview',
       generationConfig: {
@@ -113,20 +116,22 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         ],
       },
       realtimeInputConfig: {
-        automaticActivityDetection: {
-          disabled: false,
-          startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
-          endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
-          prefixPaddingMs: 300,
-          silenceDurationMs: 500,
-        },
+        automaticActivityDetection: isManualMode
+          ? { disabled: true }
+          : {
+              disabled: false,
+              startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+              endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+              prefixPaddingMs: 300,
+              silenceDurationMs: 500,
+            },
         activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
         turnCoverage: 'TURN_INCLUDES_ONLY_ACTIVITY',
       },
       inputAudioTranscription: {},
       outputAudioTranscription: {},
     },
-  });
+  }), [responseMode, selectedVoice, isManualMode]);
 
   // Auto-scroll to bottom when new messages are added
   const scrollToBottom = useCallback(() => {
@@ -630,7 +635,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       setIsConnecting(false);
       addMessage('error', `Failed to connect: ${error.message}`);
     }
-  }, [selectedVoice, responseMode, addMessage, logAnalytics]);
+  }, [selectedVoice, responseMode, isManualMode, addMessage, logAnalytics, buildSetupMessage]);
 
   // Handle binary audio data from Google Live API
   const handleBinaryAudioData = useCallback(async (arrayBuffer) => {
@@ -994,6 +999,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           mediaStreamRef.current = null;
         }
         if (mediaRecorderRef.current) {
+          // Send activityEnd when leaving manual mic mode (after stopping mic stream)
+          if (isManualMode && isConnected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            try {
+              wsRef.current.send(JSON.stringify({ realtimeInput: { activityEnd: {} } }));
+              console.log('📤 Sent activityEnd (manual mode)');
+            } catch (err) {
+              console.error('Failed to send activityEnd:', err);
+            }
+          }
+
           mediaRecorderRef.current.scriptProcessor.disconnect();
           mediaRecorderRef.current.source.disconnect();
           // Close the recording audio context if it exists
@@ -1010,10 +1025,20 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.error('Microphone error:', error);
       addMessage('error', `Microphone error: ${error.message}`);
     }
-  }, [isMicOn, isConnected, addMessage]);
+  }, [isMicOn, isConnected, isManualMode, addMessage]);
 
   // Start audio recording (proper PCM conversion for Google Live API)
   const startAudioRecording = useCallback((stream, microphoneState = null) => {
+    // Send activityStart when using manual mic mode
+    if (isManualMode && isConnected && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(JSON.stringify({ realtimeInput: { activityStart: {} } }));
+        console.log('📤 Sent activityStart (manual mode)');
+      } catch (err) {
+        console.error('Failed to send activityStart:', err);
+      }
+    }
+
     try {
       // Use the passed microphoneState or fall back to the current isMicOn state
       const actualMicState = microphoneState !== null ? microphoneState : isMicOn;
@@ -1105,7 +1130,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.error('Audio recording error:', error);
       addMessage('error', `Audio recording failed: ${error.message}`);
     }
-  }, [isConnected, isMicOn, addMessage]);
+  }, [isConnected, isMicOn, isManualMode, addMessage]);
 
   // Toggle camera
   const toggleCamera = useCallback(async () => {
@@ -1357,6 +1382,17 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                   <option value="TEXT">Text</option>
                   <option value="AUDIO">Audio</option>
                 </select>
+              </div>
+              <div className="voice-option-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={isManualMode}
+                    onChange={(e) => setIsManualMode(e.target.checked)}
+                    disabled={isConnected}
+                  />
+                  Manual mic mode (disable VAD)
+                </label>
               </div>
             </div>
           </div>

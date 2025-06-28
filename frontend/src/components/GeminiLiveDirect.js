@@ -1383,15 +1383,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
                   <option value="AUDIO">Audio</option>
                 </select>
               </div>
-              <div className="voice-option-group">
-                <label>
+              <div className="voice-option-group manual-mode-toggle">
+                <span className="toggle-text">Manual mic mode</span>
+                <label className="switch">
                   <input
                     type="checkbox"
                     checked={isManualMode}
                     onChange={(e) => setIsManualMode(e.target.checked)}
                     disabled={isConnected}
                   />
-                  Manual mic mode (disable VAD)
+                  <span className="slider" />
                 </label>
               </div>
             </div>

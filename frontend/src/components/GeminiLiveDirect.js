@@ -335,40 +335,72 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       // last transcription bubble if it belongs to the same speaker ("📝 You said:" or
       // "🗣️ Model said:").
       if (type === 'transcription' && prevMessages.length > 0) {
-        const lastMsg = prevMessages[prevMessages.length - 1];
-
-        // Regex to grab the static speaker prefix so we can compare them. It intentionally keeps the
-        // trailing space so updated text aligns nicely.
+        // Regex to grab the static speaker prefix so we can compare them.
         const prefixRegex = /^(📝 You said: |🗣️ Model said: )/;
         const newPrefixMatch = message.match(prefixRegex);
-        const lastPrefixMatch = typeof lastMsg.message === 'string' ? lastMsg.message.match(prefixRegex) : null;
-
-        if (lastMsg.type === 'transcription' && newPrefixMatch && lastPrefixMatch && newPrefixMatch[0] === lastPrefixMatch[0]) {
+        if (newPrefixMatch) {
           const prefix = newPrefixMatch[0];
 
-          // Strip the static prefix to compare the dynamic transcript bodies
-          const lastBody = String(lastMsg.message).slice(prefix.length).trim();
-          const newBody = String(message).slice(prefix.length).trim();
+          // Find the most recent transcription message with the same speaker prefix (search backwards)
+          const idx = [...prevMessages].reverse().findIndex((m) => {
+            return (
+              m.type === 'transcription' &&
+              typeof m.message === 'string' &&
+              m.message.startsWith(prefix)
+            );
+          });
 
-          let mergedBody;
-          if (!lastBody) {
-            mergedBody = newBody;
-          } else if (newBody.startsWith(lastBody)) {
-            // API is sending the growing full transcript ("Hey" -> "Hey there")
-            mergedBody = newBody;
-          } else if (lastBody.startsWith(newBody)) {
-            // Very unlikely but handle reverse case
-            mergedBody = lastBody;
-          } else {
-            // Otherwise append the new fragment
-            const needsSpace = !/^[.,!?;:]$/.test(newBody) && !lastBody.endsWith(' ');
-            mergedBody = `${lastBody}${needsSpace ? ' ' : ''}${newBody}`;
+          if (idx !== -1) {
+            const targetIndex = prevMessages.length - 1 - idx;
+            const targetMsg = prevMessages[targetIndex];
+
+            // Extract existing and new bodies (without prefix)
+            const lastBody = targetMsg.message.slice(prefix.length).trim();
+            const newBody = message.slice(prefix.length).trim();
+
+            let mergedBody;
+            if (!lastBody) {
+              mergedBody = newBody;
+            } else if (newBody.startsWith(lastBody)) {
+              mergedBody = newBody; // growing replacement
+            } else if (lastBody.startsWith(newBody)) {
+              mergedBody = lastBody; // already has it
+            } else {
+              const needsSpace = !/^[.,!?;:]$/.test(newBody) && !lastBody.endsWith(' ');
+              mergedBody = `${lastBody}${needsSpace ? ' ' : ''}${newBody}`;
+            }
+
+            const updated = [...prevMessages];
+            updated[targetIndex] = {
+              ...targetMsg,
+              message: `${prefix}${mergedBody}`,
+              timestamp: new Date().toISOString(),
+            };
+            return updated;
           }
+        }
+      }
+
+      // Handle repeated audio-stream system notifications by updating a single bubble
+      if (type === 'system' && typeof message === 'string' && message.startsWith('🎵 Receiving audio stream')) {
+        const prefix = '🎵 Receiving audio stream';
+        // Search from the end for the latest matching system message
+        const idx = [...prevMessages].reverse().findIndex(
+          (m) => m.type === 'system' && typeof m.message === 'string' && m.message.startsWith(prefix)
+        );
+        if (idx !== -1) {
+          const targetIndex = prevMessages.length - 1 - idx;
+          const targetMsg = prevMessages[targetIndex];
+
+          // Extract current dots (characters after prefix)
+          const currentDotsMatch = targetMsg.message.slice(prefix.length).match(/\.+$/);
+          const currentDots = currentDotsMatch ? currentDotsMatch[0] : '...';
+          const newDots = currentDots + '.'; // append one dot each time
 
           const updated = [...prevMessages];
-          updated[updated.length - 1] = {
-            ...lastMsg,
-            message: `${prefix}${mergedBody}`,
+          updated[targetIndex] = {
+            ...targetMsg,
+            message: `${prefix}${newDots}`,
             timestamp: new Date().toISOString(),
           };
           return updated;

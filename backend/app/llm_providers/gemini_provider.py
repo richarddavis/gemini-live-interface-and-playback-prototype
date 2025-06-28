@@ -1,4 +1,4 @@
-from google import genai  # type: ignore
+import google.generativeai as genai  # type: ignore
 import os
 import requests
 from io import BytesIO
@@ -122,8 +122,11 @@ class GeminiProvider(LLMProvider):
                         resp.raise_for_status()
 
                         client = self._configure_client(None)  # use default key logic
+                        bio = BytesIO(resp.content)
+                        # google-genai expects the buffer to have a name attribute
+                        bio.name = "media_asset"
                         uploaded_file = client.files.upload(
-                            file=BytesIO(resp.content),
+                            file=bio,
                             config={"mime_type": mime_type}
                         )
                         file_uri = uploaded_file.uri

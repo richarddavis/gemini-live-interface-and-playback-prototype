@@ -23,4 +23,7 @@ google-auth-oauthlib
 # Remove complex dependencies:
 # - librosa (audio processing moved to frontend)
 # - numpy (not needed for simple backend)
-# - asyncio-related packages (WebSocket proxy removed) 
+# - asyncio-related packages (WebSocket proxy removed)
+
+# Testing
+pytest>=7.0 

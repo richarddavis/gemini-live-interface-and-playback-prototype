@@ -14,6 +14,12 @@ from io import BytesIO
 from .base import LLMProvider
 from flask import current_app, Flask  # noqa: F401
 import logging as _logging
+from typing import TYPE_CHECKING
+
+# Use forward-ref type imports for static analysers without importing heavy
+# modules at runtime when not needed.
+if TYPE_CHECKING:  # pragma: no cover
+    from sqlalchemy.orm import Session  # type: ignore  # noqa: F401 (type check only)
 
 # ---------------------------------------------------------------------------
 # Simple in-process cache so we upload each media asset to Gemini **once**

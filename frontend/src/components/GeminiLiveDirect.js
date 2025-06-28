@@ -328,14 +328,64 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }
   }, [isCameraOn, isConnected, startVideoFrameCapture]);
 
-  // Add message to chat
+  // Add message to chat – intelligently collapse incremental transcription chunks
   const addMessage = useCallback((type, message) => {
-    setMessages(prev => [...prev, {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Ensure unique IDs
-      type,
-      message,
-      timestamp: new Date().toISOString()
-    }]);
+    setMessages(prevMessages => {
+      // For live transcription we receive many tiny chunks. Instead of spamming the UI, update the
+      // last transcription bubble if it belongs to the same speaker ("📝 You said:" or
+      // "🗣️ Model said:").
+      if (type === 'transcription' && prevMessages.length > 0) {
+        const lastMsg = prevMessages[prevMessages.length - 1];
+
+        // Regex to grab the static speaker prefix so we can compare them. It intentionally keeps the
+        // trailing space so updated text aligns nicely.
+        const prefixRegex = /^(📝 You said: |🗣️ Model said: )/;
+        const newPrefixMatch = message.match(prefixRegex);
+        const lastPrefixMatch = typeof lastMsg.message === 'string' ? lastMsg.message.match(prefixRegex) : null;
+
+        if (lastMsg.type === 'transcription' && newPrefixMatch && lastPrefixMatch && newPrefixMatch[0] === lastPrefixMatch[0]) {
+          const prefix = newPrefixMatch[0];
+
+          // Strip the static prefix to compare the dynamic transcript bodies
+          const lastBody = String(lastMsg.message).slice(prefix.length).trim();
+          const newBody = String(message).slice(prefix.length).trim();
+
+          let mergedBody;
+          if (!lastBody) {
+            mergedBody = newBody;
+          } else if (newBody.startsWith(lastBody)) {
+            // API is sending the growing full transcript ("Hey" -> "Hey there")
+            mergedBody = newBody;
+          } else if (lastBody.startsWith(newBody)) {
+            // Very unlikely but handle reverse case
+            mergedBody = lastBody;
+          } else {
+            // Otherwise append the new fragment
+            const needsSpace = !/^[.,!?;:]$/.test(newBody) && !lastBody.endsWith(' ');
+            mergedBody = `${lastBody}${needsSpace ? ' ' : ''}${newBody}`;
+          }
+
+          const updated = [...prevMessages];
+          updated[updated.length - 1] = {
+            ...lastMsg,
+            message: `${prefix}${mergedBody}`,
+            timestamp: new Date().toISOString(),
+          };
+          return updated;
+        }
+      }
+
+      // Fallback: simply append a brand-new message
+      return [
+        ...prevMessages,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type,
+          message,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    });
   }, []);
 
   // Log analytics events (simplified)

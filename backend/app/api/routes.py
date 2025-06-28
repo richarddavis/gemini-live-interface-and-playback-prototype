@@ -9,7 +9,7 @@ import os
 import base64
 import hashlib
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func  # type: ignore
+from sqlalchemy import func
 from io import BytesIO
 import requests
 from ..api.auth_routes import require_auth

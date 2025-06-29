@@ -354,29 +354,54 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             const targetIndex = prevMessages.length - 1 - idx;
             const targetMsg = prevMessages[targetIndex];
 
-            // Extract existing and new bodies (without prefix)
-            const lastBody = targetMsg.message.slice(prefix.length).trim();
-            const newBody = message.slice(prefix.length).trim();
+            // Based on user feedback and documentation, model and user transcripts need different logic.
+            if (prefix === '🗣️ Model said: ') {
+              // For the model, API sends fragmented chunks. Concatenate directly.
+              const lastBody = targetMsg.message.slice(prefix.length); // NO .trim()
+              const newBody = message.slice(prefix.length); // NO .trim()
+              
+              let mergedBody;
+              if (newBody.startsWith(lastBody)) {
+                // Handle cumulative transcriptions (e.g., "I am" -> "I am doing well")
+                mergedBody = newBody;
+              } else {
+                // Handle incremental fragments (e.g., append " doing well")
+                mergedBody = lastBody + newBody;
+              }
 
-            let mergedBody;
-            if (!lastBody) {
-              mergedBody = newBody;
-            } else if (newBody.startsWith(lastBody)) {
-              mergedBody = newBody; // growing replacement
-            } else if (lastBody.startsWith(newBody)) {
-              mergedBody = lastBody; // already has it
+              const updated = [...prevMessages];
+              updated[targetIndex] = {
+                ...targetMsg,
+                message: `${prefix}${mergedBody}`,
+                timestamp: new Date().toISOString(),
+              };
+              return updated;
+
             } else {
-              const needsSpace = !/^[.,!?;:]$/.test(newBody) && !lastBody.endsWith(' ');
-              mergedBody = `${lastBody}${needsSpace ? ' ' : ''}${newBody}`;
-            }
+              // For the user, the existing logic works perfectly. Do not change it.
+              const lastBody = targetMsg.message.slice(prefix.length).trim();
+              const newBody = message.slice(prefix.length).trim();
 
-            const updated = [...prevMessages];
-            updated[targetIndex] = {
-              ...targetMsg,
-              message: `${prefix}${mergedBody}`,
-              timestamp: new Date().toISOString(),
-            };
-            return updated;
+              let mergedBody;
+              if (!lastBody) {
+                mergedBody = newBody;
+              } else if (newBody.startsWith(lastBody)) {
+                mergedBody = newBody; // growing replacement
+              } else if (lastBody.startsWith(newBody)) {
+                mergedBody = lastBody; // already has it
+              } else {
+                const needsSpace = !/^[.,!?;:]$/.test(newBody) && !lastBody.endsWith(' ');
+                mergedBody = `${lastBody}${needsSpace ? ' ' : ''}${newBody}`;
+              }
+
+              const updated = [...prevMessages];
+              updated[targetIndex] = {
+                ...targetMsg,
+                message: `${prefix}${mergedBody}`,
+                timestamp: new Date().toISOString(),
+              };
+              return updated;
+            }
           }
         }
       }

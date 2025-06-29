@@ -378,33 +378,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         }
       }
 
-      // Handle repeated audio-stream system notifications by updating a single bubble
-      if (type === 'system' && typeof message === 'string' && message.startsWith('🎵 Receiving audio stream')) {
-        const prefix = '🎵 Receiving audio stream';
-        const lastMsg = prevMessages.length > 0 ? prevMessages[prevMessages.length - 1] : null;
-
-        // Only append dots if the *immediately preceding* message is also an audio stream notification.
-        // This ensures new turns get a new bubble.
-        if (lastMsg && lastMsg.type === 'system' && typeof lastMsg.message === 'string' && lastMsg.message.startsWith(prefix)) {
-          const targetIndex = prevMessages.length - 1;
-          const targetMsg = lastMsg;
-
-          const currentDotsMatch = targetMsg.message.slice(prefix.length).match(/\.+$/);
-          // Start with 3 dots, and add one for each subsequent chunk. Cap at 100 to prevent overflow.
-          const currentDots = currentDotsMatch ? currentDotsMatch[0] : '...';
-          const newDots = currentDots.length < 100 ? currentDots + '.' : currentDots;
-
-          const updated = [...prevMessages];
-          updated[targetIndex] = {
-            ...targetMsg,
-            message: `${prefix}${newDots}`,
-            timestamp: new Date().toISOString(),
-          };
-          return updated;
-        }
-        // If the last message wasn't a stream notification, fall through to create a new one.
-      }
-
       // Fallback: simply append a brand-new message
       return [
         ...prevMessages,
@@ -833,7 +806,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         // Set receiving state and reset timeout
         if (!isReceivingAudio) {
           setIsReceivingAudio(true);
-          addMessage('system', '🎵 Receiving audio stream...');
           setActivityStatus('receiving');
           
           // Log the start of audio streaming

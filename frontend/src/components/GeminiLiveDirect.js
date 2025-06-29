@@ -381,18 +381,18 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       // Handle repeated audio-stream system notifications by updating a single bubble
       if (type === 'system' && typeof message === 'string' && message.startsWith('🎵 Receiving audio stream')) {
         const prefix = '🎵 Receiving audio stream';
-        // Search from the end for the latest matching system message
-        const idx = [...prevMessages].reverse().findIndex(
-          (m) => m.type === 'system' && typeof m.message === 'string' && m.message.startsWith(prefix)
-        );
-        if (idx !== -1) {
-          const targetIndex = prevMessages.length - 1 - idx;
-          const targetMsg = prevMessages[targetIndex];
+        const lastMsg = prevMessages.length > 0 ? prevMessages[prevMessages.length - 1] : null;
 
-          // Extract current dots (characters after prefix)
+        // Only append dots if the *immediately preceding* message is also an audio stream notification.
+        // This ensures new turns get a new bubble.
+        if (lastMsg && lastMsg.type === 'system' && typeof lastMsg.message === 'string' && lastMsg.message.startsWith(prefix)) {
+          const targetIndex = prevMessages.length - 1;
+          const targetMsg = lastMsg;
+
           const currentDotsMatch = targetMsg.message.slice(prefix.length).match(/\.+$/);
+          // Start with 3 dots, and add one for each subsequent chunk. Cap at 100 to prevent overflow.
           const currentDots = currentDotsMatch ? currentDotsMatch[0] : '...';
-          const newDots = currentDots + '.'; // append one dot each time
+          const newDots = currentDots.length < 100 ? currentDots + '.' : currentDots;
 
           const updated = [...prevMessages];
           updated[targetIndex] = {
@@ -402,6 +402,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           };
           return updated;
         }
+        // If the last message wasn't a stream notification, fall through to create a new one.
       }
 
       // Fallback: simply append a brand-new message

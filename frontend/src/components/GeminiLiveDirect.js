@@ -334,63 +334,43 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       // For live transcription we receive many tiny chunks. Instead of spamming the UI, update the
       // last transcription bubble if it belongs to the same speaker ("📝 You said:" or
       // "🗣️ Model said:").
-      if (type === 'transcription' && prevMessages.length > 0) {
-        const lastMsg = prevMessages[prevMessages.length - 1];
-
-        // Regex to grab the static speaker prefix so we can compare them.
+      if (type === 'transcription' && typeof message === 'string') {
         const prefixRegex = /^(📝 You said: |🗣️ Model said: )/;
         const newPrefixMatch = message.match(prefixRegex);
-        const lastPrefixMatch = typeof lastMsg.message === 'string' ? lastMsg.message.match(prefixRegex) : null;
 
-        // NEW LOGIC: Only merge if the new chunk is a continuation of the *immediately preceding* message.
-        // This creates new bubbles for new turns.
-        if (lastMsg.type === 'transcription' && newPrefixMatch && lastPrefixMatch && newPrefixMatch[0] === lastPrefixMatch[0]) {
-          const prefix = newPrefixMatch[0];
-          const updated = [...prevMessages];
-          const targetIndex = prevMessages.length - 1;
+        if (newPrefixMatch) {
+          const currentSpeakerPrefix = newPrefixMatch[0];
+          const otherSpeakerPrefix = currentSpeakerPrefix.startsWith('📝') ? '🗣️ Model said: ' : '📝 You said: ';
 
-          // Based on user feedback and documentation, model and user transcripts need different logic.
-          if (prefix === '🗣️ Model said: ') {
-            // For the model, API sends fragmented chunks. Concatenate directly.
-            const lastBody = lastMsg.message.slice(prefix.length); // NO .trim()
-            const newBody = message.slice(prefix.length); // NO .trim()
-            
+          // Helper to find the last index of an element matching a predicate.
+          const findLastIndex = (arr, predicate) => {
+            for (let i = arr.length - 1; i >= 0; i--) {
+              if (predicate(arr[i])) return i;
+            }
+            return -1;
+          };
+
+          const lastMyTurnIndex = findLastIndex(prevMessages, m => m.type === 'transcription' && typeof m.message === 'string' && m.message.startsWith(currentSpeakerPrefix));
+          const lastOtherTurnIndex = findLastIndex(prevMessages, m => m.type === 'transcription' && typeof m.message === 'string' && m.message.startsWith(otherSpeakerPrefix));
+
+          // If the current speaker's last message is more recent than the other speaker's, we merge.
+          // This correctly identifies a continuation of a turn.
+          if (lastMyTurnIndex !== -1 && lastMyTurnIndex > lastOtherTurnIndex) {
+            const targetMsg = prevMessages[lastMyTurnIndex];
+            const lastBody = targetMsg.message.slice(currentSpeakerPrefix.length);
+            const newBody = message.slice(currentSpeakerPrefix.length);
+
             let mergedBody;
             if (newBody.startsWith(lastBody)) {
-              // Handle cumulative transcriptions (e.g., "I am" -> "I am doing well")
               mergedBody = newBody;
             } else {
-              // Handle incremental fragments (e.g., append " doing well")
               mergedBody = lastBody + newBody;
             }
 
-            updated[targetIndex] = {
-              ...lastMsg,
-              message: `${prefix}${mergedBody}`,
-              timestamp: new Date().toISOString(),
-            };
-            return updated;
-
-          } else {
-            // For the user, the existing logic works perfectly. Do not change it.
-            const lastBody = lastMsg.message.slice(prefix.length).trim();
-            const newBody = message.slice(prefix.length).trim();
-
-            let mergedBody;
-            if (!lastBody) {
-              mergedBody = newBody;
-            } else if (newBody.startsWith(lastBody)) {
-              mergedBody = newBody; // growing replacement
-            } else if (lastBody.startsWith(newBody)) {
-              mergedBody = lastBody; // already has it
-            } else {
-              const needsSpace = !/^[.,!?;:]$/.test(newBody) && !lastBody.endsWith(' ');
-              mergedBody = `${lastBody}${needsSpace ? ' ' : ''}${newBody}`;
-            }
-
-            updated[targetIndex] = {
-              ...lastMsg,
-              message: `${prefix}${mergedBody}`,
+            const updated = [...prevMessages];
+            updated[lastMyTurnIndex] = {
+              ...targetMsg,
+              message: `${currentSpeakerPrefix}${mergedBody}`,
               timestamp: new Date().toISOString(),
             };
             return updated;

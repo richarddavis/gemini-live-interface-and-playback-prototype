@@ -390,24 +390,42 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       ];
     });
 
-    // 🚀 Log transcription to backend for replay
+    // ------------------------------
+    // Transcription logging (final only)
+    // ------------------------------
     if (type === 'transcription' && typeof message === 'string') {
+      // We'll log the *previous* speaker's completed bubble before adding this new one.
       const userPrefix = '📝 You said: ';
       const modelPrefix = '🗣️ Model said: ';
-      let interactionType = null;
-      let textContent = null;
 
-      if (message.startsWith(userPrefix)) {
-        interactionType = 'user_transcription';
-        textContent = message.slice(userPrefix.length);
-      } else if (message.startsWith(modelPrefix)) {
-        interactionType = 'model_transcription';
-        textContent = message.slice(modelPrefix.length);
-      }
+      // Helper to log a message once
+      const logIfNeeded = (msgObj) => {
+        if (!msgObj || msgObj.logged || msgObj.type !== 'transcription') return;
 
-      if (interactionType) {
-        interactionLogger.logInteraction(interactionType, null, { text: textContent });
-      }
+        const { message: msgText } = msgObj;
+        let interactionType = null;
+        let textContent = null;
+
+        if (msgText.startsWith(userPrefix)) {
+          interactionType = 'user_transcription';
+          textContent = msgText.slice(userPrefix.length);
+        } else if (msgText.startsWith(modelPrefix)) {
+          interactionType = 'model_transcription';
+          textContent = msgText.slice(modelPrefix.length);
+        }
+
+        if (interactionType && textContent) {
+          interactionLogger.logInteraction(interactionType, null, { text: textContent.trim() });
+          msgObj.logged = true; // Mark as logged to avoid duplicates
+        }
+      };
+
+      // Log previous bubble (if any)
+      setMessages((prevMessages) => {
+        const prevLast = prevMessages[prevMessages.length - 1];
+        logIfNeeded(prevLast);
+        return prevMessages;
+      });
     }
   }, []);
 
@@ -483,6 +501,32 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         console.log(`🎭 ${isModal ? 'Modal' : 'Mobile'} session completed with basic data:`, sessionData);
       }
     }
+    
+    // Before disconnecting, log any pending transcription bubble not yet logged
+    const userPrefix = '📝 You said: ';
+    const modelPrefix = '🗣️ Model said: ';
+
+    const tryLogLastBubble = (msg) => {
+      if (!msg || msg.logged || msg.type !== 'transcription') return;
+
+      let interactionType = null;
+      let textContent = null;
+
+      if (msg.message.startsWith(userPrefix)) {
+        interactionType = 'user_transcription';
+        textContent = msg.message.slice(userPrefix.length);
+      } else if (msg.message.startsWith(modelPrefix)) {
+        interactionType = 'model_transcription';
+        textContent = msg.message.slice(modelPrefix.length);
+      }
+
+      if (interactionType && textContent) {
+        interactionLogger.logInteraction(interactionType, null, { text: textContent.trim() });
+        msg.logged = true;
+      }
+    };
+
+    tryLogLastBubble(messages[messages.length - 1]);
     
     // Perform normal disconnect logic
     if (wsRef.current) {

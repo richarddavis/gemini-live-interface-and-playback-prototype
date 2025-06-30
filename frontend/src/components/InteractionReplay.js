@@ -516,7 +516,7 @@ const useConversationSegments = (updateState) => {
         }
 
         // Collapse multiple spaces and trim
-        currentSegment.fullTextContent = merged.replace(/\s+/g, ' ').trim();
+        currentSegment.fullTextContent = merged.replace(/\s+/g, ' ');
 
         // Transcription handled – skip further processing for this log
         return;

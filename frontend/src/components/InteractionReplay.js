@@ -2042,6 +2042,13 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         
         console.log(`🎬 Playing ${audioSource} PCM audio chunk:`, numSamples, 'samples at', sampleRate, 'Hz', `(${audioBuffer.duration.toFixed(3)}s)`);
         updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s)` });
+
+        // NEW: Track this audio source so it can be stopped when replay is halted
+        activeAudioSourcesRef.current.push(source);
+        source.onended = () => {
+          // Remove from active sources list once playback finishes
+          activeAudioSourcesRef.current = activeAudioSourcesRef.current.filter(s => s !== source);
+        };
       } else {
         // Handle encoded audio (MP3, WAV, etc.)
         try {
@@ -2060,6 +2067,13 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
           
           console.log(`🎬 Playing ${audioSource} encoded audio chunk:`, audioBuffer.duration, 'seconds');
           updateState({ replayStatus: `🔊 Playing ${audioSource.toLowerCase()} audio (${audioBuffer.duration.toFixed(2)}s) - encoded` });
+
+          // NEW: Track this audio source so it can be stopped when replay is halted
+          activeAudioSourcesRef.current.push(source);
+          source.onended = () => {
+            // Remove from active sources list once playback finishes
+            activeAudioSourcesRef.current = activeAudioSourcesRef.current.filter(s => s !== source);
+          };
         } catch (decodeError) {
           console.error(`Failed to decode ${audioSource} audio data:`, decodeError);
           updateState({ replayStatus: `❌ Failed to decode ${audioSource.toLowerCase()} audio` });

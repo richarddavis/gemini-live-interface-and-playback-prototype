@@ -467,18 +467,58 @@ const useConversationSegments = (updateState) => {
       }
 
       // If this is a transcription log, accumulate text in the current segment (user speech or api response)
-      if ((interaction_type === 'user_transcription' || interaction_type === 'model_transcription') && currentSegment) {
-        // Push the log into the segment for completeness
+      if (interaction_type === 'user_transcription' || interaction_type === 'model_transcription') {
+        const desiredSegmentType = interaction_type === 'user_transcription' ? 'user_speech' : 'api_response';
+
+        // Ensure we are aggregating into the correct segment
+        if (!currentSegment || currentSegment.type !== desiredSegmentType) {
+          // Finalize any existing segment first
+          if (currentSegment) {
+            currentSegment.endTime = currentSegment.logs[currentSegment.logs.length - 1].timestamp;
+            currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
+          }
+
+          // Start a new segment for this transcription stream
+          currentSegment = {
+            id: ++segmentId,
+            type: desiredSegmentType,
+            startTime: timestamp,
+            endTime: timestamp,
+            duration: 0,
+            logs: [],
+            audioChunks: [],
+            videoFrames: [],
+            metadata: {
+              chunkCount: 0,
+              totalBytes: 0
+            }
+          };
+          segments.push(currentSegment);
+        }
+
+        // Record the log in the segment
         currentSegment.logs.push(log);
 
-        // Prefer custom_metadata.text (where transcripts are stored) when available
-        const textStr = interaction_metadata?.text || interaction_metadata?.custom_metadata?.text || log.metadata?.text || '';
-        if (textStr) {
-          console.log(`📝 Accumulating transcription (${interaction_type}) in segment ${currentSegment.id}:`, textStr);
-          currentSegment.fullTextContent = (currentSegment.fullTextContent || '') + (currentSegment.fullTextContent ? ' ' : '') + textStr;
-          console.log('📝 Segment', currentSegment.id, 'now has:', currentSegment.fullTextContent);
+        // Extract transcript text (supports custom_metadata)
+        const chunkText = interaction_metadata?.text || interaction_metadata?.custom_metadata?.text || log.metadata?.text || '';
+        const prevText = currentSegment.fullTextContent || '';
+
+        // Merge-or-replace strategy to avoid duplication (mirrors live UI)
+        let merged;
+        if (!prevText) {
+          merged = chunkText;
+        } else if (chunkText.startsWith(prevText)) {
+          merged = chunkText;
+        } else if (prevText.startsWith(chunkText)) {
+          merged = prevText;
+        } else {
+          merged = `${prevText}${chunkText}`;
         }
-        // Transcription logs do not change segment boundaries; skip further processing for this log.
+
+        // Collapse multiple spaces and trim
+        currentSegment.fullTextContent = merged.replace(/\s+/g, ' ').trim();
+
+        // Transcription handled – skip further processing for this log
         return;
       }
 

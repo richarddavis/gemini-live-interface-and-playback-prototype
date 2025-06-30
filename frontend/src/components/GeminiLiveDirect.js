@@ -389,6 +389,26 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         },
       ];
     });
+
+    // 🚀 Log transcription to backend for replay
+    if (type === 'transcription' && typeof message === 'string') {
+      const userPrefix = '📝 You said: ';
+      const modelPrefix = '🗣️ Model said: ';
+      let interactionType = null;
+      let textContent = null;
+
+      if (message.startsWith(userPrefix)) {
+        interactionType = 'user_transcription';
+        textContent = message.slice(userPrefix.length);
+      } else if (message.startsWith(modelPrefix)) {
+        interactionType = 'model_transcription';
+        textContent = message.slice(modelPrefix.length);
+      }
+
+      if (interactionType) {
+        interactionLogger.logInteraction(interactionType, null, { text: textContent });
+      }
+    }
   }, []);
 
   // Log analytics events (simplified)

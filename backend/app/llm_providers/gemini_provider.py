@@ -1,4 +1,5 @@
 from google import genai
+from google.genai import types  # For tool definitions (Google Search grounding)
 import os
 import requests
 from io import BytesIO
@@ -156,9 +157,14 @@ class GeminiProvider(LLMProvider):
         client = self._configure_client(api_key)
         try:
             current_app.logger.debug(f"Sending to Gemini: {len(gemini_messages)} messages (context limited)")
+            # Enable Google Search grounding tool (v1beta)
+            search_tool = types.Tool(google_search=types.GoogleSearch())
+            gen_config = types.GenerateContentConfig(tools=[search_tool])
+
             response = client.models.generate_content(
                 model=self.MODEL_NAME,
-                contents=gemini_messages
+                contents=gemini_messages,
+                config=gen_config
             )
             
             # Handle response
@@ -191,9 +197,15 @@ class GeminiProvider(LLMProvider):
         client = self._configure_client(api_key)
         
         try:
+            current_app.logger.debug(f"Sending to Gemini: {len(gemini_messages)} messages (context limited)")
+            # Re-use the same Google Search tool config for streaming
+            search_tool = types.Tool(google_search=types.GoogleSearch())
+            gen_config = types.GenerateContentConfig(tools=[search_tool])
+
             stream = client.models.generate_content_stream(
                 model=self.MODEL_NAME,
-                contents=gemini_messages
+                contents=gemini_messages,
+                config=gen_config
             )
             
             for chunk in stream:

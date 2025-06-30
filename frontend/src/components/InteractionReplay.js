@@ -410,6 +410,7 @@ const useConversationSegments = (updateState) => {
     
     // Group logs by conversation segments
     sortedLogs.forEach((log, index) => {
+      console.log('*** SEG LOOP', log.interaction_type, log.id);
       const { 
         id, 
         interaction_type, 
@@ -463,6 +464,62 @@ const useConversationSegments = (updateState) => {
         }
         // console.log(`🎭 Added trailing audio to segment ${currentSegment.id}: ${currentSegment.audioChunks.length} chunks`);
         return; // Skip the rest of the processing for this log
+      }
+
+      // If this is a transcription log, accumulate text in the current segment (user speech or api response)
+      if (interaction_type === 'user_transcription' || interaction_type === 'model_transcription') {
+        const desiredSegmentType = interaction_type === 'user_transcription' ? 'user_speech' : 'api_response';
+
+        // Ensure we are aggregating into the correct segment
+        if (!currentSegment || currentSegment.type !== desiredSegmentType) {
+          // Finalize any existing segment first
+          if (currentSegment) {
+            currentSegment.endTime = currentSegment.logs[currentSegment.logs.length - 1].timestamp;
+            currentSegment.duration = new Date(currentSegment.endTime) - new Date(currentSegment.startTime);
+          }
+
+          // Start a new segment for this transcription stream
+          currentSegment = {
+            id: ++segmentId,
+            type: desiredSegmentType,
+            startTime: timestamp,
+            endTime: timestamp,
+            duration: 0,
+            logs: [],
+            audioChunks: [],
+            videoFrames: [],
+            metadata: {
+              chunkCount: 0,
+              totalBytes: 0
+            }
+          };
+          segments.push(currentSegment);
+        }
+
+        // Record the log in the segment
+        currentSegment.logs.push(log);
+
+        // Extract transcript text (supports custom_metadata)
+        const chunkText = interaction_metadata?.text || interaction_metadata?.custom_metadata?.text || log.metadata?.text || '';
+        const prevText = currentSegment.fullTextContent || '';
+
+        // Merge-or-replace strategy to avoid duplication (mirrors live UI)
+        let merged;
+        if (!prevText) {
+          merged = chunkText;
+        } else if (chunkText.startsWith(prevText)) {
+          merged = chunkText;
+        } else if (prevText.startsWith(chunkText)) {
+          merged = prevText;
+        } else {
+          merged = `${prevText}${chunkText}`;
+        }
+
+        // Collapse multiple spaces and trim
+        currentSegment.fullTextContent = merged.replace(/\s+/g, ' ');
+
+        // Transcription handled – skip further processing for this log
+        return;
       }
 
       // Create new segment if needed
@@ -1220,6 +1277,15 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
         try {
           const segments = processIntoSegments(logs);
           updateState({ conversationSegments: segments });
+          // Fallback aggregation: if fullTextContent is empty, derive from transcription logs inside segment
+          segments.forEach(seg => {
+            if (!seg.fullTextContent) {
+              const transLogs = seg.logs.filter(l => l.interaction_type === 'user_transcription' || l.interaction_type === 'model_transcription');
+              const combined = transLogs.map(l => l.interaction_metadata?.text || l.interaction_metadata?.custom_metadata?.text || '').join(' ').trim();
+              if (combined) seg.fullTextContent = combined;
+            }
+          });
+          console.log('📝 FINAL SEGMENTS', segments.map(s => ({ id: s.id, type: s.type, text: s.fullTextContent })));
           
           // Pre-process segments for even smoother playback
           const processedSegments = new Map();
@@ -1533,6 +1599,27 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       case 'user_action':
         handleUserActionForStreaming(log);
         break;
+      case 'user_transcription': {
+        // Reuse displayTextInput with synthetic log object
+        const syntheticLog = {
+          ...log,
+          interaction_metadata: {
+            text: log.interaction_metadata?.text || log.interaction_metadata?.custom_metadata?.text || log.metadata?.text || ''
+          }
+        };
+        displayTextInput(syntheticLog);
+        break;
+      }
+      case 'model_transcription': {
+        const syntheticLog = {
+          ...log,
+          interaction_metadata: {
+            response_text: log.interaction_metadata?.text || log.interaction_metadata?.custom_metadata?.text || log.metadata?.text || ''
+          }
+        };
+        displayApiResponse(syntheticLog);
+        break;
+      }
       default:
         console.log('Unknown interaction type:', log.interaction_type);
     }
@@ -1997,6 +2084,8 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
       textContent = `Text input detected (${log.id}) - Data stored as hash only for privacy`;
     } else if (log.interaction_metadata?.text) {
       textContent = log.interaction_metadata.text;
+    } else if (log.interaction_metadata?.custom_metadata?.text) {
+      textContent = log.interaction_metadata.custom_metadata.text;
     }
     
     console.log('🎬 User typed:', textContent);

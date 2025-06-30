@@ -328,14 +328,105 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }
   }, [isCameraOn, isConnected, startVideoFrameCapture]);
 
-  // Add message to chat
+  // Add message to chat – intelligently collapse incremental transcription chunks
   const addMessage = useCallback((type, message) => {
-    setMessages(prev => [...prev, {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Ensure unique IDs
-      type,
-      message,
-      timestamp: new Date().toISOString()
-    }]);
+    setMessages(prevMessages => {
+      // For live transcription we receive many tiny chunks. Instead of spamming the UI, update the
+      // last transcription bubble if it belongs to the same speaker ("📝 You said:" or
+      // "🗣️ Model said:").
+      if (type === 'transcription' && typeof message === 'string') {
+        const prefixRegex = /^(📝 You said: |🗣️ Model said: )/;
+        const newPrefixMatch = message.match(prefixRegex);
+
+        if (newPrefixMatch) {
+          const currentSpeakerPrefix = newPrefixMatch[0];
+          const otherSpeakerPrefix = currentSpeakerPrefix.startsWith('📝') ? '🗣️ Model said: ' : '📝 You said: ';
+
+          // Helper to find the last index of an element matching a predicate.
+          const findLastIndex = (arr, predicate) => {
+            for (let i = arr.length - 1; i >= 0; i--) {
+              if (predicate(arr[i])) return i;
+            }
+            return -1;
+          };
+
+          const lastMyTurnIndex = findLastIndex(prevMessages, m => m.type === 'transcription' && typeof m.message === 'string' && m.message.startsWith(currentSpeakerPrefix));
+          const lastOtherTurnIndex = findLastIndex(prevMessages, m => m.type === 'transcription' && typeof m.message === 'string' && m.message.startsWith(otherSpeakerPrefix));
+
+          // If the current speaker's last message is more recent than the other speaker's, we merge.
+          // This correctly identifies a continuation of a turn.
+          if (lastMyTurnIndex !== -1 && lastMyTurnIndex > lastOtherTurnIndex) {
+            const targetMsg = prevMessages[lastMyTurnIndex];
+            const lastBody = targetMsg.message.slice(currentSpeakerPrefix.length);
+            const newBody = message.slice(currentSpeakerPrefix.length);
+
+            let mergedBody;
+            if (newBody.startsWith(lastBody)) {
+              mergedBody = newBody;
+            } else {
+              mergedBody = lastBody + newBody;
+            }
+
+            const updated = [...prevMessages];
+            updated[lastMyTurnIndex] = {
+              ...targetMsg,
+              message: `${currentSpeakerPrefix}${mergedBody}`,
+              timestamp: new Date().toISOString(),
+            };
+            return updated;
+          }
+        }
+      }
+
+      // Fallback: simply append a brand-new message
+      return [
+        ...prevMessages,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type,
+          message,
+          timestamp: new Date().toISOString(),
+        },
+      ];
+    });
+
+    // ------------------------------
+    // Transcription logging (final only)
+    // ------------------------------
+    if (type === 'transcription' && typeof message === 'string') {
+      // We'll log the *previous* speaker's completed bubble before adding this new one.
+      const userPrefix = '📝 You said: ';
+      const modelPrefix = '🗣️ Model said: ';
+
+      // Helper to log a message once
+      const logIfNeeded = (msgObj) => {
+        if (!msgObj || msgObj.logged || msgObj.type !== 'transcription') return;
+
+        const { message: msgText } = msgObj;
+        let interactionType = null;
+        let textContent = null;
+
+        if (msgText.startsWith(userPrefix)) {
+          interactionType = 'user_transcription';
+          textContent = msgText.slice(userPrefix.length);
+        } else if (msgText.startsWith(modelPrefix)) {
+          interactionType = 'model_transcription';
+          textContent = msgText.slice(modelPrefix.length);
+        }
+
+        if (interactionType && textContent) {
+          interactionLogger.logInteraction(interactionType, null, { text: textContent.trim() });
+          msgObj.logged = true; // Mark as logged to avoid duplicates
+        }
+      };
+
+      // Log previous bubble (if any)
+      setMessages((prevMessages) => {
+        const prevLast = prevMessages[prevMessages.length - 1];
+        logIfNeeded(prevLast);
+        return prevMessages;
+      });
+    }
   }, []);
 
   // Log analytics events (simplified)
@@ -410,6 +501,32 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         console.log(`🎭 ${isModal ? 'Modal' : 'Mobile'} session completed with basic data:`, sessionData);
       }
     }
+    
+    // Before disconnecting, log any pending transcription bubble not yet logged
+    const userPrefix = '📝 You said: ';
+    const modelPrefix = '🗣️ Model said: ';
+
+    const tryLogLastBubble = (msg) => {
+      if (!msg || msg.logged || msg.type !== 'transcription') return;
+
+      let interactionType = null;
+      let textContent = null;
+
+      if (msg.message.startsWith(userPrefix)) {
+        interactionType = 'user_transcription';
+        textContent = msg.message.slice(userPrefix.length);
+      } else if (msg.message.startsWith(modelPrefix)) {
+        interactionType = 'model_transcription';
+        textContent = msg.message.slice(modelPrefix.length);
+      }
+
+      if (interactionType && textContent) {
+        interactionLogger.logInteraction(interactionType, null, { text: textContent.trim() });
+        msg.logged = true;
+      }
+    };
+
+    tryLogLastBubble(messages[messages.length - 1]);
     
     // Perform normal disconnect logic
     if (wsRef.current) {
@@ -753,7 +870,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         // Set receiving state and reset timeout
         if (!isReceivingAudio) {
           setIsReceivingAudio(true);
-          addMessage('system', '🎵 Receiving audio stream...');
           setActivityStatus('receiving');
           
           // Log the start of audio streaming

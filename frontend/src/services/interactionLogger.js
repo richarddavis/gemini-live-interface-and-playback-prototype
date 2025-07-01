@@ -36,6 +36,30 @@ class InteractionLogger {
     console.log('🔍 InteractionLogger: Real-time streaming mode enabled');
     this.startStreamProcessor();
     this.startHealthMonitoring();
+
+    // 💾 Off-load uploads to a Web Worker
+    try {
+      // Dynamically import worker so CRA / webpack bundles it correctly
+      // eslint-disable-next-line import/no-webpack-loader-syntax
+      // @ts-ignore – worker-loader query for CRA <5; for Webpack 5 the URL ctor works
+      this.uploadWorker = new Worker(new URL('../workers/logUploadWorker.js', import.meta.url), { type: 'module' });
+
+      this.workerCallbacks = new Map();
+      this.nextWorkerId = 0;
+
+      this.uploadWorker.onmessage = (e) => {
+        const { id, ok, result, err } = e.data;
+        const cb = this.workerCallbacks.get(id);
+        if (!cb) return;
+        this.workerCallbacks.delete(id);
+        if (ok) cb.resolve(result);
+        else cb.reject(new Error(err));
+      };
+
+    } catch (err) {
+      console.warn('⚠️ Failed to init log-upload worker; falling back to main-thread uploads', err);
+      this.uploadWorker = null;
+    }
   }
 
   generateSessionId() {
@@ -207,108 +231,75 @@ class InteractionLogger {
 
   // 🚨 NEW: FAST STREAMING UPLOAD 🚨
   async sendStreamedLog(streamItem) {
-    const { session_id, interaction_type, timestamp, metadata, mediaData, options, startTime } = streamItem;
-    
-    try {
-      // Prepare minimal payload for immediate backend storage
-      const payload = {
-        session_id,
-        interaction_type,
-        metadata: {
-          ...metadata,
-          stream_processed_at: new Date().toISOString()
-        }
+    const startTime = performance.now();
+
+    // Prepare payload (reuse existing logic for media handling)
+    const { interaction_type, mediaData, options, metadata, session_id } = streamItem;
+    const payload = {
+      session_id,
+      interaction_type,
+      metadata: {
+        ...metadata,
+        stream_processed_at: new Date().toISOString(),
+      },
+    };
+
+    if (mediaData && this.replayMode) {
+      let processedData;
+      if (typeof mediaData === 'string') processedData = mediaData;
+      else if (mediaData instanceof ArrayBuffer)
+        processedData = btoa(String.fromCharCode(...new Uint8Array(mediaData)));
+      else processedData = JSON.stringify(mediaData);
+
+      payload.media_data = {
+        storage_type: options.storageType || 'cloud_storage',
+        data: processedData,
+        is_anonymized: options.isAnonymized || false,
+        retention_days: options.retentionDays || 1,
+        stream_upload: true,
       };
+    }
 
-      // Handle media data efficiently
-      if (mediaData && this.replayMode) {
-        const storageType = options.storageType || 'cloud_storage';
-        
-        let processedData;
-        if (typeof mediaData === 'string') {
-          processedData = mediaData;
-        } else if (mediaData instanceof ArrayBuffer) {
-          processedData = btoa(String.fromCharCode(...new Uint8Array(mediaData)));
-        } else {
-          // Convert other formats
-          processedData = JSON.stringify(mediaData);
-        }
+    // If worker available, delegate
+    if (this.uploadWorker) {
+      return new Promise((resolve, reject) => {
+        const id = this.nextWorkerId++;
+        this.workerCallbacks.set(id, { resolve, reject });
+        this.uploadWorker.postMessage({ id, baseUrl: this.baseUrl, item: payload });
+      })
+        .then((res) => {
+          this.connectionHealth.totalLogged++;
+          this.connectionHealth.actualInteractions++;
+          this.connectionHealth.consecutiveFailures = 0;
+          if (this.debugMode) {
+            console.log(`✅ STREAMED ${interaction_type} via worker`);
+          }
+          return res;
+        })
+        .catch((err) => {
+          this.connectionHealth.totalFailed++;
+          this.connectionHealth.consecutiveFailures++;
+          console.error(`🚨 STREAM FAILED ${interaction_type} via worker:`, err);
+          throw err;
+        });
+    }
 
-        payload.media_data = {
-          storage_type: storageType,
-          data: processedData,
-          is_anonymized: options.isAnonymized || false,
-          retention_days: options.retentionDays || 1,
-          stream_upload: true // Mark as streamed upload
-        };
-        
-        if (this.debugMode && processedData.length > 100000) {
-          console.log(`🚀 Large media streaming: ${(processedData.length / 1024).toFixed(1)}KB for ${interaction_type}`);
-        }
-      }
-
-      // Send immediately with timeout for responsiveness
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch(`${this.baseUrl}/interaction-logs`, {
+    // Fallback: previous in-thread behaviour (simplified)
+    try {
+      await fetch(`${this.baseUrl}/interaction-logs`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Include cookies for authentication
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
-        signal: controller.signal
       });
-
-      clearTimeout(timeoutId);
-      const endTime = performance.now();
-      const duration = endTime - startTime;
-
-      if (response.ok) {
-        const result = await response.json();
-        
-        // Success - update health metrics
-        this.connectionHealth.totalLogged++;
-        this.connectionHealth.actualInteractions++;
-        this.connectionHealth.consecutiveFailures = 0;
-        
-        if (this.debugMode) {
-          console.log(`✅ STREAMED ${interaction_type}:`, {
-            interactionId: result.interaction_id,
-            duration: `${duration.toFixed(1)}ms`,
-            queueRemaining: this.streamQueue.length,
-            successRate: `${((this.connectionHealth.totalLogged / this.connectionHealth.expectedInteractions) * 100).toFixed(1)}%`
-          });
-        }
-        
-        return result;
-      } else {
-        // HTTP error - but don't block other operations
-        const errorText = await response.text().catch(() => 'Unknown error');
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-      
-    } catch (error) {
-      // Failure - update health metrics but don't block the stream
+      this.connectionHealth.totalLogged++;
+    } catch (err) {
       this.connectionHealth.totalFailed++;
-      this.connectionHealth.consecutiveFailures++;
-      
-      console.error(`🚨 STREAM FAILED ${interaction_type}:`, {
-        error: error.message,
-        duration: `${(performance.now() - startTime).toFixed(1)}ms`,
-        consecutive: this.connectionHealth.consecutiveFailures
-      });
-      
-      // Quick retry for important data (max 1 retry to avoid delays)
-      if (this.replayMode && this.connectionHealth.consecutiveFailures < 3) {
-        console.log(`🔄 Quick retry for ${interaction_type}`);
-        setTimeout(() => {
-          this.streamQueue.unshift(streamItem); // Add back to front of queue
-        }, 1000);
+      throw err;
+    } finally {
+      if (this.debugMode) {
+        console.log(`ℹ️ Fallback upload duration ${(performance.now() - startTime).toFixed(0)}ms`);
       }
-      
-      throw error;
     }
   }
 
@@ -489,29 +480,62 @@ class InteractionLogger {
   }
 
   // Replay-specific methods
-  async getReplayData(sessionId = null) {
+  async getReplayData(sessionId = null, { batchSize = 1000, onBatch = null } = {}) {
     const targetSessionId = sessionId || this.sessionId;
-    console.log(`🎭 getReplayData called with sessionId: ${sessionId}, targetSessionId: ${targetSessionId}`);
+    console.log(`🎭 getReplayData (paginated) called with sessionId: ${sessionId}, targetSessionId: ${targetSessionId}`);
+
+    const allLogs = [];
+    let offset = 0;
+    let totalCount = Infinity; // will be updated after first request
+
     try {
-      const response = await fetch(`${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=1000`, {
-        credentials: 'include' // Include cookies for authentication
-      });
-      if (response.ok) {
+      while (allLogs.length < totalCount) {
+        const url = `${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=${batchSize}&offset=${offset}`;
+        console.log(`🎭 Fetching replay batch: ${url}`);
+
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+          console.error(`🎭 getReplayData batch fetch failed (offset=${offset}):`, response.status, response.statusText);
+          break;
+        }
+
         const data = await response.json();
-        console.log(`🎭 getReplayData response for session ${targetSessionId}:`, {
-          logsCount: data.logs?.length || 0,
-          firstLogSession: data.logs?.[0]?.session_id,
-          allSessionIds: [...new Set(data.logs?.map(log => log.session_id) || [])]
-        });
-        // Sort by timestamp for chronological replay
-        data.logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        return data;
-      } else {
-        console.error(`🎭 getReplayData failed for session ${targetSessionId}:`, response.status, response.statusText);
+
+        // Update counts based on first successful response
+        totalCount = data.total_count ?? data.logs.length;
+
+        // Append new logs and invoke callback if provided
+        if (Array.isArray(data.logs) && data.logs.length > 0) {
+          allLogs.push(...data.logs);
+          if (typeof onBatch === 'function') {
+            try {
+              // Pass shallow copy to avoid accidental mutation downstream
+              onBatch([...data.logs], { accumulated: allLogs.length, total: totalCount });
+            } catch (cbErr) {
+              console.warn('🎭 onBatch callback error:', cbErr);
+            }
+          }
+        }
+
+        // If fewer logs than the batch size were returned, we've reached the end.
+        if (!data.logs || data.logs.length < batchSize) {
+          break;
+        }
+
+        // Prepare next iteration (use actual batch size to avoid infinite loop if backend returns fewer than requested)
+        offset += data.logs?.length || batchSize;
       }
+
+      console.log(`🎭 getReplayData finished. Retrieved ${allLogs.length}/${totalCount} logs for session ${targetSessionId}`);
+
+      // Sort logs chronologically once after all pages fetched
+      allLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+      return { logs: allLogs, total_count: totalCount, limit: batchSize };
     } catch (error) {
       console.warn(`🎭 Error fetching replay data for session ${targetSessionId}:`, error);
     }
+
     return null;
   }
 
@@ -601,4 +625,4 @@ class InteractionLogger {
 
 // Export singleton instance
 export const interactionLogger = new InteractionLogger();
-export default InteractionLogger; 
+export default InteractionLogger;

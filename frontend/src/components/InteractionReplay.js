@@ -723,7 +723,10 @@ const useConversationSegments = (updateState) => {
       // Get all cached audio buffers for this segment
       const audioBuffers = segment.audioChunks
         .map(chunk => audioCache.get(chunk.id))
-        .filter(buffer => buffer !== undefined);
+        .filter(buffer => buffer !== undefined && isFinite(buffer.length) && buffer.length > 0);
+      if (audioBuffers.length < segment.audioChunks.length) {
+        console.warn(`🎵 ⚠️  Skipped ${segment.audioChunks.length - audioBuffers.length} invalid/empty audio buffers`);
+      }
 
       if (audioBuffers.length === 0) {
         console.warn('🎵 No cached audio buffers available for segment');
@@ -734,7 +737,19 @@ const useConversationSegments = (updateState) => {
 
       // Calculate total duration and samples (for safety checks)
       const totalDuration = audioBuffers.reduce((sum, buffer) => sum + buffer.duration, 0);
-      const sampleRate = segment.metadata.sampleRate;
+      let sampleRate = segment.metadata?.sampleRate;
+      
+      // Fallbacks in case metadata is missing or invalid
+      if (!sampleRate || !isFinite(sampleRate)) {
+        // Try to take from first audio buffer
+        if (audioBuffers[0]?.sampleRate && isFinite(audioBuffers[0].sampleRate)) {
+          sampleRate = audioBuffers[0].sampleRate;
+          console.warn(`🎵 ⚠️  segment.metadata.sampleRate missing/non-finite. Using first buffer's sampleRate (${sampleRate})`);
+        } else {
+          sampleRate = 24000; // sensible default for API audio
+          console.warn(`🎵 ⚠️  Falling back to default sampleRate ${sampleRate}Hz`);
+        }
+      }
       
       console.log(`🎵 Total duration: ${totalDuration.toFixed(3)}s, Sample rate: ${sampleRate}Hz`);
       
@@ -1128,9 +1143,9 @@ const InteractionReplay = ({ onExitReplayMode, isModal = false, sessionData = nu
   const loadSessions = async () => {
     updateState({ loading: true });
     try {
-      const sessionsData = await interactionLogger.getAllReplaySessions();
-      if (sessionsData && sessionsData.sessions) {
-        updateState({ sessions: sessionsData.sessions });
+      const sessions = await interactionLogger.getAllReplaySessions();
+      if (Array.isArray(sessions)) {
+        updateState({ sessions });
       }
     } catch (error) {
       console.error('Error loading sessions:', error);

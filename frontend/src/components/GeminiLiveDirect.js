@@ -115,6 +115,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           },
         ],
       },
+      // Enable built-in Google Search grounding tool for Live API
+      tools: [ { google_search: {} } ],
       realtimeInputConfig: {
         automaticActivityDetection: isManualMode
           ? { disabled: true }

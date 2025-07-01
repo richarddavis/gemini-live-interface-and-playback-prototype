@@ -480,30 +480,62 @@ class InteractionLogger {
   }
 
   // Replay-specific methods
-  async getReplayData(sessionId = null) {
+  async getReplayData(sessionId = null, { batchSize = 1000, onBatch = null } = {}) {
     const targetSessionId = sessionId || this.sessionId;
-    console.log(`🎭 getReplayData called with sessionId: ${sessionId}, targetSessionId: ${targetSessionId}`);
+    console.log(`🎭 getReplayData (paginated) called with sessionId: ${sessionId}, targetSessionId: ${targetSessionId}`);
+
+    const allLogs = [];
+    let offset = 0;
+    let totalCount = Infinity; // will be updated after first request
+
     try {
-      // Request all logs in one go (large safety limit)
-      const response = await fetch(`${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=10000`, {
-        credentials: 'include' // Include cookies for authentication
-      });
-      if (response.ok) {
+      while (allLogs.length < totalCount) {
+        const url = `${this.baseUrl}/interaction-logs/${targetSessionId}?include_media=true&limit=${batchSize}&offset=${offset}`;
+        console.log(`🎭 Fetching replay batch: ${url}`);
+
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+          console.error(`🎭 getReplayData batch fetch failed (offset=${offset}):`, response.status, response.statusText);
+          break;
+        }
+
         const data = await response.json();
-        console.log(`🎭 getReplayData response for session ${targetSessionId}:`, {
-          logsCount: data.logs?.length || 0,
-          firstLogSession: data.logs?.[0]?.session_id,
-          allSessionIds: [...new Set(data.logs?.map(log => log.session_id) || [])]
-        });
-        // Sort by timestamp for chronological replay
-        data.logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        return data;
-      } else {
-        console.error(`🎭 getReplayData failed for session ${targetSessionId}:`, response.status, response.statusText);
+
+        // Update counts based on first successful response
+        totalCount = data.total_count ?? data.logs.length;
+
+        // Append new logs and invoke callback if provided
+        if (Array.isArray(data.logs) && data.logs.length > 0) {
+          allLogs.push(...data.logs);
+          if (typeof onBatch === 'function') {
+            try {
+              // Pass shallow copy to avoid accidental mutation downstream
+              onBatch([...data.logs], { accumulated: allLogs.length, total: totalCount });
+            } catch (cbErr) {
+              console.warn('🎭 onBatch callback error:', cbErr);
+            }
+          }
+        }
+
+        // If fewer logs than the batch size were returned, we've reached the end.
+        if (!data.logs || data.logs.length < batchSize) {
+          break;
+        }
+
+        // Prepare next iteration (use actual batch size to avoid infinite loop if backend returns fewer than requested)
+        offset += data.logs?.length || batchSize;
       }
+
+      console.log(`🎭 getReplayData finished. Retrieved ${allLogs.length}/${totalCount} logs for session ${targetSessionId}`);
+
+      // Sort logs chronologically once after all pages fetched
+      allLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+      return { logs: allLogs, total_count: totalCount, limit: batchSize };
     } catch (error) {
       console.warn(`🎭 Error fetching replay data for session ${targetSessionId}:`, error);
     }
+
     return null;
   }
 
@@ -593,4 +625,4 @@ class InteractionLogger {
 
 // Export singleton instance
 export const interactionLogger = new InteractionLogger();
-export default InteractionLogger; 
+export default InteractionLogger;

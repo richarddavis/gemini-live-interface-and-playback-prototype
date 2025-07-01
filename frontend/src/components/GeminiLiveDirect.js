@@ -29,6 +29,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const [isReceivingAudio, setIsReceivingAudio] = useState(false);
   const audioBufferRef = useRef([]);
   const audioTimeoutRef = useRef(null);
+  const audioQueueEndTimeRef = useRef(0); // Track when audio queue will end for seamless playback
 
   const wsRef = useRef(null);
   const videoRef = useRef(null);
@@ -61,6 +62,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         currentOutputAudioRef.current = null;
         console.log('🛑 Output audio playback stopped due to interruption');
       }
+      // Reset audio queue timing when interrupted
+      audioQueueEndTimeRef.current = 0;
     } catch (err) {
       console.warn('⚠️ Failed to stop output audio:', err);
     }
@@ -508,6 +511,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       audioTimeoutRef.current = null;
     }
     audioBufferRef.current = [];
+    audioQueueEndTimeRef.current = 0; // Reset audio queue timing
     setIsReceivingAudio(false);
     
     setIsConnected(false);
@@ -792,7 +796,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }
   }, [addMessage, setActivityStatus]);
 
-  // Handle audio response with improved PCM processing and buffering
+  // Handle audio response with immediate streaming playback
   const handleAudioResponse = useCallback(async (inlineData) => {
     console.log('🎵 Audio chunk received:', {
       mimeType: inlineData.mimeType,
@@ -822,10 +826,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           uint8Array[i] = audioData.charCodeAt(i);
         }
 
-        // Add this chunk to the buffer
-        audioBufferRef.current.push(arrayBuffer);
-        
-        // Set receiving state and reset timeout
+        // Set receiving state on first chunk
         if (!isReceivingAudio) {
           setIsReceivingAudio(true);
           setActivityStatus('receiving');
@@ -841,23 +842,78 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             console.warn('⚠️ Failed to log audio stream start:', logError);
           }
         }
+
+        // IMMEDIATE PLAYBACK: Play this chunk right away instead of buffering
+        const sampleRate = 24000; // Google's output rate
+        const numChannels = 1; // Mono
+        const bytesPerSample = 2; // 16-bit PCM
+        const numSamples = arrayBuffer.byteLength / bytesPerSample;
         
-        // Clear existing timeout and set new one
+        if (numSamples > 0) {
+          const audioBuffer = audioContext.createBuffer(numChannels, numSamples, sampleRate);
+          const channelData = audioBuffer.getChannelData(0);
+          
+          // Convert 16-bit PCM to float32 with proper endianness handling
+          const dataView = new DataView(arrayBuffer);
+          for (let i = 0; i < numSamples; i++) {
+            // Read 16-bit little-endian signed integer
+            const sample = dataView.getInt16(i * 2, true); // true = little-endian
+            channelData[i] = sample / 32768.0; // Convert to [-1, 1] range
+          }
+          
+          // Calculate when to start this chunk for seamless playback
+          const currentTime = audioContext.currentTime;
+          const scheduledTime = audioQueueEndTimeRef.current > currentTime ? 
+            audioQueueEndTimeRef.current : currentTime;
+          
+          // Create source and play immediately
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(audioContext.destination);
+          
+          // Schedule this chunk to play seamlessly after previous chunks
+          source.start(scheduledTime);
+          
+          // Update the queue end time for seamless chaining
+          audioQueueEndTimeRef.current = scheduledTime + audioBuffer.duration;
+          
+          // Set activity status to responding when first chunk starts playing
+          if (!isReceivingAudio || audioQueueEndTimeRef.current === scheduledTime) {
+            setActivityStatus('responding');
+          }
+          
+          console.log(`🎵 Playing audio chunk immediately: ${audioBuffer.duration.toFixed(3)}s, scheduled at ${scheduledTime.toFixed(3)}s`);
+          
+          // Track the latest source for potential interruption
+          currentOutputAudioRef.current = source;
+          
+          // Handle cleanup when this specific chunk ends
+          source.onended = () => {
+            console.log('🎵 Audio chunk completed');
+            // Only set to null if this is the latest source
+            if (currentOutputAudioRef.current === source) {
+              currentOutputAudioRef.current = null;
+            }
+          };
+        }
+        
+        // Clear existing timeout and set new one for end-of-stream detection
         if (audioTimeoutRef.current) {
           clearTimeout(audioTimeoutRef.current);
         }
         
-        // Wait for stream to complete (500ms of no new chunks)
+        // Mark stream as ended if no new chunks arrive within 500ms
         audioTimeoutRef.current = setTimeout(() => {
-          playBufferedAudio();
+          setIsReceivingAudio(false);
+          setActivityStatus(null);
           
           // Log the end of audio streaming
           try {
             interactionLogger.logUserAction('audio_stream_end', {
               audio_source: 'gemini_api',
               stream_timestamp: Date.now(),
-              chunks_count: audioBufferRef.current.length,
-              total_duration: audioBufferRef.current.length * 0.1 // Rough estimate
+              chunks_count: 1, // We process chunks individually now
+              playback_mode: 'immediate'
             });
           } catch (logError) {
             console.warn('⚠️ Failed to log audio stream end:', logError);
@@ -871,7 +927,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     } else {
       console.warn('⚠️ Invalid audio data:', { mimeType: inlineData.mimeType, hasData: !!inlineData.data });
     }
-  }, [addMessage, isReceivingAudio, playBufferedAudio, setActivityStatus]);
+  }, [addMessage, isReceivingAudio, setActivityStatus]);
 
   // Handle server content using Google's official format
   const handleServerContent = useCallback((serverContent) => {

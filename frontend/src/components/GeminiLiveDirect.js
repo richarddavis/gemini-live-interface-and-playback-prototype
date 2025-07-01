@@ -29,6 +29,11 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const [isReceivingAudio, setIsReceivingAudio] = useState(false);
   const audioBufferRef = useRef([]);
   const audioTimeoutRef = useRef(null);
+  
+  // Audio streaming queue state for sequential playback
+  const audioQueueRef = useRef([]);
+  const isPlayingAudioRef = useRef(false);
+  const audioScheduleTimeRef = useRef(0);
 
   const wsRef = useRef(null);
   const videoRef = useRef(null);
@@ -61,6 +66,12 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         currentOutputAudioRef.current = null;
         console.log('🛑 Output audio playback stopped due to interruption');
       }
+      
+      // Clear audio queue and reset streaming state
+      audioQueueRef.current = [];
+      isPlayingAudioRef.current = false;
+      audioScheduleTimeRef.current = 0;
+      console.log('🛑 Audio queue cleared');
     } catch (err) {
       console.warn('⚠️ Failed to stop output audio:', err);
     }
@@ -508,6 +519,9 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       audioTimeoutRef.current = null;
     }
     audioBufferRef.current = [];
+    audioQueueRef.current = [];
+    isPlayingAudioRef.current = false;
+    audioScheduleTimeRef.current = 0;
     setIsReceivingAudio(false);
     
     setIsConnected(false);
@@ -723,76 +737,98 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     return;
   }, []);
 
-  // Play buffered audio chunks as a single stream
-  const playBufferedAudio = useCallback(async () => {
-    if (audioBufferRef.current.length === 0) {
-      console.log('🎵 No audio chunks to play');
+  // Process audio queue sequentially for smooth playback
+  const processAudioQueue = useCallback(async (audioContext) => {
+    if (isPlayingAudioRef.current || audioQueueRef.current.length === 0) {
       return;
     }
-
-    try {
-      const audioContext = audioContextRef.current;
+    
+    isPlayingAudioRef.current = true;
+    
+    // Get current audio context time or initialize schedule time
+    const currentTime = audioContext.currentTime;
+    if (audioScheduleTimeRef.current < currentTime) {
+      audioScheduleTimeRef.current = currentTime;
+    }
+    
+    while (audioQueueRef.current.length > 0) {
+      const audioBuffer = audioQueueRef.current.shift();
       
-      // Concatenate all audio chunks
-      const totalLength = audioBufferRef.current.reduce((sum, buffer) => sum + buffer.byteLength, 0);
-      const combinedBuffer = new ArrayBuffer(totalLength);
-      const combinedView = new Uint8Array(combinedBuffer);
-      
-      let offset = 0;
-      for (const buffer of audioBufferRef.current) {
-        combinedView.set(new Uint8Array(buffer), offset);
-        offset += buffer.byteLength;
+      try {
+        // Create source and schedule for sequential playback
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        
+        // Schedule this chunk to play right after the previous one
+        const startTime = audioScheduleTimeRef.current;
+        source.start(startTime);
+        
+        console.log(`🎵 Playing audio chunk at ${startTime.toFixed(3)}s, duration: ${audioBuffer.duration.toFixed(3)}s`);
+        
+        // Update schedule time for next chunk
+        audioScheduleTimeRef.current = startTime + audioBuffer.duration;
+        
+        // Store reference for potential interruption (latest source)
+        currentOutputAudioRef.current = source;
+        
+        // Handle playback completion
+        source.onended = () => {
+          console.log('🎵 Audio chunk completed');
+        };
+        
+      } catch (error) {
+        console.error('🚨 Audio chunk playback failed:', error);
+        addMessage('error', `Audio chunk playback failed: ${error.message}`);
       }
-      
-      console.log(`🎵 Playing combined audio: ${audioBufferRef.current.length} chunks, ${totalLength} bytes`);
-      
+    }
+    
+    isPlayingAudioRef.current = false;
+  }, [addMessage]);
+
+  // Queue and play audio chunks sequentially for smooth streaming
+  const queueAudioChunk = useCallback(async (arrayBuffer, audioContext) => {
+    try {
       // Process as PCM
       const sampleRate = 24000; // Google's output rate
       const numChannels = 1; // Mono
       const bytesPerSample = 2; // 16-bit PCM
-      const numSamples = combinedBuffer.byteLength / bytesPerSample;
+      const numSamples = arrayBuffer.byteLength / bytesPerSample;
+      
+      if (numSamples === 0) {
+        console.log('🎵 Empty audio chunk, skipping');
+        return;
+      }
       
       const audioBuffer = audioContext.createBuffer(numChannels, numSamples, sampleRate);
       const channelData = audioBuffer.getChannelData(0);
       
       // Convert 16-bit PCM to float32 with proper endianness handling
-      const dataView = new DataView(combinedBuffer);
+      const dataView = new DataView(arrayBuffer);
       for (let i = 0; i < numSamples; i++) {
         // Read 16-bit little-endian signed integer
         const sample = dataView.getInt16(i * 2, true); // true = little-endian
         channelData[i] = sample / 32768.0; // Convert to [-1, 1] range
       }
       
-      // Create source and play
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
+      // Add to queue
+      audioQueueRef.current.push(audioBuffer);
+      console.log(`🎵 Queued audio chunk: ${numSamples} samples, ${audioBuffer.duration.toFixed(3)}s (queue: ${audioQueueRef.current.length})`);
       
-      source.onended = () => {
-        console.log('🎵 Audio playback completed');
-        setIsReceivingAudio(false);
-        setActivityStatus(null);
-      };
+      // Start processing queue if not already playing
+      if (!isPlayingAudioRef.current) {
+        processAudioQueue(audioContext);
+      }
       
-      // Indicate that we are now responding (playback about to start)
-      setActivityStatus('responding');
-      source.start(0);
-      
-      addMessage('system', `🔊 Playing audio response (${audioBuffer.duration.toFixed(2)}s, ${audioBufferRef.current.length} chunks)`);
-      
-      // Clear the buffer
-      audioBufferRef.current = [];
-      
-      currentOutputAudioRef.current = source;
     } catch (error) {
-      console.error('🚨 Buffered audio playback failed:', error);
-      addMessage('error', `Audio playback failed: ${error.message}`);
-      setIsReceivingAudio(false);
-      audioBufferRef.current = [];
+      console.error('🚨 Audio chunk processing failed:', error);
+      addMessage('error', `Audio chunk processing failed: ${error.message}`);
     }
-  }, [addMessage, setActivityStatus]);
+  }, [addMessage, processAudioQueue]);
 
-  // Handle audio response with improved PCM processing and buffering
+
+
+  // Handle audio response with immediate streaming and minimal latency
   const handleAudioResponse = useCallback(async (inlineData) => {
     console.log('🎵 Audio chunk received:', {
       mimeType: inlineData.mimeType,
@@ -822,13 +858,16 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           uint8Array[i] = audioData.charCodeAt(i);
         }
 
-        // Add this chunk to the buffer
+        // Add this chunk to the buffer for logging/replay purposes
         audioBufferRef.current.push(arrayBuffer);
         
-        // Set receiving state and reset timeout
+        // Queue chunk for sequential playback with minimal latency
+        await queueAudioChunk(arrayBuffer, audioContext);
+        
+        // Set receiving state on first chunk
         if (!isReceivingAudio) {
           setIsReceivingAudio(true);
-          setActivityStatus('receiving');
+          setActivityStatus('responding'); // Set to responding since we're playing audio
           
           // Log the start of audio streaming
           try {
@@ -842,14 +881,15 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
           }
         }
         
-        // Clear existing timeout and set new one
+        // Clear existing timeout and set new one for stream end detection
         if (audioTimeoutRef.current) {
           clearTimeout(audioTimeoutRef.current);
         }
         
-        // Wait for stream to complete (500ms of no new chunks)
+        // Detect stream end (500ms of no new chunks) for logging/cleanup
         audioTimeoutRef.current = setTimeout(() => {
-          playBufferedAudio();
+          setIsReceivingAudio(false);
+          setActivityStatus(null);
           
           // Log the end of audio streaming
           try {
@@ -871,7 +911,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     } else {
       console.warn('⚠️ Invalid audio data:', { mimeType: inlineData.mimeType, hasData: !!inlineData.data });
     }
-  }, [addMessage, isReceivingAudio, playBufferedAudio, setActivityStatus]);
+  }, [addMessage, isReceivingAudio, setActivityStatus, queueAudioChunk]);
 
   // Handle server content using Google's official format
   const handleServerContent = useCallback((serverContent) => {

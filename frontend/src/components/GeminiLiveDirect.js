@@ -41,6 +41,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   const videoFrameIntervalRef = useRef(null); // For video frame capture interval
   const voiceMenuRef = useRef(null);
   const currentOutputAudioRef = useRef(null);
+  // Ref to keep track of the next scheduled audio start time for progressive playback
+  const nextAudioStartTimeRef = useRef(0);
   const micInterruptDoneRef = useRef(false);
 
   // Available voices from Google's 2025 documentation
@@ -508,6 +510,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       audioTimeoutRef.current = null;
     }
     audioBufferRef.current = [];
+    nextAudioStartTimeRef.current = 0;
     setIsReceivingAudio(false);
     
     setIsConnected(false);
@@ -723,155 +726,75 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     return;
   }, []);
 
-  // Play buffered audio chunks as a single stream
-  const playBufferedAudio = useCallback(async () => {
-    if (audioBufferRef.current.length === 0) {
-      console.log('🎵 No audio chunks to play');
+  // Handle audio response with improved PCM processing and buffering
+  const handleAudioResponse = useCallback(async (inlineData) => {
+    // New progressive audio streaming implementation – plays each chunk as soon as it arrives
+    if (!inlineData?.mimeType?.includes('audio') || !inlineData.data) {
+      console.warn('⚠️ Invalid or non-audio inlineData received');
       return;
     }
 
     try {
+      // Prepare (or resume) AudioContext at Gemini's 24 kHz output rate
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      }
       const audioContext = audioContextRef.current;
-      
-      // Concatenate all audio chunks
-      const totalLength = audioBufferRef.current.reduce((sum, buffer) => sum + buffer.byteLength, 0);
-      const combinedBuffer = new ArrayBuffer(totalLength);
-      const combinedView = new Uint8Array(combinedBuffer);
-      
-      let offset = 0;
-      for (const buffer of audioBufferRef.current) {
-        combinedView.set(new Uint8Array(buffer), offset);
-        offset += buffer.byteLength;
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
       }
-      
-      console.log(`🎵 Playing combined audio: ${audioBufferRef.current.length} chunks, ${totalLength} bytes`);
-      
-      // Process as PCM
-      const sampleRate = 24000; // Google's output rate
-      const numChannels = 1; // Mono
-      const bytesPerSample = 2; // 16-bit PCM
-      const numSamples = combinedBuffer.byteLength / bytesPerSample;
-      
-      const audioBuffer = audioContext.createBuffer(numChannels, numSamples, sampleRate);
+
+      // Base64 → ArrayBuffer
+      const binary = atob(inlineData.data);
+      const buf = new ArrayBuffer(binary.length);
+      const viewU8 = new Uint8Array(buf);
+      for (let i = 0; i < binary.length; i++) {
+        viewU8[i] = binary.charCodeAt(i);
+      }
+
+      // Convert 16-bit PCM little-endian → Float32 mono AudioBuffer
+      const bytesPerSample = 2;
+      const numSamples = buf.byteLength / bytesPerSample;
+      const audioBuffer = audioContext.createBuffer(1, numSamples, 24000);
       const channelData = audioBuffer.getChannelData(0);
-      
-      // Convert 16-bit PCM to float32 with proper endianness handling
-      const dataView = new DataView(combinedBuffer);
+      const dataView = new DataView(buf);
       for (let i = 0; i < numSamples; i++) {
-        // Read 16-bit little-endian signed integer
-        const sample = dataView.getInt16(i * 2, true); // true = little-endian
-        channelData[i] = sample / 32768.0; // Convert to [-1, 1] range
+        channelData[i] = dataView.getInt16(i * 2, true) / 32768.0;
       }
-      
-      // Create source and play
+
+      // Determine when to start this chunk: either immediately or queued after previous one
+      const safetyOffset = 0.02; // 20 ms to account for scheduling jitter
+      if (nextAudioStartTimeRef.current < audioContext.currentTime + safetyOffset) {
+        nextAudioStartTimeRef.current = audioContext.currentTime + safetyOffset;
+      }
+
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContext.destination);
-      
       source.onended = () => {
-        console.log('🎵 Audio playback completed');
-        setIsReceivingAudio(false);
-        setActivityStatus(null);
+        // When all scheduled chunks have finished, clear activity status/state
+        if (nextAudioStartTimeRef.current <= audioContext.currentTime + 0.05) {
+          setActivityStatus(null);
+          setIsReceivingAudio(false);
+        }
       };
-      
-      // Indicate that we are now responding (playback about to start)
-      setActivityStatus('responding');
-      source.start(0);
-      
-      addMessage('system', `🔊 Playing audio response (${audioBuffer.duration.toFixed(2)}s, ${audioBufferRef.current.length} chunks)`);
-      
-      // Clear the buffer
-      audioBufferRef.current = [];
-      
-      currentOutputAudioRef.current = source;
-    } catch (error) {
-      console.error('🚨 Buffered audio playback failed:', error);
-      addMessage('error', `Audio playback failed: ${error.message}`);
-      setIsReceivingAudio(false);
-      audioBufferRef.current = [];
-    }
-  }, [addMessage, setActivityStatus]);
 
-  // Handle audio response with improved PCM processing and buffering
-  const handleAudioResponse = useCallback(async (inlineData) => {
-    console.log('🎵 Audio chunk received:', {
-      mimeType: inlineData.mimeType,
-      dataLength: inlineData.data ? inlineData.data.length : 0
-    });
-
-    if (inlineData.mimeType?.includes('audio') && inlineData.data) {
-      try {
-        // Initialize audio context for playback at 24kHz (Google's output sample rate)
-        if (!audioContextRef.current) {
-          audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({
-            sampleRate: 24000 // Match Google's output sample rate
-          });
-        }
-        
-        const audioContext = audioContextRef.current;
-        if (audioContext.state === 'suspended') {
-          await audioContext.resume();
-        }
-
-        // Decode base64 audio data
-        const audioData = atob(inlineData.data);
-        const arrayBuffer = new ArrayBuffer(audioData.length);
-        const uint8Array = new Uint8Array(arrayBuffer);
-        
-        for (let i = 0; i < audioData.length; i++) {
-          uint8Array[i] = audioData.charCodeAt(i);
-        }
-
-        // Add this chunk to the buffer
-        audioBufferRef.current.push(arrayBuffer);
-        
-        // Set receiving state and reset timeout
-        if (!isReceivingAudio) {
-          setIsReceivingAudio(true);
-          setActivityStatus('receiving');
-          
-          // Log the start of audio streaming
-          try {
-            interactionLogger.logUserAction('audio_stream_start', {
-              audio_source: 'gemini_api',
-              stream_timestamp: Date.now(),
-              mime_type: inlineData.mimeType
-            });
-          } catch (logError) {
-            console.warn('⚠️ Failed to log audio stream start:', logError);
-          }
-        }
-        
-        // Clear existing timeout and set new one
-        if (audioTimeoutRef.current) {
-          clearTimeout(audioTimeoutRef.current);
-        }
-        
-        // Wait for stream to complete (500ms of no new chunks)
-        audioTimeoutRef.current = setTimeout(() => {
-          playBufferedAudio();
-          
-          // Log the end of audio streaming
-          try {
-            interactionLogger.logUserAction('audio_stream_end', {
-              audio_source: 'gemini_api',
-              stream_timestamp: Date.now(),
-              chunks_count: audioBufferRef.current.length,
-              total_duration: audioBufferRef.current.length * 0.1 // Rough estimate
-            });
-          } catch (logError) {
-            console.warn('⚠️ Failed to log audio stream end:', logError);
-          }
-        }, 500);
-
-      } catch (error) {
-        console.error('🚨 Audio chunk processing failed:', error);
-        addMessage('error', `Audio chunk failed: ${error.message}`);
+      // Update UI state only on very first chunk of a new stream
+      if (!isReceivingAudio) {
+        setIsReceivingAudio(true);
+        setActivityStatus('responding');
       }
-    } else {
-      console.warn('⚠️ Invalid audio data:', { mimeType: inlineData.mimeType, hasData: !!inlineData.data });
+
+      // Schedule playback and advance pointer
+      source.start(nextAudioStartTimeRef.current);
+      currentOutputAudioRef.current = source;
+      nextAudioStartTimeRef.current += audioBuffer.duration;
+
+    } catch (err) {
+      console.error('🚨 Progressive audio playback failed:', err);
+      addMessage('error', `Audio playback error: ${err.message}`);
     }
-  }, [addMessage, isReceivingAudio, playBufferedAudio, setActivityStatus]);
+  }, [isReceivingAudio, setActivityStatus, addMessage]);
 
   // Handle server content using Google's official format
   const handleServerContent = useCallback((serverContent) => {

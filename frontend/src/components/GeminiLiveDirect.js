@@ -889,10 +889,14 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
     }
 
     if (serverContent.modelTurn && serverContent.modelTurn.parts) {
+      // Aggregate all text parts for complete transcription with grounding
+      let fullTextContent = '';
+      
       for (const part of serverContent.modelTurn.parts) {
         if (part.text) {
           console.log('💬 Adding AI message:', part.text);
           addMessage('ai', part.text);
+          fullTextContent += part.text;
           
           // Log API text response with error handling
           try {
@@ -920,6 +924,23 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
             });
           } catch (logError) {
             console.warn('⚠️ Failed to log audio response:', logError);
+          }
+        }
+        
+        // If we have aggregated text content, log a model transcription with the full text
+        if (fullTextContent.length > 0) {
+          console.log('📝 Logging complete model transcription:', fullTextContent.length, 'characters');
+          addMessage('transcription', `🗣️ Model said: ${fullTextContent}`);
+          
+          // Log the complete transcription for replay
+          try {
+            interactionLogger.logInteraction('model_transcription', null, { 
+              text: fullTextContent,
+              text_length: fullTextContent.length,
+              has_grounding: true // Flag to indicate this contains search results
+            });
+          } catch (logError) {
+            console.warn('⚠️ Failed to log complete transcription:', logError);
           }
         }
       }

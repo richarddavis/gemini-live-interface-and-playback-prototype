@@ -60,13 +60,29 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
   // Helper to stop current output audio playback – declared early to ensure availability
   const stopCurrentOutputAudio = useCallback(() => {
     try {
+      // Stop any currently playing or scheduled AudioBufferSource nodes
       if (currentOutputAudioRef.current) {
-        currentOutputAudioRef.current.stop(0);
-        currentOutputAudioRef.current.disconnect();
+        try {
+          currentOutputAudioRef.current.stop(0);
+          currentOutputAudioRef.current.disconnect();
+        } catch (err) {
+          // Ignore if already stopped
+        }
         currentOutputAudioRef.current = null;
-        console.log('🛑 Output audio playback stopped due to interruption');
       }
-      
+
+      // 🔒 Hard-stop: close the entire AudioContext so ALL scheduled sources are cancelled
+      if (audioContextRef.current) {
+        try {
+          // Closing will instantly silence every node associated with this context
+          audioContextRef.current.close();
+          console.log('🛑 AudioContext closed – all playback halted');
+        } catch (err) {
+          console.warn('⚠️ Failed to close AudioContext:', err);
+        }
+        audioContextRef.current = null;
+      }
+
       // Clear audio queue and reset streaming state
       audioQueueRef.current = [];
       isPlayingAudioRef.current = false;
@@ -206,6 +222,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       } catch (error) {
         console.warn('⚠️ Failed to cleanup interaction logging:', error);
       }
+      // 💡 Stop any residual AI audio playback on component unmount
+      stopCurrentOutputAudio();
     };
   }, [chatSessionId]);
 
@@ -448,6 +466,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
   // Updated disconnect with session completion logic
   const disconnect = useCallback(async () => {
+    // 💡 Ensure any in-progress AI audio playback stops immediately
+    stopCurrentOutputAudio();
     console.log('🎭 disconnect() called - checking session completion...');
     
     stopVideoFrameCapture(); // Stop sending video frames
@@ -540,7 +560,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
         onExitLiveMode();
       }
     }
-  }, [logAnalytics, stopVideoFrameCapture, isModal, sessionStartTime, messages, isCameraOn, selectedVoice, responseMode, onExitLiveMode]);
+  }, [logAnalytics, stopCurrentOutputAudio, stopVideoFrameCapture, isModal, sessionStartTime, messages, isCameraOn, selectedVoice, responseMode, onExitLiveMode]);
 
   // Update connectToGemini to track session start time
   const connectToGemini = useCallback(async () => {
@@ -825,8 +845,6 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       addMessage('error', `Audio chunk processing failed: ${error.message}`);
     }
   }, [addMessage, processAudioQueue]);
-
-
 
   // Handle audio response with immediate streaming and minimal latency
   const handleAudioResponse = useCallback(async (inlineData) => {
@@ -1344,6 +1362,8 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
 
   // Handle exit - distinguish between casual exit and session completion
   const handleExit = useCallback(() => {
+    // 💡 Always stop any playing audio when exiting the modal
+    stopCurrentOutputAudio();
     if (!isConnected && messages.length === 0) {
       // Casual exit - no session to save, just go back
       console.log('🚪 Casual exit - no session data to save');
@@ -1355,7 +1375,7 @@ const GeminiLiveDirect = forwardRef(({ onExitLiveMode, onStatusChange, isModal =
       console.log('🚪 Exit with potential session data - triggering disconnect');
       disconnect();
     }
-  }, [isConnected, messages.length, onExitLiveMode, disconnect]);
+  }, [isConnected, messages.length, onExitLiveMode, disconnect, stopCurrentOutputAudio]);
 
   useImperativeHandle(ref, () => ({
     triggerDisconnect: disconnect
